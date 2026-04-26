@@ -933,11 +933,11 @@ export default function App() {
           </div>
         ) : currentCard ? (
           <>
-            <button
-              type="button"
+            <div
               className="card-shell"
               onClick={handleFlip}
-              onMouseDown={(e) => e.preventDefault()}
+              role="button"
+              tabIndex={0}
               aria-label={`Flip card for ${currentCard.term}`}
             >
               <div
@@ -967,7 +967,7 @@ export default function App() {
                   <p className="card-foot">Use the controls below to keep moving</p>
                 </article>
               </div>
-            </button>
+            </div>
 
             <div className="control-row">
               <button type="button" className="ghost-button" onClick={() => moveToCard(-1)}>
