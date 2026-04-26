@@ -167,6 +167,7 @@ export default function App() {
   const [showCardImporter, setShowCardImporter] = useState(false);
   const [cardPaste, setCardPaste] = useState("");
   const [cardImportMessage, setCardImportMessage] = useState("");
+  const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const studyPanelRef = useRef<HTMLElement>(null);
 
   const allDecks = flattenDecks(librarySections);
@@ -499,6 +500,7 @@ export default function App() {
     setShowCardImporter(false);
     setCardPaste("");
     setCardImportMessage("");
+    setIsAutoPlaying(false);
   }, [selectedDeckId]);
 
   useEffect(() => {
@@ -535,6 +537,21 @@ export default function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+  });
+
+  useEffect(() => {
+    if (!isAutoPlaying || !currentCard || !activeProgress) return;
+
+    const delay = activeProgress.isFlipped ? 3000 : 5000;
+    const timer = setTimeout(() => {
+      if (activeProgress.isFlipped) {
+        moveToCard(1);
+      } else {
+        handleFlip();
+      }
+    }, delay);
+
+    return () => clearTimeout(timer);
   });
 
   if (!selectedDeck || !selectedSection || !activeProgress) {
@@ -989,6 +1006,14 @@ export default function App() {
                 aria-pressed={currentCardIsKnown}
               >
                 {currentCardIsKnown ? "Marked known" : "Mark as known"}
+              </button>
+              <button
+                type="button"
+                className={isAutoPlaying ? "accent-button active" : "accent-button"}
+                onClick={() => setIsAutoPlaying((v) => !v)}
+                aria-pressed={isAutoPlaying}
+              >
+                {isAutoPlaying ? "⏸ Pause" : "▶ Autoplay"}
               </button>
               <button type="button" className="text-button" onClick={handleShuffle}>
                 Shuffle deck
