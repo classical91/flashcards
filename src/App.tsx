@@ -550,20 +550,6 @@ export default function App() {
           cards in the way Quizlet exports them.
         </p>
 
-        <button
-          type="button"
-          className="reset-library-button"
-          onClick={() => {
-            if (window.confirm("Reset everything to the default decks? Your custom decks and progress will be lost.")) {
-              window.localStorage.removeItem(LIBRARY_STORAGE_KEY);
-              window.localStorage.removeItem(PROGRESS_STORAGE_KEY);
-              window.localStorage.removeItem(SELECTED_DECK_STORAGE_KEY);
-              window.location.reload();
-            }
-          }}
-        >
-          Reset to defaults
-        </button>
 
         <div className="library-stack-header">
           <button
