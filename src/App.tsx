@@ -565,6 +565,22 @@ export default function App() {
           Reset to defaults
         </button>
 
+        <div className="library-stack-header">
+          <button
+            type="button"
+            className="toggle-all-button"
+            onClick={() =>
+              setExpandedSections((prev) =>
+                prev.size === librarySections.length
+                  ? new Set()
+                  : new Set(librarySections.map((s) => s.id)),
+              )
+            }
+          >
+            {expandedSections.size === librarySections.length ? "Collapse all" : "Expand all"}
+          </button>
+        </div>
+
         <div className="library-stack">
           {librarySections.map((section) => {
             const isExpanded = expandedSections.has(section.id);

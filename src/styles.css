@@ -151,6 +151,25 @@ h1 {
   opacity: 1;
 }
 
+.library-stack-header {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.toggle-all-button {
+  padding: 0;
+  background: none;
+  border: none;
+  font-size: 0.78rem;
+  color: var(--accent-deep);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.toggle-all-button:hover {
+  opacity: 0.7;
+}
+
 .library-stack {
   display: grid;
   gap: 1rem;
