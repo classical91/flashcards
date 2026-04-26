@@ -134,21 +134,24 @@ h1 {
   max-width: 34ch;
 }
 
-.reset-library-button {
-  align-self: flex-start;
+
+.library-stack-header {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.toggle-all-button {
   padding: 0;
   background: none;
   border: none;
   font-size: 0.78rem;
-  color: var(--muted);
+  color: var(--accent-deep);
   cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  opacity: 0.6;
+  font-weight: 600;
 }
 
-.reset-library-button:hover {
-  opacity: 1;
+.toggle-all-button:hover {
+  opacity: 0.7;
 }
 
 .library-stack {
