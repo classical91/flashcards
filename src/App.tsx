@@ -888,6 +888,7 @@ export default function App() {
               type="button"
               className="card-shell"
               onClick={handleFlip}
+              onMouseDown={(e) => e.preventDefault()}
               aria-label={`Flip card for ${currentCard.term}`}
             >
               <div
