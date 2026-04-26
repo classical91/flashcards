@@ -134,6 +134,23 @@ h1 {
   max-width: 34ch;
 }
 
+.reset-library-button {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  border: none;
+  font-size: 0.78rem;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  opacity: 0.6;
+}
+
+.reset-library-button:hover {
+  opacity: 1;
+}
+
 .library-stack {
   display: grid;
   gap: 1rem;
@@ -153,17 +170,44 @@ h1 {
 
 .section-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
 }
 
-.section-head p,
+.section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.section-toggle:hover .section-title {
+  opacity: 0.7;
+}
+
+.section-chevron {
+  font-size: 1rem;
+  color: var(--muted);
+  display: inline-block;
+  transition: transform 200ms ease;
+  line-height: 1;
+}
+
+.section-chevron.open {
+  transform: rotate(90deg);
+}
+
+.section-head .section-title,
 .selected-block h2 {
   margin: 0;
 }
 
-.section-head p {
+.section-title {
   text-transform: uppercase;
   letter-spacing: 0.14em;
   font-size: 0.78rem;
@@ -171,13 +215,8 @@ h1 {
   font-weight: 700;
 }
 
-.section-head span,
 .selected-block p {
   color: var(--muted);
-}
-
-.section-head span {
-  font-size: 0.93rem;
 }
 
 .inline-button,
