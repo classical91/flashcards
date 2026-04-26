@@ -134,6 +134,23 @@ h1 {
   max-width: 34ch;
 }
 
+.reset-library-button {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  border: none;
+  font-size: 0.78rem;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  opacity: 0.6;
+}
+
+.reset-library-button:hover {
+  opacity: 1;
+}
+
 .library-stack {
   display: grid;
   gap: 1rem;
