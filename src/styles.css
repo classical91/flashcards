@@ -598,8 +598,6 @@ h1 {
 
 .card-shell {
   position: relative;
-  perspective: 1800px;
-  -webkit-perspective: 1800px;
   width: 100%;
   min-height: 26rem;
   padding: 0;
@@ -612,13 +610,6 @@ h1 {
 .flashcard {
   position: relative;
   min-height: 26rem;
-  transform-style: preserve-3d;
-  -webkit-transform-style: preserve-3d;
-  transition: transform 620ms cubic-bezier(0.2, 0.75, 0.2, 1);
-}
-
-.flashcard.is-flipped {
-  transform: rotateY(180deg);
 }
 
 .card-face {
@@ -630,8 +621,6 @@ h1 {
   padding: clamp(1.25rem, 3vw, 2rem);
   border-radius: 1.8rem;
   border: 1px solid rgba(111, 61, 39, 0.12);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
   overflow: hidden;
   text-align: left;
   box-shadow:
@@ -643,13 +632,30 @@ h1 {
   background:
     linear-gradient(140deg, rgba(255, 255, 255, 0.88), rgba(255, 248, 239, 0.94)),
     linear-gradient(135deg, rgba(255, 213, 157, 0.08), transparent 54%);
+  transform: scaleX(1);
+  opacity: 1;
+  transition: transform 180ms ease-in, opacity 0ms linear 180ms;
 }
 
 .card-back {
   background:
     linear-gradient(160deg, rgba(253, 241, 228, 0.97), rgba(255, 250, 243, 0.9)),
     radial-gradient(circle at top right, rgba(201, 90, 61, 0.08), transparent 36%);
-  transform: rotateY(180deg);
+  transform: scaleX(0);
+  opacity: 0;
+  transition: transform 180ms ease-out 180ms, opacity 0ms linear 180ms;
+}
+
+.flashcard.is-flipped .card-front {
+  transform: scaleX(0);
+  opacity: 0;
+  transition: transform 180ms ease-in, opacity 0ms linear 180ms;
+}
+
+.flashcard.is-flipped .card-back {
+  transform: scaleX(1);
+  opacity: 1;
+  transition: transform 180ms ease-out 180ms, opacity 0ms linear 180ms;
 }
 
 .card-face::after {
