@@ -159,6 +159,11 @@ export default function App() {
   const [selectedDeckId, setSelectedDeckId] = useState(loadSelectedDeckId);
   const [deckComposer, setDeckComposer] = useState<DeckComposer | null>(null);
   const [deckComposerMessage, setDeckComposerMessage] = useState("");
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => {
+    const saved = loadSelectedDeckId();
+    const section = librarySections.find((s) => s.decks.some((d) => d.id === saved));
+    return new Set(section ? [section.id] : []);
+  });
   const [showCardImporter, setShowCardImporter] = useState(false);
   const [cardPaste, setCardPaste] = useState("");
   const [cardImportMessage, setCardImportMessage] = useState("");
@@ -561,57 +566,79 @@ export default function App() {
         </button>
 
         <div className="library-stack">
-          {librarySections.map((section) => (
+          {librarySections.map((section) => {
+            const isExpanded = expandedSections.has(section.id);
+            const toggleSection = () =>
+              setExpandedSections((prev) => {
+                const next = new Set(prev);
+                if (next.has(section.id)) {
+                  next.delete(section.id);
+                } else {
+                  next.add(section.id);
+                }
+                return next;
+              });
+
+            return (
             <div key={section.id} className="section-block">
               <div className="section-head">
-                <div>
-                  <p>{section.title}</p>
-                  <span>{section.description}</span>
-                </div>
                 <button
                   type="button"
-                  className="inline-button"
-                  onClick={() => {
-                    setDeckComposerMessage("");
-                    setDeckComposer({
-                      sectionId: section.id,
-                      title: "",
-                      subtitle: "",
-                      paste: "",
-                    });
-                  }}
+                  className="section-toggle"
+                  onClick={toggleSection}
+                  aria-expanded={isExpanded}
                 >
-                  New deck
+                  <span className={`section-chevron${isExpanded ? " open" : ""}`}>›</span>
+                  <p>{section.title}</p>
                 </button>
-              </div>
-
-              <div className="deck-list">
-                {section.decks.length ? (
-                  section.decks.map((deck) => {
-                    const deckState =
-                      deckProgress[deck.id] ?? createDeckProgress(deck);
-                    const isSelected = deck.id === selectedDeck.id;
-
-                    return (
-                      <button
-                        key={deck.id}
-                        type="button"
-                        className={isSelected ? "deck-button active" : "deck-button"}
-                        onClick={() => setSelectedDeckId(deck.id)}
-                      >
-                        <span className="deck-button-name">{deck.title}</span>
-                        <span className="deck-button-meta">
-                          {deck.cards.length} cards / {deckState.knownIds.length} known
-                        </span>
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="empty-library-note">
-                    No decks here yet. Use New deck to add one.
-                  </div>
+                {isExpanded && (
+                  <button
+                    type="button"
+                    className="inline-button"
+                    onClick={() => {
+                      setDeckComposerMessage("");
+                      setDeckComposer({
+                        sectionId: section.id,
+                        title: "",
+                        subtitle: "",
+                        paste: "",
+                      });
+                    }}
+                  >
+                    New deck
+                  </button>
                 )}
               </div>
+
+              {isExpanded && (
+                <div className="deck-list">
+                  {section.decks.length ? (
+                    section.decks.map((deck) => {
+                      const deckState =
+                        deckProgress[deck.id] ?? createDeckProgress(deck);
+                      const isSelected = deck.id === selectedDeck.id;
+
+                      return (
+                        <button
+                          key={deck.id}
+                          type="button"
+                          className={isSelected ? "deck-button active" : "deck-button"}
+                          onClick={() => setSelectedDeckId(deck.id)}
+                        >
+                          <span className="deck-button-name">{deck.title}</span>
+                          <span className="deck-button-meta">
+                            {deck.cards.length} cards / {deckState.knownIds.length} known
+                          </span>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="empty-library-note">
+                      No decks here yet. Use New deck to add one.
+                    </div>
+                  )}
+                </div>
+              )}
 
               {deckComposer?.sectionId === section.id ? (
                 <div className="composer-panel">
@@ -713,7 +740,8 @@ export default function App() {
                 </div>
               ) : null}
             </div>
-          ))}
+          );
+          })}
         </div>
 
         <div className="selected-block">

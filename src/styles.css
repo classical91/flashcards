@@ -170,9 +170,37 @@ h1 {
 
 .section-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.section-toggle:hover .section-head p,
+.section-toggle:hover p {
+  opacity: 0.7;
+}
+
+.section-chevron {
+  font-size: 1rem;
+  color: var(--muted);
+  display: inline-block;
+  transition: transform 200ms ease;
+  line-height: 1;
+}
+
+.section-chevron.open {
+  transform: rotate(90deg);
 }
 
 .section-head p,
