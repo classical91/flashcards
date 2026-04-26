@@ -589,7 +589,7 @@ export default function App() {
                   aria-expanded={isExpanded}
                 >
                   <span className={`section-chevron${isExpanded ? " open" : ""}`}>›</span>
-                  <p>{section.title}</p>
+                  <span className="section-title">{section.title}</span>
                 </button>
                 {isExpanded && (
                   <button
