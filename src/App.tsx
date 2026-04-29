@@ -25,6 +25,16 @@ type DeckComposer = {
   paste: string;
 };
 
+type SectionComposer = {
+  title: string;
+  description: string;
+};
+
+type ConfirmDialog = {
+  message: string;
+  onConfirm: () => void;
+};
+
 const LIBRARY_STORAGE_KEY = "flashcards.library.v2";
 const PROGRESS_STORAGE_KEY = "flashcards.progress.v2";
 const SELECTED_DECK_STORAGE_KEY = "flashcards.selectedDeck.v2";
@@ -168,7 +178,14 @@ export default function App() {
   const [cardPaste, setCardPaste] = useState("");
   const [cardImportMessage, setCardImportMessage] = useState("");
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
+  const [sectionComposer, setSectionComposer] = useState<SectionComposer | null>(null);
+  const [sectionComposerMessage, setSectionComposerMessage] = useState("");
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
   const studyPanelRef = useRef<HTMLElement>(null);
+
+  const askConfirm = (message: string, onConfirm: () => void) => {
+    setConfirmDialog({ message, onConfirm });
+  };
 
   const allDecks = flattenDecks(librarySections);
   const selectedDeck = findDeckById(librarySections, selectedDeckId) ?? allDecks[0] ?? null;
@@ -399,6 +416,84 @@ export default function App() {
     );
   };
 
+  const handleDeleteCard = (cardId: string) => {
+    if (!selectedDeck) return;
+    const card = selectedDeck.cards.find((c) => c.id === cardId);
+    askConfirm(
+      `Delete the card "${card?.term ?? cardId}"? This cannot be undone.`,
+      () => {
+        startTransition(() => {
+          setLibrarySections((currentSections) =>
+            updateDeckInSections(currentSections, selectedDeck.id, (deck) => ({
+              ...deck,
+              cards: deck.cards.filter((c) => c.id !== cardId),
+            })),
+          );
+        });
+        setConfirmDialog(null);
+      },
+    );
+  };
+
+  const handleDeleteDeck = (deckId: string) => {
+    const deck = flattenDecks(librarySections).find((d) => d.id === deckId);
+    askConfirm(
+      `Delete the deck "${deck?.title ?? deckId}" and all its cards? This cannot be undone.`,
+      () => {
+        setLibrarySections((currentSections) =>
+          currentSections.map((section) => ({
+            ...section,
+            decks: section.decks.filter((d) => d.id !== deckId),
+          })),
+        );
+        setDeckProgress((currentProgress) => {
+          const next = { ...currentProgress };
+          delete next[deckId];
+          return next;
+        });
+        setConfirmDialog(null);
+      },
+    );
+  };
+
+  const handleDeleteSection = (sectionId: string) => {
+    const section = librarySections.find((s) => s.id === sectionId);
+    askConfirm(
+      `Delete the topic "${section?.title ?? sectionId}" and all its decks? This cannot be undone.`,
+      () => {
+        const deckIds = section?.decks.map((d) => d.id) ?? [];
+        setLibrarySections((currentSections) =>
+          currentSections.filter((s) => s.id !== sectionId),
+        );
+        setDeckProgress((currentProgress) => {
+          const next = { ...currentProgress };
+          deckIds.forEach((id) => delete next[id]);
+          return next;
+        });
+        setConfirmDialog(null);
+      },
+    );
+  };
+
+  const handleCreateSection = () => {
+    const title = sectionComposer?.title.trim() ?? "";
+    if (!title) {
+      setSectionComposerMessage("Give the new topic a name first.");
+      return;
+    }
+    const sectionIds = new Set(librarySections.map((s) => s.id));
+    const newSection: DeckSection = {
+      id: createUniqueId(title, sectionIds),
+      title,
+      description: sectionComposer?.description.trim() || `Cards from ${title}.`,
+      decks: [],
+    };
+    setLibrarySections((current) => [...current, newSection]);
+    setExpandedSections((prev) => new Set([...prev, newSection.id]));
+    setSectionComposer(null);
+    setSectionComposerMessage("");
+  };
+
   useEffect(() => {
     const nextDecks = flattenDecks(librarySections);
 
@@ -583,7 +678,69 @@ export default function App() {
           >
             {expandedSections.size === librarySections.length ? "Collapse all" : "Expand all"}
           </button>
+          <button
+            type="button"
+            className="inline-button"
+            onClick={() => {
+              setSectionComposerMessage("");
+              setSectionComposer({ title: "", description: "" });
+            }}
+          >
+            New topic
+          </button>
         </div>
+
+        {sectionComposer && (
+          <div className="composer-panel">
+            <div className="composer-head">
+              <strong>New topic</strong>
+              <button
+                type="button"
+                className="plain-link"
+                onClick={() => {
+                  setSectionComposer(null);
+                  setSectionComposerMessage("");
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <label className="field">
+              <span>Topic name</span>
+              <input
+                type="text"
+                value={sectionComposer.title}
+                onChange={(e) =>
+                  setSectionComposer((cur) => cur ? { ...cur, title: e.target.value } : cur)
+                }
+                placeholder="e.g. Greek Mythology"
+              />
+            </label>
+            <label className="field">
+              <span>Description (optional)</span>
+              <input
+                type="text"
+                value={sectionComposer.description}
+                onChange={(e) =>
+                  setSectionComposer((cur) => cur ? { ...cur, description: e.target.value } : cur)
+                }
+                placeholder="Short note about this topic"
+              />
+            </label>
+            {sectionComposerMessage && (
+              <p className="message-line error">{sectionComposerMessage}</p>
+            )}
+            <div className="composer-actions">
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handleCreateSection}
+              >
+                Create topic
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="library-stack">
           {librarySections.map((section) => {
@@ -612,21 +769,30 @@ export default function App() {
                   <span className="section-title">{section.title}</span>
                 </button>
                 {isExpanded && (
-                  <button
-                    type="button"
-                    className="inline-button"
-                    onClick={() => {
-                      setDeckComposerMessage("");
-                      setDeckComposer({
-                        sectionId: section.id,
-                        title: "",
-                        subtitle: "",
-                        paste: "",
-                      });
-                    }}
-                  >
-                    New deck
-                  </button>
+                  <div className="section-head-actions">
+                    <button
+                      type="button"
+                      className="inline-button"
+                      onClick={() => {
+                        setDeckComposerMessage("");
+                        setDeckComposer({
+                          sectionId: section.id,
+                          title: "",
+                          subtitle: "",
+                          paste: "",
+                        });
+                      }}
+                    >
+                      New deck
+                    </button>
+                    <button
+                      type="button"
+                      className="danger-link"
+                      onClick={() => handleDeleteSection(section.id)}
+                    >
+                      Delete topic
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -639,20 +805,32 @@ export default function App() {
                       const isSelected = deck.id === selectedDeck.id;
 
                       return (
-                        <button
-                          key={deck.id}
-                          type="button"
-                          className={isSelected ? "deck-button active" : "deck-button"}
-                          onClick={() => {
-                            setSelectedDeckId(deck.id);
-                            studyPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                          }}
-                        >
-                          <span className="deck-button-name">{deck.title}</span>
-                          <span className="deck-button-meta">
-                            {deck.cards.length} cards / {deckState.knownIds.length} known
-                          </span>
-                        </button>
+                        <div key={deck.id} className="deck-row">
+                          <button
+                            type="button"
+                            className={isSelected ? "deck-button active" : "deck-button"}
+                            onClick={() => {
+                              setSelectedDeckId(deck.id);
+                              studyPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                            }}
+                          >
+                            <span className="deck-button-name">{deck.title}</span>
+                            <span className="deck-button-meta">
+                              {deck.cards.length} cards / {deckState.knownIds.length} known
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className="deck-delete-btn"
+                            title="Delete deck"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteDeck(deck.id);
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
                       );
                     })
                   ) : (
@@ -1021,6 +1199,15 @@ export default function App() {
               <button type="button" className="text-button" onClick={resetProgress}>
                 Reset progress
               </button>
+              {currentCard && (
+                <button
+                  type="button"
+                  className="text-button danger-text"
+                  onClick={() => handleDeleteCard(currentCard.id)}
+                >
+                  Delete card
+                </button>
+              )}
             </div>
           </>
         ) : (
@@ -1046,6 +1233,29 @@ export default function App() {
           </div>
         )}
       </section>
+      {confirmDialog && (
+        <div className="confirm-overlay" role="dialog" aria-modal="true">
+          <div className="confirm-box">
+            <p>{confirmDialog.message}</p>
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="danger-button"
+                onClick={confirmDialog.onConfirm}
+              >
+                Yes, delete
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setConfirmDialog(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
