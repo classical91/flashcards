@@ -132,6 +132,16 @@ const splitLine = (line: string) => {
     ];
   }
 
+  // Handle unspaced en/em dashes: e.g. "Faith–Trust in God" or "Grace—God's favor"
+  const unspacedDashMatch = line.match(/[\u2013\u2014]/);
+
+  if (unspacedDashMatch?.index !== undefined) {
+    return [
+      line.slice(0, unspacedDashMatch.index),
+      line.slice(unspacedDashMatch.index + 1),
+    ];
+  }
+
   const colonIndex = line.indexOf(":");
 
   if (colonIndex >= 0) {
