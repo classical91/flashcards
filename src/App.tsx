@@ -169,11 +169,7 @@ export default function App() {
   const [selectedDeckId, setSelectedDeckId] = useState(loadSelectedDeckId);
   const [deckComposer, setDeckComposer] = useState<DeckComposer | null>(null);
   const [deckComposerMessage, setDeckComposerMessage] = useState("");
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => {
-    const saved = loadSelectedDeckId();
-    const section = librarySections.find((s) => s.decks.some((d) => d.id === saved));
-    return new Set(section ? [section.id] : []);
-  });
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set());
   const [showCardImporter, setShowCardImporter] = useState(false);
   const [cardPaste, setCardPaste] = useState("");
   const [cardImportMessage, setCardImportMessage] = useState("");
