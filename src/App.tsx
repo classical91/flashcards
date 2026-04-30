@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import { defaultDeckId, starterSections } from "./data/decks";
 import {
   Deck,
@@ -162,6 +162,7 @@ export default function App() {
   const [showCardImporter, setShowCardImporter] = useState(false);
   const [cardPaste, setCardPaste] = useState("");
   const [cardImportMessage, setCardImportMessage] = useState("");
+  const studyPanelRef = useRef<HTMLElement>(null);
 
   const allDecks = flattenDecks(librarySections);
   const selectedDeck = findDeckById(librarySections, selectedDeckId) ?? allDecks[0] ?? null;
@@ -347,6 +348,9 @@ export default function App() {
     setSelectedDeckId(newDeck.id);
     setDeckComposer(null);
     setDeckComposerMessage("");
+    setTimeout(() => {
+      studyPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
   };
 
   const handleAddCards = () => {
@@ -772,7 +776,7 @@ export default function App() {
         </div>
       </section>
 
-      <section className="study-panel">
+      <section className="study-panel" ref={studyPanelRef}>
         <div className="study-head">
           <div>
             <p className="eyebrow">{selectedSection.title}</p>
