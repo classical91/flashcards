@@ -14,20 +14,28 @@ const shareIdPattern = /^[A-Za-z0-9_-]{10,120}$/;
 const memoryStore = new Map();
 const memorySharedDeckStore = new Map();
 
-const pool = process.env.DATABASE_URL
+let pool = process.env.DATABASE_URL
   ? new Pool({
       connectionString: process.env.DATABASE_URL,
+      connectionTimeoutMillis: 5000,
+      query_timeout: 8000,
     })
   : null;
 
-const storageKind = pool ? "postgres" : "memory";
+let storageKind = pool ? "postgres" : "memory";
 
 const initializeDatabase = async () => {
   if (!pool) {
     return;
   }
 
-  await pool.query(`
+  const activePool = pool;
+
+  if (!activePool) {
+    return;
+  }
+
+  await activePool.query(`
     CREATE TABLE IF NOT EXISTS library_snapshots (
       library_id TEXT PRIMARY KEY,
       data JSONB NOT NULL,
@@ -35,7 +43,7 @@ const initializeDatabase = async () => {
     )
   `);
 
-  await pool.query(`
+  await activePool.query(`
     CREATE TABLE IF NOT EXISTS shared_decks (
       share_id TEXT PRIMARY KEY,
       data JSONB NOT NULL,
@@ -44,11 +52,13 @@ const initializeDatabase = async () => {
   `);
 };
 
-const databaseReady = initializeDatabase();
-
-databaseReady.catch((error) => {
-  console.error("Failed to initialize storage", error);
-  process.exit(1);
+const databaseReady = initializeDatabase().catch((error) => {
+  console.error("Failed to initialize Postgres storage; using in-memory fallback", error);
+  pool?.end().catch((endError) => {
+    console.error("Failed to close unavailable Postgres pool", endError);
+  });
+  pool = null;
+  storageKind = "memory";
 });
 
 const sendJson = (response, statusCode, payload) => {
@@ -171,6 +181,10 @@ const getLibrarySnapshot = async (libraryId) => {
 
   await databaseReady;
 
+  if (!pool) {
+    return memoryStore.get(libraryId) ?? null;
+  }
+
   const result = await pool.query(
     `
       SELECT data, updated_at
@@ -207,6 +221,20 @@ const saveLibrarySnapshot = async (libraryId, snapshot) => {
 
   await databaseReady;
 
+  if (!pool) {
+    const updatedAt = new Date().toISOString();
+
+    memoryStore.set(libraryId, {
+      snapshot,
+      updatedAt,
+    });
+
+    return {
+      snapshot,
+      updatedAt,
+    };
+  }
+
   const result = await pool.query(
     `
       INSERT INTO library_snapshots (library_id, data, updated_at)
@@ -232,6 +260,10 @@ const getSharedDeck = async (shareId) => {
   }
 
   await databaseReady;
+
+  if (!pool) {
+    return memorySharedDeckStore.get(shareId) ?? null;
+  }
 
   const result = await pool.query(
     `
@@ -268,6 +300,20 @@ const saveSharedDeck = async (shareId, snapshot) => {
   }
 
   await databaseReady;
+
+  if (!pool) {
+    const updatedAt = new Date().toISOString();
+
+    memorySharedDeckStore.set(shareId, {
+      snapshot,
+      updatedAt,
+    });
+
+    return {
+      snapshot,
+      updatedAt,
+    };
+  }
 
   const result = await pool.query(
     `
