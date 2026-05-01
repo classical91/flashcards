@@ -230,7 +230,6 @@ Wild man syndrome-a psychological state involving emotional disinhibition and ag
 export const emotions1Deck = createDeckFromRaw({
   id: "emotions1",
   title: "emotions1",
-  subtitle: "An emotion-focused Wikipedia deck covering theory, behavior, and emotional life.",
   raw: rawEmotions1Parts.join("\n"),
   protectedTerms: [
     "Co-regulation",

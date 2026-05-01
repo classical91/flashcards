@@ -6,11 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "node server.mjs",
+    "start": "node server.mjs"
   },
   "dependencies": {
+    "pg": "^8.20.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "serve-handler": "^6.1.7"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
