@@ -239,9 +239,19 @@ const loadSyncKey = () => {
 
 const getFetchErrorMessage = async (response: Response) => {
   try {
-    const payload = (await response.json()) as { message?: string; error?: string };
+    const payload = (await response.clone().json()) as { message?: string; error?: string };
     return payload.message ?? payload.error ?? `Request failed with ${response.status}.`;
   } catch {
+    try {
+      const message = (await response.text()).trim();
+
+      if (message) {
+        return `${message} (${response.status})`;
+      }
+    } catch {
+      // Fall through to the status-only error below.
+    }
+
     return `Request failed with ${response.status}.`;
   }
 };
@@ -367,6 +377,7 @@ export default function App() {
   const hasRemainingCards = remainingCount > 0;
   const currentCardIsKnown = currentCard ? knownSet.has(currentCard.id) : false;
   const isDeckEmpty = totalCards === 0;
+  const isUsingSharedSyncKey = normalizeSyncKey(syncKeyInput) === DEFAULT_SYNC_KEY;
 
   const deckImportPreview = deckComposer?.paste
     ? parsePastedFlashcards(deckComposer.paste)
@@ -700,6 +711,15 @@ export default function App() {
     setSyncKeyInput(nextSyncKey);
     setSyncState("saved");
     setSyncMessage("New sync key created. Save to cloud to publish this library to your devices.");
+  };
+
+  const handleUseSharedLibrary = () => {
+    cloudSyncReadyRef.current = false;
+    cloudSyncLoadKeyRef.current = "";
+    setSyncKey(DEFAULT_SYNC_KEY);
+    setSyncKeyInput(DEFAULT_SYNC_KEY);
+    setSyncState("loading");
+    setSyncMessage("Switching this browser back to the shared cloud library...");
   };
 
   const handleLoadFromCloud = async () => {
@@ -1089,6 +1109,13 @@ export default function App() {
                 a different key only when you want a separate private library.
               </p>
 
+              {!isUsingSharedSyncKey ? (
+                <p className="message-line">
+                  This browser is using a custom sync key. Switch to the shared
+                  library if it should match your other browsers.
+                </p>
+              ) : null}
+
               <div className="composer-actions">
                 <button
                   type="button"
@@ -1112,6 +1139,18 @@ export default function App() {
                   disabled={syncState === "loading" || syncState === "saving"}
                 >
                   Save to cloud
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={handleUseSharedLibrary}
+                  disabled={
+                    isUsingSharedSyncKey ||
+                    syncState === "loading" ||
+                    syncState === "saving"
+                  }
+                >
+                  Shared library
                 </button>
                 <button
                   type="button"

@@ -424,6 +424,8 @@ h1 {
 .composer-actions {
   display: flex;
   justify-content: flex-start;
+  gap: 0.55rem;
+  flex-wrap: wrap;
 }
 
 .meter-block {
