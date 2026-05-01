@@ -21,7 +21,7 @@ export type DeckSection = {
 type CreateDeckOptions = {
   id: string;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   raw: string;
   protectedTerms?: string[];
   fallbackDefinitions?: Record<string, string>;
@@ -36,6 +36,68 @@ type ParsedFlashcardResult = {
   cards: ParsedFlashcardInput[];
   invalidLines: string[];
 };
+
+const definitionStarterWords = new Set([
+  "a",
+  "an",
+  "the",
+  "to",
+  "with",
+  "without",
+  "from",
+  "about",
+  "feeling",
+  "feelings",
+  "emotion",
+  "emotions",
+  "emotional",
+  "state",
+  "condition",
+  "quality",
+  "ability",
+  "capacity",
+  "process",
+  "act",
+  "idea",
+  "theory",
+  "framework",
+  "pattern",
+  "form",
+  "episode",
+  "episodes",
+  "sense",
+  "study",
+  "response",
+  "distress",
+  "discomfort",
+  "comfort",
+  "care",
+  "confidence",
+  "curiosity",
+  "attention",
+  "expectation",
+  "avoidance",
+  "lack",
+  "deep",
+  "gentle",
+  "intense",
+  "mild",
+  "strong",
+  "sudden",
+  "quiet",
+  "warm",
+  "overwhelming",
+  "personal",
+  "lingering",
+  "sentimental",
+  "genuine",
+  "awareness",
+  "anger",
+  "joy",
+  "sorrow",
+  "longing",
+  "remorse",
+]);
 
 export const createSlug = (value: string) =>
   value
@@ -63,6 +125,84 @@ export const createUniqueId = (value: string, existingIds: Set<string>) => {
 const normalizeDefinition = (definition: string) =>
   definition.replace(/,/g, ", ").replace(/\s+/g, " ").trim();
 
+const countWords = (value: string) =>
+  value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+
+const getLeadingWord = (value: string) =>
+  value.trim().match(/^[("'\[]*([A-Za-z]+)/)?.[1]?.toLowerCase() ?? "";
+
+const chooseHyphenSplit = (line: string) => {
+  const candidates: Array<{ left: string; right: string; score: number }> = [];
+
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] !== "-") {
+      continue;
+    }
+
+    const left = line.slice(0, index).trim();
+    const right = line.slice(index + 1).trim();
+
+    if (!left || !right) {
+      continue;
+    }
+
+    const rightLeadWord = getLeadingWord(right);
+    const leftWords = countWords(left);
+    const rightWords = countWords(right);
+    let score = 0;
+
+    if (definitionStarterWords.has(rightLeadWord)) {
+      score += 5;
+    }
+
+    if (/^[a-z]/.test(rightLeadWord)) {
+      score += 1;
+    }
+
+    if (rightWords >= 3) {
+      score += 2;
+    }
+
+    if (right.length > left.length) {
+      score += 2;
+    }
+
+    if (right.length > left.length * 1.5) {
+      score += 1;
+    }
+
+    if (leftWords >= 1 && leftWords <= 8) {
+      score += 1;
+    }
+
+    if (/^[A-Z0-9]/.test(left) || /[()]/.test(left)) {
+      score += 1;
+    }
+
+    if (leftWords > 12) {
+      score -= 2;
+    }
+
+    if (rightWords < 2) {
+      score -= 2;
+    }
+
+    score += index / Math.max(line.length, 1) / 100;
+
+    candidates.push({ left, right, score });
+  }
+
+  if (!candidates.length) {
+    return null;
+  }
+
+  candidates.sort((first, second) => second.score - first.score);
+  return candidates[0];
+};
+
 const normalizeEntry = (
   entry: string,
   protectedTerms: string[],
@@ -79,9 +219,9 @@ const normalizeEntry = (
     }
   }
 
-  const separatorIndex = entry.indexOf("-");
+  const hyphenSplit = chooseHyphenSplit(entry);
 
-  if (separatorIndex === -1) {
+  if (!hyphenSplit) {
     return {
       term: entry,
       definition: fallbackDefinitions[entry] ?? "definition coming soon",
@@ -89,8 +229,8 @@ const normalizeEntry = (
   }
 
   return {
-    term: entry.slice(0, separatorIndex),
-    definition: entry.slice(separatorIndex + 1),
+    term: hyphenSplit.left,
+    definition: hyphenSplit.right,
   };
 };
 
@@ -148,10 +288,10 @@ const splitLine = (line: string) => {
     return [line.slice(0, colonIndex), line.slice(colonIndex + 1)];
   }
 
-  const hyphenIndex = line.indexOf("-");
+  const hyphenSplit = chooseHyphenSplit(line);
 
-  if (hyphenIndex >= 0) {
-    return [line.slice(0, hyphenIndex), line.slice(hyphenIndex + 1)];
+  if (hyphenSplit) {
+    return [hyphenSplit.left, hyphenSplit.right];
   }
 
   return null;
@@ -210,7 +350,7 @@ export const createDeckFromRaw = ({
   return {
     id,
     title,
-    subtitle,
+    subtitle: subtitle ?? "",
     cards: withCardIds(cards),
   };
 };

@@ -8,6 +8,11 @@ import {
   parsePastedFlashcards,
   withCardIds,
 } from "./data/deckBuilder";
+import {
+  LibrarySnapshot,
+  createLibrarySnapshot,
+  parseLibrarySnapshot,
+} from "./data/librarySnapshot";
 
 type StudyMode = "all" | "remaining";
 
@@ -35,9 +40,15 @@ type ConfirmDialog = {
   onConfirm: () => void;
 };
 
+type SyncState = "idle" | "loading" | "saving" | "saved" | "error";
+
 const LIBRARY_STORAGE_KEY = "flashcards.library.v2";
 const PROGRESS_STORAGE_KEY = "flashcards.progress.v2";
 const SELECTED_DECK_STORAGE_KEY = "flashcards.selectedDeck.v2";
+const SYNC_KEY_STORAGE_KEY = "flashcards.syncKey.v1";
+const DEFAULT_SYNC_KEY =
+  import.meta.env.VITE_FLASHCARDS_SYNC_KEY?.trim() || "jasons-flashcards-library";
+const syncKeyPattern = /^[A-Za-z0-9_-]{8,120}$/;
 
 const shuffleCards = (cards: Flashcard[]) => {
   const copy = [...cards];
@@ -58,6 +69,73 @@ const cloneSections = (sections: DeckSection[]) =>
       cards: deck.cards.map((card) => ({ ...card })),
     })),
   }));
+
+const mergeDeck = (cloudDeck: Deck, localDeck: Deck): Deck => {
+  const cloudCardIds = new Set(cloudDeck.cards.map((card) => card.id));
+
+  return {
+    ...cloudDeck,
+    cards: [
+      ...cloudDeck.cards.map((card) => ({ ...card })),
+      ...localDeck.cards
+        .filter((card) => !cloudCardIds.has(card.id))
+        .map((card) => ({ ...card })),
+    ],
+  };
+};
+
+const mergeSections = (
+  localSections: DeckSection[],
+  cloudSections: DeckSection[],
+) => {
+  const localSectionsById = new Map(localSections.map((section) => [section.id, section]));
+  const cloudSectionIds = new Set(cloudSections.map((section) => section.id));
+  const mergedSections = cloudSections.map((cloudSection) => {
+    const localSection = localSectionsById.get(cloudSection.id);
+
+    if (!localSection) {
+      return {
+        ...cloudSection,
+        decks: cloudSection.decks.map((deck) => ({
+          ...deck,
+          cards: deck.cards.map((card) => ({ ...card })),
+        })),
+      };
+    }
+
+    const localDecksById = new Map(localSection.decks.map((deck) => [deck.id, deck]));
+    const cloudDeckIds = new Set(cloudSection.decks.map((deck) => deck.id));
+
+    return {
+      ...cloudSection,
+      decks: [
+        ...cloudSection.decks.map((cloudDeck) => {
+          const localDeck = localDecksById.get(cloudDeck.id);
+          return localDeck ? mergeDeck(cloudDeck, localDeck) : { ...cloudDeck };
+        }),
+        ...localSection.decks
+          .filter((deck) => !cloudDeckIds.has(deck.id))
+          .map((deck) => ({
+            ...deck,
+            cards: deck.cards.map((card) => ({ ...card })),
+          })),
+      ],
+    };
+  });
+
+  return [
+    ...mergedSections,
+    ...localSections
+      .filter((section) => !cloudSectionIds.has(section.id))
+      .map((section) => ({
+        ...section,
+        decks: section.decks.map((deck) => ({
+          ...deck,
+          cards: deck.cards.map((card) => ({ ...card })),
+        })),
+      })),
+  ];
+};
 
 const flattenDecks = (sections: DeckSection[]) =>
   sections.flatMap((section) => section.decks);
@@ -138,6 +216,36 @@ const loadSelectedDeckId = () => {
   return window.localStorage.getItem(SELECTED_DECK_STORAGE_KEY) ?? defaultDeckId;
 };
 
+const normalizeSyncKey = (value: string) => value.trim();
+
+const isSyncKeyValid = (value: string) => syncKeyPattern.test(value);
+
+const createSyncKey = () => {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+  }
+
+  return Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
+};
+
+const loadSyncKey = () => {
+  if (typeof window === "undefined") {
+    return DEFAULT_SYNC_KEY;
+  }
+
+  const saved = window.localStorage.getItem(SYNC_KEY_STORAGE_KEY) ?? "";
+  return isSyncKeyValid(saved) ? saved : DEFAULT_SYNC_KEY;
+};
+
+const getFetchErrorMessage = async (response: Response) => {
+  try {
+    const payload = (await response.json()) as { message?: string; error?: string };
+    return payload.message ?? payload.error ?? `Request failed with ${response.status}.`;
+  } catch {
+    return `Request failed with ${response.status}.`;
+  }
+};
+
 const isTypingTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -161,6 +269,33 @@ const updateDeckInSections = (
     decks: section.decks.map((deck) => (deck.id === deckId ? updater(deck) : deck)),
   }));
 
+const mergeProgressState = (
+  localProgress: Record<string, DeckProgress>,
+  cloudProgress: Record<string, DeckProgress>,
+  sections: DeckSection[],
+) => {
+  const mergedProgress: Record<string, DeckProgress> = {};
+
+  flattenDecks(sections).forEach((deck) => {
+    const cloudDeckProgress = cloudProgress[deck.id];
+    const localDeckProgress = localProgress[deck.id];
+    const baseProgress =
+      cloudDeckProgress ?? localDeckProgress ?? createDeckProgress(deck);
+
+    mergedProgress[deck.id] = {
+      ...baseProgress,
+      knownIds: Array.from(
+        new Set([
+          ...(cloudDeckProgress?.knownIds ?? []),
+          ...(localDeckProgress?.knownIds ?? []),
+        ]),
+      ),
+    };
+  });
+
+  return mergedProgress;
+};
+
 export default function App() {
   const [librarySections, setLibrarySections] = useState(loadLibrarySections);
   const [deckProgress, setDeckProgress] = useState(() =>
@@ -177,7 +312,24 @@ export default function App() {
   const [sectionComposer, setSectionComposer] = useState<SectionComposer | null>(null);
   const [sectionComposerMessage, setSectionComposerMessage] = useState("");
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
+  const [syncKey, setSyncKey] = useState(loadSyncKey);
+  const [syncKeyInput, setSyncKeyInput] = useState(loadSyncKey);
+  const [showSyncPanel, setShowSyncPanel] = useState(false);
+  const [syncState, setSyncState] = useState<SyncState>("idle");
+  const [syncMessage, setSyncMessage] = useState(
+    "Cloud sync starts automatically for this shared library.",
+  );
   const studyPanelRef = useRef<HTMLElement>(null);
+  const cloudSyncReadyRef = useRef(false);
+  const cloudSyncLoadKeyRef = useRef("");
+  const snapshotRef = useRef<LibrarySnapshot>(
+    createLibrarySnapshot({
+      librarySections,
+      deckProgress,
+      selectedDeckId,
+      recentDeckIds: [],
+    }),
+  );
 
   const askConfirm = (message: string, onConfirm: () => void) => {
     setConfirmDialog({ message, onConfirm });
@@ -490,6 +642,149 @@ export default function App() {
     setSectionComposerMessage("");
   };
 
+  const fetchCloudSnapshot = async (activeSyncKey: string) => {
+    const response = await fetch(`/api/libraries/${encodeURIComponent(activeSyncKey)}`);
+
+    if (!response.ok) {
+      throw new Error(await getFetchErrorMessage(response));
+    }
+
+    return (await response.json()) as {
+      exists?: boolean;
+      snapshot?: unknown;
+      storage?: string;
+    };
+  };
+
+  const saveSnapshotToCloud = async (
+    activeSyncKey: string,
+    snapshot: LibrarySnapshot,
+  ) => {
+    const response = await fetch(`/api/libraries/${encodeURIComponent(activeSyncKey)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(snapshot),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getFetchErrorMessage(response));
+    }
+  };
+
+  const handleApplySyncKey = () => {
+    const nextSyncKey = normalizeSyncKey(syncKeyInput);
+
+    if (!isSyncKeyValid(nextSyncKey)) {
+      cloudSyncReadyRef.current = false;
+      setSyncState("error");
+      setSyncMessage(
+        "Sync keys must be 8-120 characters and use only letters, numbers, hyphens, or underscores.",
+      );
+      return;
+    }
+
+    cloudSyncReadyRef.current = false;
+    setSyncKey(nextSyncKey);
+    setSyncKeyInput(nextSyncKey);
+    setSyncState("saved");
+    setSyncMessage("Sync key is active. Save to cloud here, then load cloud on your phone or PC.");
+  };
+
+  const handleGenerateSyncKey = () => {
+    const nextSyncKey = createSyncKey();
+
+    cloudSyncReadyRef.current = false;
+    setSyncKey(nextSyncKey);
+    setSyncKeyInput(nextSyncKey);
+    setSyncState("saved");
+    setSyncMessage("New sync key created. Save to cloud to publish this library to your devices.");
+  };
+
+  const handleLoadFromCloud = async () => {
+    const activeSyncKey = normalizeSyncKey(syncKeyInput || syncKey);
+
+    if (!isSyncKeyValid(activeSyncKey)) {
+      setSyncState("error");
+      setSyncMessage("Enter a valid sync key before loading from cloud.");
+      return;
+    }
+
+    cloudSyncReadyRef.current = false;
+    setSyncState("loading");
+    setSyncMessage("Loading cloud library from Railway...");
+
+    try {
+      const payload = await fetchCloudSnapshot(activeSyncKey);
+
+      if (!payload.exists) {
+        setSyncKey(activeSyncKey);
+        setSyncKeyInput(activeSyncKey);
+        setSyncState("error");
+        setSyncMessage("No cloud library exists for this key yet. Save it from Chrome first.");
+        return;
+      }
+
+      const snapshot = parseLibrarySnapshot(payload.snapshot);
+
+      if (!snapshot) {
+        throw new Error("The cloud library was not in the expected format.");
+      }
+
+      const mergedSections = mergeSections(librarySections, snapshot.librarySections);
+      const mergedProgress = mergeProgressState(
+        deckProgress,
+        snapshot.deckProgress,
+        mergedSections,
+      );
+      const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
+      const nextSelectedDeckId = mergedDeckIds.has(snapshot.selectedDeckId)
+        ? snapshot.selectedDeckId
+        : selectedDeckId;
+
+      startTransition(() => {
+        setLibrarySections(mergedSections);
+        setDeckProgress(mergedProgress);
+        setSelectedDeckId(nextSelectedDeckId || defaultDeckId);
+      });
+
+      setSyncKey(activeSyncKey);
+      setSyncKeyInput(activeSyncKey);
+      cloudSyncReadyRef.current = true;
+      setSyncState("saved");
+      setSyncMessage("Merged the cloud library with this device. New changes will auto-save.");
+    } catch (error) {
+      setSyncState("error");
+      setSyncMessage(error instanceof Error ? error.message : "Could not load from cloud.");
+    }
+  };
+
+  const handleSaveThisBrowserToCloud = async () => {
+    const activeSyncKey = normalizeSyncKey(syncKeyInput || syncKey);
+
+    if (!isSyncKeyValid(activeSyncKey)) {
+      setSyncState("error");
+      setSyncMessage("Enter a valid sync key before saving to cloud.");
+      return;
+    }
+
+    setSyncState("saving");
+    setSyncMessage("Saving this device's library to cloud...");
+
+    try {
+      await saveSnapshotToCloud(activeSyncKey, snapshotRef.current);
+      setSyncKey(activeSyncKey);
+      setSyncKeyInput(activeSyncKey);
+      cloudSyncReadyRef.current = true;
+      setSyncState("saved");
+      setSyncMessage("Saved to cloud. Use this key on your phone or PC and load cloud.");
+    } catch (error) {
+      setSyncState("error");
+      setSyncMessage(error instanceof Error ? error.message : "Could not save to cloud.");
+    }
+  };
+
   useEffect(() => {
     const nextDecks = flattenDecks(librarySections);
 
@@ -588,6 +883,108 @@ export default function App() {
   }, [selectedDeckId]);
 
   useEffect(() => {
+    snapshotRef.current = createLibrarySnapshot({
+      librarySections,
+      deckProgress,
+      selectedDeckId,
+      recentDeckIds: [],
+    });
+  }, [librarySections, deckProgress, selectedDeckId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (syncKey) {
+      window.localStorage.setItem(SYNC_KEY_STORAGE_KEY, syncKey);
+    } else {
+      window.localStorage.removeItem(SYNC_KEY_STORAGE_KEY);
+    }
+  }, [syncKey]);
+
+  useEffect(() => {
+    if (!syncKey || cloudSyncLoadKeyRef.current === syncKey) {
+      return;
+    }
+
+    cloudSyncLoadKeyRef.current = syncKey;
+    cloudSyncReadyRef.current = false;
+    setSyncState("loading");
+    setSyncMessage("Connecting this device to cloud...");
+
+    fetchCloudSnapshot(syncKey)
+      .then((payload) => {
+        if (!payload.exists) {
+          return saveSnapshotToCloud(syncKey, snapshotRef.current).then(() => {
+            cloudSyncReadyRef.current = true;
+            setSyncState("saved");
+            setSyncMessage("Created a cloud library for this key. Changes will auto-save.");
+          });
+        }
+
+        const snapshot = parseLibrarySnapshot(payload.snapshot);
+
+        if (!snapshot) {
+          throw new Error("The cloud library was not in the expected format.");
+        }
+
+        const mergedSections = mergeSections(librarySections, snapshot.librarySections);
+        const mergedProgress = mergeProgressState(
+          deckProgress,
+          snapshot.deckProgress,
+          mergedSections,
+        );
+        const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
+        const nextSelectedDeckId = mergedDeckIds.has(selectedDeckId)
+          ? selectedDeckId
+          : snapshot.selectedDeckId;
+
+        startTransition(() => {
+          setLibrarySections(mergedSections);
+          setDeckProgress(mergedProgress);
+          setSelectedDeckId(nextSelectedDeckId || defaultDeckId);
+        });
+
+        cloudSyncReadyRef.current = true;
+        setSyncState("saved");
+        setSyncMessage("Cloud sync is active on this device. Changes will auto-save.");
+      })
+      .catch((error) => {
+        cloudSyncLoadKeyRef.current = "";
+        setSyncState("error");
+        setSyncMessage(
+          error instanceof Error ? error.message : "Could not connect to cloud sync.",
+        );
+      });
+  }, [syncKey]);
+
+  useEffect(() => {
+    if (!syncKey || !cloudSyncReadyRef.current) {
+      return;
+    }
+
+    setSyncState("saving");
+    setSyncMessage("Auto-saving changes to cloud...");
+
+    const timer = window.setTimeout(() => {
+      saveSnapshotToCloud(syncKey, snapshotRef.current)
+        .then(() => {
+          setSyncState("saved");
+          setSyncMessage("Cloud sync is up to date.");
+        })
+        .catch((error) => {
+          setSyncState("error");
+          setSyncMessage(
+            error instanceof Error ? error.message : "Cloud auto-save failed.",
+          );
+        });
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [librarySections, deckProgress, selectedDeckId, syncKey]);
+
+  useEffect(() => {
     setShowCardImporter(false);
     setCardPaste("");
     setCardImportMessage("");
@@ -659,6 +1056,86 @@ export default function App() {
           cards in the way Quizlet exports them.
         </p>
 
+        <div className="composer-panel sync-panel">
+          <div className="composer-head">
+            <strong>Cloud sync</strong>
+            <button
+              type="button"
+              className="plain-link"
+              onClick={() => setShowSyncPanel((current) => !current)}
+              aria-expanded={showSyncPanel}
+            >
+              {showSyncPanel ? "Hide" : "Show"}
+            </button>
+          </div>
+
+          {showSyncPanel ? (
+            <>
+              <label className="field">
+                <span>Sync key</span>
+                <input
+                  type="text"
+                  value={syncKeyInput}
+                  onChange={(event) => {
+                    cloudSyncReadyRef.current = false;
+                    setSyncKeyInput(event.target.value);
+                  }}
+                  placeholder="Shared cloud library key"
+                />
+              </label>
+
+              <p className="hint">
+                This app auto-loads and auto-saves the shared cloud library. Use
+                a different key only when you want a separate private library.
+              </p>
+
+              <div className="composer-actions">
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={handleApplySyncKey}
+                >
+                  Use key
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={handleLoadFromCloud}
+                  disabled={syncState === "loading" || syncState === "saving"}
+                >
+                  Load cloud
+                </button>
+                <button
+                  type="button"
+                  className="accent-button"
+                  onClick={handleSaveThisBrowserToCloud}
+                  disabled={syncState === "loading" || syncState === "saving"}
+                >
+                  Save to cloud
+                </button>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={handleGenerateSyncKey}
+                >
+                  New key
+                </button>
+              </div>
+            </>
+          ) : null}
+
+          <p
+            className={
+              syncState === "error"
+                ? "message-line error"
+                : syncState === "saved"
+                  ? "message-line success"
+                  : "message-line"
+            }
+          >
+            {syncMessage}
+          </p>
+        </div>
 
         <div className="library-stack-header">
           <button

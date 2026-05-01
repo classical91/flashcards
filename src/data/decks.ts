@@ -1,5 +1,6 @@
 import { DeckSection } from "./deckBuilder";
 import { emotions1Deck } from "./emotions1";
+import { emotions2Deck } from "./emotions2";
 import { positiveAdjectivesDeck } from "./positiveAdjectives";
 
 export const starterSections: DeckSection[] = [
@@ -13,7 +14,7 @@ export const starterSections: DeckSection[] = [
     id: "wikipedia",
     title: "Wikipedia",
     description: "Reference-style decks adapted from encyclopedia topics.",
-    decks: [emotions1Deck],
+    decks: [emotions1Deck, emotions2Deck],
   },
   {
     id: "oxford-dictionaries",
