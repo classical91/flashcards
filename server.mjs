@@ -53,11 +53,16 @@ const initializeDatabase = async () => {
   `);
 };
 
-const initTimeout = new Promise((_, reject) =>
+const initDbPromise = initializeDatabase();
+const initTimeoutPromise = new Promise((_, reject) =>
   setTimeout(() => reject(new Error("Database connection timed out")), 9000),
 );
 
-const databaseReady = Promise.race([initializeDatabase(), initTimeout]).catch((error) => {
+// Suppress unhandled rejections from whichever promise loses the race
+initDbPromise.catch(() => {});
+initTimeoutPromise.catch(() => {});
+
+const databaseReady = Promise.race([initDbPromise, initTimeoutPromise]).catch((error) => {
   console.error("Failed to initialize Postgres storage", error);
   pool?.end().catch((endError) => {
     console.error("Failed to close unavailable Postgres pool", endError);
