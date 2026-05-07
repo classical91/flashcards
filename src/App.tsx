@@ -543,6 +543,13 @@ export default function App() {
     setToast(`Added "${word}".`);
   };
 
+  const openRandomDeck = (decks: Deck[]) => {
+    if (!decks.length) return;
+    const deck = decks[Math.floor(Math.random() * decks.length)];
+    setSelectedDeckId(deck.id);
+    setView({ kind: "study", deckId: deck.id });
+  };
+
   const handleDeleteCard = (cardId: string) => {
     if (!selectedDeck) return;
     const card = selectedDeck.cards.find((c) => c.id === cardId);
@@ -1022,6 +1029,14 @@ export default function App() {
               </button>
               <button
                 className="mini-btn"
+                onClick={() => openRandomDeck(allDecks)}
+                disabled={allDecks.length === 0}
+                title="Open a random deck from any topic"
+              >
+                Shuffle all
+              </button>
+              <button
+                className="mini-btn"
                 onClick={() => {
                   setSectionComposerMessage("");
                   setSectionComposer({ title: "", description: "" });
@@ -1191,6 +1206,14 @@ export default function App() {
             </button>
             <div className="top-title">{section.title}</div>
             <div className="topbar-right">
+              <button
+                className="topbar-btn"
+                onClick={() => openRandomDeck(section.decks)}
+                disabled={section.decks.length === 0}
+                title="Open a random deck from this topic"
+              >
+                Random deck
+              </button>
               <button
                 className="topbar-btn"
                 onClick={() => {
