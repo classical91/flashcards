@@ -181,9 +181,10 @@ const readJsonBody = async (request) =>
     request.on("data", (chunk) => {
       totalLength += chunk.length;
 
-      if (totalLength > 1024 * 1024) {
-        reject(new Error("Request body exceeded 1 MB."));
-        request.destroy();
+      if (totalLength > 10 * 1024 * 1024) {
+        reject(new Error("Request body exceeded 10 MB."));
+        // Drain and abort without destroying the socket so we can still send a response
+        request.resume();
         return;
       }
 
@@ -481,7 +482,19 @@ const handleApiRequest = async (request, response, pathname) => {
   }
 
   if (request.method === "PUT") {
-    const body = await readJsonBody(request);
+    let body;
+    try {
+      body = await readJsonBody(request);
+    } catch (readError) {
+      const msg = readError instanceof Error ? readError.message : String(readError);
+      if (msg.includes("exceeded")) {
+        return sendJson(response, 413, {
+          error: "payload_too_large",
+          message: msg,
+        });
+      }
+      throw readError;
+    }
 
     if (!isLibrarySnapshot(body)) {
       return sendJson(response, 400, {
