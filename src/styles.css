@@ -134,6 +134,26 @@ h1 {
   max-width: 34ch;
 }
 
+
+.library-stack-header {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.toggle-all-button {
+  padding: 0;
+  background: none;
+  border: none;
+  font-size: 0.78rem;
+  color: var(--accent-deep);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.toggle-all-button:hover {
+  opacity: 0.7;
+}
+
 .library-stack {
   display: grid;
   gap: 1rem;
@@ -153,17 +173,44 @@ h1 {
 
 .section-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
 }
 
-.section-head p,
+.section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.section-toggle:hover .section-title {
+  opacity: 0.7;
+}
+
+.section-chevron {
+  font-size: 1rem;
+  color: var(--muted);
+  display: inline-block;
+  transition: transform 200ms ease;
+  line-height: 1;
+}
+
+.section-chevron.open {
+  transform: rotate(90deg);
+}
+
+.section-head .section-title,
 .selected-block h2 {
   margin: 0;
 }
 
-.section-head p {
+.section-title {
   text-transform: uppercase;
   letter-spacing: 0.14em;
   font-size: 0.78rem;
@@ -171,13 +218,8 @@ h1 {
   font-weight: 700;
 }
 
-.section-head span,
 .selected-block p {
   color: var(--muted);
-}
-
-.section-head span {
-  font-size: 0.93rem;
 }
 
 .inline-button,
@@ -382,6 +424,8 @@ h1 {
 .composer-actions {
   display: flex;
   justify-content: flex-start;
+  gap: 0.55rem;
+  flex-wrap: wrap;
 }
 
 .meter-block {
@@ -556,22 +600,18 @@ h1 {
 
 .card-shell {
   position: relative;
-  perspective: 1800px;
   width: 100%;
   min-height: 26rem;
   padding: 0;
   background: transparent;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .flashcard {
   position: relative;
   min-height: 26rem;
-  transform-style: preserve-3d;
-  transition: transform 620ms cubic-bezier(0.2, 0.75, 0.2, 1);
-}
-
-.flashcard.is-flipped {
-  transform: rotateY(180deg);
 }
 
 .card-face {
@@ -583,7 +623,6 @@ h1 {
   padding: clamp(1.25rem, 3vw, 2rem);
   border-radius: 1.8rem;
   border: 1px solid rgba(111, 61, 39, 0.12);
-  backface-visibility: hidden;
   overflow: hidden;
   text-align: left;
   box-shadow:
@@ -595,13 +634,30 @@ h1 {
   background:
     linear-gradient(140deg, rgba(255, 255, 255, 0.88), rgba(255, 248, 239, 0.94)),
     linear-gradient(135deg, rgba(255, 213, 157, 0.08), transparent 54%);
+  transform: scaleX(1);
+  opacity: 1;
+  transition: transform 180ms ease-in, opacity 0ms linear 180ms;
 }
 
 .card-back {
   background:
     linear-gradient(160deg, rgba(253, 241, 228, 0.97), rgba(255, 250, 243, 0.9)),
     radial-gradient(circle at top right, rgba(201, 90, 61, 0.08), transparent 36%);
-  transform: rotateY(180deg);
+  transform: scaleX(0);
+  opacity: 0;
+  transition: transform 180ms ease-out 180ms, opacity 0ms linear 180ms;
+}
+
+.flashcard.is-flipped .card-front {
+  transform: scaleX(0);
+  opacity: 0;
+  transition: transform 180ms ease-in, opacity 0ms linear 180ms;
+}
+
+.flashcard.is-flipped .card-back {
+  transform: scaleX(1);
+  opacity: 1;
+  transition: transform 180ms ease-out 180ms, opacity 0ms linear 180ms;
 }
 
 .card-face::after {
@@ -839,4 +895,120 @@ h1 {
   .import-stats {
     display: grid;
   }
+}
+
+/* -- New management controls --------------------------------- */
+
+.library-stack-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.section-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.danger-link {
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: #b91c1c;
+  cursor: pointer;
+  font-size: 0.82rem;
+  opacity: 0.75;
+  transition: opacity 150ms ease;
+}
+
+.danger-link:hover {
+  opacity: 1;
+}
+
+.deck-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+
+.deck-row .deck-button {
+  flex: 1;
+}
+
+.deck-delete-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  padding: 0;
+  border: 1px solid rgba(99, 61, 44, 0.12);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.46);
+  color: #b91c1c;
+  font-size: 0.9rem;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 150ms ease, background 150ms ease;
+}
+
+.deck-delete-btn:hover {
+  opacity: 1;
+  background: rgba(185, 28, 28, 0.08);
+}
+
+.danger-text {
+  color: #b91c1c !important;
+}
+
+.danger-button {
+  padding: 0.6rem 1.3rem;
+  border: none;
+  border-radius: 0.75rem;
+  background: #b91c1c;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.danger-button:hover {
+  background: #991b1b;
+}
+
+/* Confirm dialog overlay */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(33, 22, 17, 0.45);
+  backdrop-filter: blur(3px);
+  padding: 1.5rem;
+}
+
+.confirm-box {
+  background: #fffaf6;
+  border-radius: 1.25rem;
+  padding: 1.75rem 2rem;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 1.5rem 3rem rgba(33, 22, 17, 0.22);
+}
+
+.confirm-box p {
+  margin: 0 0 1.5rem;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }

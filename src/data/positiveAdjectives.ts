@@ -172,7 +172,6 @@ improving
 export const positiveAdjectivesDeck = createDeckFromRaw({
   id: "positive-adjectives",
   title: "Positive Adjectives",
-  subtitle: "A starter deck of encouraging, character-rich vocabulary to study and revisit.",
   raw: rawPositiveAdjectives,
   protectedTerms: ["high-minded"],
   fallbackDefinitions: {
