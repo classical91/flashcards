@@ -269,6 +269,8 @@ export default function App() {
   const [showCardImporter, setShowCardImporter] = useState(false);
   const [cardPaste, setCardPaste] = useState("");
   const [cardImportMessage, setCardImportMessage] = useState("");
+  const [showCardEditor, setShowCardEditor] = useState(false);
+  const [cardEdits, setCardEdits] = useState<Record<string, { term: string; definition: string }>>({});
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const [sectionComposer, setSectionComposer] = useState<SectionComposer | null>(null);
   const [sectionComposerMessage, setSectionComposerMessage] = useState("");
@@ -570,6 +572,34 @@ export default function App() {
       setToast(`Deleted card.`);
       setConfirmDialog(null);
     });
+  };
+
+  const handleUpdateCard = (cardId: string) => {
+    if (!selectedDeck) return;
+    const edits = cardEdits[cardId];
+    if (!edits) return;
+    const term = edits.term.trim();
+    const definition = edits.definition.trim();
+    if (!term || !definition) {
+      setToast("Card needs both a term and a definition.");
+      return;
+    }
+    startTransition(() => {
+      setLibrarySections((curr) =>
+        updateDeckInSections(curr, selectedDeck.id, (deck) => ({
+          ...deck,
+          cards: deck.cards.map((card) =>
+            card.id === cardId ? { ...card, term, definition } : card,
+          ),
+        })),
+      );
+    });
+    setCardEdits((prev) => {
+      const next = { ...prev };
+      delete next[cardId];
+      return next;
+    });
+    setToast(`Card updated.`);
   };
 
   const handleDeleteDeck = (deckId: string) => {
@@ -944,6 +974,8 @@ export default function App() {
     setCardPaste("");
     setCardImportMessage("");
     setIsAutoPlaying(false);
+    setShowCardEditor(false);
+    setCardEdits({});
   }, [selectedDeckId]);
 
   useEffect(() => {
@@ -1488,6 +1520,70 @@ export default function App() {
         </section>
 
         <section className="bottom-panel" aria-label="Deck tools">
+          {showCardEditor && selectedDeck && (
+            <div className="card-editor-panel">
+              <div className="panel-card-head">
+                <strong>Edit cards ({selectedDeck.cards.length})</strong>
+                <button
+                  className="link-btn"
+                  onClick={() => { setShowCardEditor(false); setCardEdits({}); }}
+                >
+                  Close
+                </button>
+              </div>
+              <div className="card-editor-list">
+                {selectedDeck.cards.map((card) => {
+                  const edit = cardEdits[card.id];
+                  const term = edit ? edit.term : card.term;
+                  const definition = edit ? edit.definition : card.definition;
+                  const isDirty = !!edit;
+                  return (
+                    <div key={card.id} className="card-editor-row">
+                      <input
+                        className="card-editor-term"
+                        value={term}
+                        placeholder="Term"
+                        onChange={(e) =>
+                          setCardEdits((prev) => ({
+                            ...prev,
+                            [card.id]: { term: e.target.value, definition: prev[card.id]?.definition ?? card.definition },
+                          }))
+                        }
+                      />
+                      <input
+                        className="card-editor-def"
+                        value={definition}
+                        placeholder="Definition"
+                        onChange={(e) =>
+                          setCardEdits((prev) => ({
+                            ...prev,
+                            [card.id]: { term: prev[card.id]?.term ?? card.term, definition: e.target.value },
+                          }))
+                        }
+                        onKeyDown={(e) => { if (e.key === "Enter") handleUpdateCard(card.id); }}
+                      />
+                      <button
+                        className={`mini-btn${isDirty ? " primary" : ""}`}
+                        disabled={!isDirty}
+                        onClick={() => handleUpdateCard(card.id)}
+                        title="Save changes"
+                      >
+                        Save
+                      </button>
+                      <button
+                        className="mini-btn danger"
+                        onClick={() => handleDeleteCard(card.id)}
+                        title="Delete card"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {showCardImporter && (
             <div className="bulk-import-panel">
               <div className="panel-card-head">
@@ -1546,9 +1642,15 @@ export default function App() {
           </div>
           <button
             className="mini-btn"
-            onClick={() => { setShowCardImporter((v) => !v); setCardImportMessage(""); }}
+            onClick={() => { setShowCardImporter((v) => !v); setCardImportMessage(""); if (showCardEditor) setShowCardEditor(false); }}
           >
             {showCardImporter ? "Hide import" : "Bulk import"}
+          </button>
+          <button
+            className="mini-btn"
+            onClick={() => { setShowCardEditor((v) => !v); setCardEdits({}); if (showCardImporter) { setShowCardImporter(false); setCardImportMessage(""); } }}
+          >
+            {showCardEditor ? "Hide editor" : "Edit list"}
           </button>
           <button className="mini-btn" onClick={resetProgress}>Reset</button>
           {currentCard && (

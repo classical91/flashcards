@@ -745,6 +745,68 @@ button {
   gap: 10px;
 }
 
+/* ── Card editor panel ───────────────────────────────────────────────────── */
+
+.card-editor-panel {
+  width: 100%;
+  max-width: 760px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.card-editor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.card-editor-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.card-editor-term {
+  flex: 0 0 160px;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.card-editor-def {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.card-editor-term:focus,
+.card-editor-def:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.mini-btn.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
 /* ── Link / danger link buttons ───────────────────────────────────────────── */
 
 .link-btn {
