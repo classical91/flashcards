@@ -394,6 +394,11 @@ export default function App() {
     }));
   };
 
+  const handleFlipRef = useRef(handleFlip);
+  handleFlipRef.current = handleFlip;
+  const moveToCardRef = useRef(moveToCard);
+  moveToCardRef.current = moveToCard;
+
   const handleShuffle = () => {
     if (!selectedDeck) return;
     startTransition(() => {
@@ -966,13 +971,17 @@ export default function App() {
 
   useEffect(() => {
     if (!isAutoPlaying || !currentCard || !activeProgress || view.kind !== "study") return;
-    const delay = activeProgress.isFlipped ? 3000 : 5000;
+    const isFlipped = activeProgress.isFlipped;
+    const delay = isFlipped ? 3000 : 5000;
     const timer = setTimeout(() => {
-      if (activeProgress.isFlipped) moveToCard(1);
-      else handleFlip();
+      if (isFlipped) moveToCardRef.current(1);
+      else handleFlipRef.current();
     }, delay);
     return () => clearTimeout(timer);
-  });
+    // Only restart when autoplay is toggled, the card changes, or the flip state changes.
+    // Omitting other deps intentionally so unrelated re-renders (e.g. cloud sync) don't cancel the timer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAutoPlaying, currentCard?.id, activeProgress?.isFlipped, view.kind]);
 
   // ── Shared overlays ─────────────────────────────────────────────────────────
 
