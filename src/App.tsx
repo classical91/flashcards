@@ -3,7 +3,6 @@ import { defaultDeckId, starterSections } from "./data/decks";
 import {
   Deck,
   DeckSection,
-  Flashcard,
   createUniqueId,
   parsePastedFlashcards,
   withCardIds,
@@ -42,6 +41,16 @@ type ConfirmDialog = {
 
 type SyncState = "idle" | "loading" | "saving" | "saved" | "error";
 
+type ViewState =
+  | { kind: "home" }
+  | { kind: "section"; sectionId: string }
+  | { kind: "study"; deckId: string };
+
+type AiModal = {
+  word: string;
+  prompt: string;
+} | null;
+
 const LIBRARY_STORAGE_KEY = "flashcards.library.v2";
 const PROGRESS_STORAGE_KEY = "flashcards.progress.v2";
 const SELECTED_DECK_STORAGE_KEY = "flashcards.selectedDeck.v2";
@@ -50,14 +59,12 @@ const DEFAULT_SYNC_KEY =
   import.meta.env.VITE_FLASHCARDS_SYNC_KEY?.trim() || "jasons-flashcards-library";
 const syncKeyPattern = /^[A-Za-z0-9_-]{8,120}$/;
 
-const shuffleCards = (cards: Flashcard[]) => {
+const shuffleCards = (cards: { id: string; term: string; definition: string }[]) => {
   const copy = [...cards];
-
   for (let index = copy.length - 1; index > 0; index -= 1) {
     const swapIndex = Math.floor(Math.random() * (index + 1));
     [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
   }
-
   return copy;
 };
 
@@ -72,7 +79,6 @@ const cloneSections = (sections: DeckSection[]) =>
 
 const mergeDeck = (cloudDeck: Deck, localDeck: Deck): Deck => {
   const cloudCardIds = new Set(cloudDeck.cards.map((card) => card.id));
-
   return {
     ...cloudDeck,
     cards: [
@@ -84,15 +90,11 @@ const mergeDeck = (cloudDeck: Deck, localDeck: Deck): Deck => {
   };
 };
 
-const mergeSections = (
-  localSections: DeckSection[],
-  cloudSections: DeckSection[],
-) => {
-  const localSectionsById = new Map(localSections.map((section) => [section.id, section]));
-  const cloudSectionIds = new Set(cloudSections.map((section) => section.id));
+const mergeSections = (localSections: DeckSection[], cloudSections: DeckSection[]) => {
+  const localSectionsById = new Map(localSections.map((s) => [s.id, s]));
+  const cloudSectionIds = new Set(cloudSections.map((s) => s.id));
   const mergedSections = cloudSections.map((cloudSection) => {
     const localSection = localSectionsById.get(cloudSection.id);
-
     if (!localSection) {
       return {
         ...cloudSection,
@@ -102,10 +104,8 @@ const mergeSections = (
         })),
       };
     }
-
     const localDecksById = new Map(localSection.decks.map((deck) => [deck.id, deck]));
     const cloudDeckIds = new Set(cloudSection.decks.map((deck) => deck.id));
-
     return {
       ...cloudSection,
       decks: [
@@ -115,14 +115,10 @@ const mergeSections = (
         }),
         ...localSection.decks
           .filter((deck) => !cloudDeckIds.has(deck.id))
-          .map((deck) => ({
-            ...deck,
-            cards: deck.cards.map((card) => ({ ...card })),
-          })),
+          .map((deck) => ({ ...deck, cards: deck.cards.map((card) => ({ ...card })) })),
       ],
     };
   });
-
   return [
     ...mergedSections,
     ...localSections
@@ -137,8 +133,7 @@ const mergeSections = (
   ];
 };
 
-const flattenDecks = (sections: DeckSection[]) =>
-  sections.flatMap((section) => section.decks);
+const flattenDecks = (sections: DeckSection[]) => sections.flatMap((s) => s.decks);
 
 const findDeckById = (sections: DeckSection[], deckId: string) =>
   flattenDecks(sections).find((deck) => deck.id === deckId) ?? null;
@@ -161,23 +156,12 @@ const buildProgressState = (sections: DeckSection[]) =>
   ) as Record<string, DeckProgress>;
 
 const loadLibrarySections = () => {
-  if (typeof window === "undefined") {
-    return cloneSections(starterSections);
-  }
-
+  if (typeof window === "undefined") return cloneSections(starterSections);
   const saved = window.localStorage.getItem(LIBRARY_STORAGE_KEY);
-
-  if (!saved) {
-    return cloneSections(starterSections);
-  }
-
+  if (!saved) return cloneSections(starterSections);
   try {
     const parsed = JSON.parse(saved) as DeckSection[];
-
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      return cloneSections(starterSections);
-    }
-
+    if (!Array.isArray(parsed) || parsed.length === 0) return cloneSections(starterSections);
     return parsed;
   } catch {
     return cloneSections(starterSections);
@@ -185,23 +169,12 @@ const loadLibrarySections = () => {
 };
 
 const loadProgressState = (sections: DeckSection[]) => {
-  if (typeof window === "undefined") {
-    return buildProgressState(sections);
-  }
-
+  if (typeof window === "undefined") return buildProgressState(sections);
   const saved = window.localStorage.getItem(PROGRESS_STORAGE_KEY);
-
-  if (!saved) {
-    return buildProgressState(sections);
-  }
-
+  if (!saved) return buildProgressState(sections);
   try {
     const parsed = JSON.parse(saved) as Record<string, DeckProgress>;
-
-    if (!parsed || typeof parsed !== "object") {
-      return buildProgressState(sections);
-    }
-
+    if (!parsed || typeof parsed !== "object") return buildProgressState(sections);
     return parsed;
   } catch {
     return buildProgressState(sections);
@@ -209,30 +182,22 @@ const loadProgressState = (sections: DeckSection[]) => {
 };
 
 const loadSelectedDeckId = () => {
-  if (typeof window === "undefined") {
-    return defaultDeckId;
-  }
-
+  if (typeof window === "undefined") return defaultDeckId;
   return window.localStorage.getItem(SELECTED_DECK_STORAGE_KEY) ?? defaultDeckId;
 };
 
 const normalizeSyncKey = (value: string) => value.trim();
-
 const isSyncKeyValid = (value: string) => syncKeyPattern.test(value);
 
 const createSyncKey = () => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID().replace(/-/g, "").slice(0, 24);
   }
-
   return Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
 };
 
 const loadSyncKey = () => {
-  if (typeof window === "undefined") {
-    return DEFAULT_SYNC_KEY;
-  }
-
+  if (typeof window === "undefined") return DEFAULT_SYNC_KEY;
   const saved = window.localStorage.getItem(SYNC_KEY_STORAGE_KEY) ?? "";
   return isSyncKeyValid(saved) ? saved : DEFAULT_SYNC_KEY;
 };
@@ -244,23 +209,16 @@ const getFetchErrorMessage = async (response: Response) => {
   } catch {
     try {
       const message = (await response.text()).trim();
-
-      if (message) {
-        return `${message} (${response.status})`;
-      }
+      if (message) return `${message} (${response.status})`;
     } catch {
-      // Fall through to the status-only error below.
+      // fall through
     }
-
     return `Request failed with ${response.status}.`;
   }
 };
 
 const isTypingTarget = (target: EventTarget | null) => {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
+  if (!(target instanceof HTMLElement)) return false;
   return (
     target.isContentEditable ||
     target.tagName === "INPUT" ||
@@ -285,13 +243,10 @@ const mergeProgressState = (
   sections: DeckSection[],
 ) => {
   const mergedProgress: Record<string, DeckProgress> = {};
-
   flattenDecks(sections).forEach((deck) => {
     const cloudDeckProgress = cloudProgress[deck.id];
     const localDeckProgress = localProgress[deck.id];
-    const baseProgress =
-      cloudDeckProgress ?? localDeckProgress ?? createDeckProgress(deck);
-
+    const baseProgress = cloudDeckProgress ?? localDeckProgress ?? createDeckProgress(deck);
     mergedProgress[deck.id] = {
       ...baseProgress,
       knownIds: Array.from(
@@ -302,19 +257,15 @@ const mergeProgressState = (
       ),
     };
   });
-
   return mergedProgress;
 };
 
 export default function App() {
   const [librarySections, setLibrarySections] = useState(loadLibrarySections);
-  const [deckProgress, setDeckProgress] = useState(() =>
-    loadProgressState(librarySections),
-  );
+  const [deckProgress, setDeckProgress] = useState(() => loadProgressState(librarySections));
   const [selectedDeckId, setSelectedDeckId] = useState(loadSelectedDeckId);
   const [deckComposer, setDeckComposer] = useState<DeckComposer | null>(null);
   const [deckComposerMessage, setDeckComposerMessage] = useState("");
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set());
   const [showCardImporter, setShowCardImporter] = useState(false);
   const [cardPaste, setCardPaste] = useState("");
   const [cardImportMessage, setCardImportMessage] = useState("");
@@ -329,7 +280,14 @@ export default function App() {
   const [syncMessage, setSyncMessage] = useState(
     "Cloud sync starts automatically for this shared library.",
   );
-  const studyPanelRef = useRef<HTMLElement>(null);
+  const [view, setView] = useState<ViewState>({ kind: "home" });
+  const [toast, setToast] = useState(
+    "Flashcard = word on the front, definition on the back. Google/AI tools are separate for deeper understanding.",
+  );
+  const [aiModal, setAiModal] = useState<AiModal>(null);
+  const [wordInput, setWordInput] = useState("");
+  const [defInput, setDefInput] = useState("");
+
   const cloudSyncReadyRef = useRef(false);
   const cloudSyncLoadKeyRef = useRef("");
   const snapshotRef = useRef<LibrarySnapshot>(
@@ -368,10 +326,7 @@ export default function App() {
     [selectedDeck, deckProgress],
   );
 
-  const knownSet = useMemo(
-    () => new Set(activeProgress?.knownIds ?? []),
-    [activeProgress],
-  );
+  const knownSet = useMemo(() => new Set(activeProgress?.knownIds ?? []), [activeProgress]);
 
   const visibleCards = useMemo(() => {
     if (!selectedDeck) return [];
@@ -396,7 +351,6 @@ export default function App() {
 
   const totalCards = selectedDeck?.cards.length ?? 0;
   const knownCount = activeProgress?.knownIds.length ?? 0;
-  const completionRatio = totalCards ? knownCount / totalCards : 0;
   const remainingCount = totalCards - knownCount;
   const hasRemainingCards = remainingCount > 0;
   const currentCardIsKnown = currentCard ? knownSet.has(currentCard.id) : false;
@@ -412,45 +366,27 @@ export default function App() {
   );
 
   const cardImportPreview = useMemo(
-    () =>
-      cardPaste ? parsePastedFlashcards(cardPaste) : { cards: [], invalidLines: [] },
+    () => (cardPaste ? parsePastedFlashcards(cardPaste) : { cards: [], invalidLines: [] }),
     [cardPaste],
   );
 
-  const updateSelectedDeckProgress = (
-    updater: (progress: DeckProgress) => DeckProgress,
-  ) => {
-    if (!selectedDeck) {
-      return;
-    }
-
+  const updateSelectedDeckProgress = (updater: (progress: DeckProgress) => DeckProgress) => {
+    if (!selectedDeck) return;
     setDeckProgress((currentProgress) => {
       const nextProgress = updater(
         currentProgress[selectedDeck.id] ?? createDeckProgress(selectedDeck),
       );
-
-      return {
-        ...currentProgress,
-        [selectedDeck.id]: nextProgress,
-      };
+      return { ...currentProgress, [selectedDeck.id]: nextProgress };
     });
   };
 
   const handleFlip = () => {
-    updateSelectedDeckProgress((progress) => ({
-      ...progress,
-      isFlipped: !progress.isFlipped,
-    }));
+    updateSelectedDeckProgress((progress) => ({ ...progress, isFlipped: !progress.isFlipped }));
   };
 
   const moveToCard = (direction: 1 | -1) => {
-    if (!currentCard || !selectedDeck || !activeProgress || !visibleCards.length) {
-      return;
-    }
-
-    const nextIndex =
-      (cardPosition + direction + visibleCards.length) % visibleCards.length;
-
+    if (!currentCard || !selectedDeck || !activeProgress || !visibleCards.length) return;
+    const nextIndex = (cardPosition + direction + visibleCards.length) % visibleCards.length;
     updateSelectedDeckProgress((progress) => ({
       ...progress,
       currentCardId: visibleCards[nextIndex].id,
@@ -459,10 +395,7 @@ export default function App() {
   };
 
   const handleShuffle = () => {
-    if (!selectedDeck) {
-      return;
-    }
-
+    if (!selectedDeck) return;
     startTransition(() => {
       setLibrarySections((currentSections) =>
         updateDeckInSections(currentSections, selectedDeck.id, (deck) => ({
@@ -471,39 +404,30 @@ export default function App() {
         })),
       );
     });
+    setToast("Deck shuffled.");
   };
 
   const handleStudyModeChange = (mode: StudyMode) => {
-    updateSelectedDeckProgress((progress) => ({
-      ...progress,
-      studyMode: mode,
-    }));
+    updateSelectedDeckProgress((progress) => ({ ...progress, studyMode: mode }));
   };
 
   const resetProgress = () => {
-    if (!selectedDeck) {
-      return;
-    }
-
+    if (!selectedDeck) return;
     startTransition(() => {
       updateSelectedDeckProgress(() => createDeckProgress(selectedDeck));
     });
+    setToast("Progress reset.");
   };
 
   const toggleKnown = () => {
-    if (!currentCard || !activeProgress) {
-      return;
-    }
-
+    if (!currentCard || !activeProgress) return;
     updateSelectedDeckProgress((progress) => {
       const isKnown = progress.knownIds.includes(currentCard.id);
       let nextCurrentCardId = progress.currentCardId;
-
       if (!isKnown && progress.studyMode === "remaining" && visibleCards.length > 1) {
         const nextIndex = (cardPosition + 1) % visibleCards.length;
         nextCurrentCardId = visibleCards[nextIndex].id;
       }
-
       return {
         ...progress,
         currentCardId: nextCurrentCardId,
@@ -518,19 +442,15 @@ export default function App() {
   const handleCreateDeck = (sectionId: string) => {
     const title = deckComposer?.title.trim() ?? "";
     const subtitle = deckComposer?.subtitle.trim() ?? "";
-
     if (!title) {
       setDeckComposerMessage("Give the new deck a name first.");
       return;
     }
-
     const section = librarySections.find((item) => item.id === sectionId);
-
     if (!section) {
       setDeckComposerMessage("That section is no longer available.");
       return;
     }
-
     const parsed = parsePastedFlashcards(deckComposer?.paste ?? "");
     const deckIds = new Set(allDecks.map((deck) => deck.id));
     const deckId = createUniqueId(title, deckIds);
@@ -541,42 +461,28 @@ export default function App() {
       subtitle: subtitle || `Custom flashcards in ${section.title}.`,
       cards,
     };
-
     setLibrarySections((currentSections) =>
       currentSections.map((item) =>
-        item.id === sectionId
-          ? {
-              ...item,
-              decks: [...item.decks, newDeck],
-            }
-          : item,
+        item.id === sectionId ? { ...item, decks: [...item.decks, newDeck] } : item,
       ),
     );
-
     setDeckProgress((currentProgress) => ({
       ...currentProgress,
       [newDeck.id]: createDeckProgress(newDeck),
     }));
-
     setSelectedDeckId(newDeck.id);
     setDeckComposer(null);
     setDeckComposerMessage("");
   };
 
   const handleAddCards = () => {
-    if (!selectedDeck) {
-      return;
-    }
-
+    if (!selectedDeck) return;
     const parsed = parsePastedFlashcards(cardPaste);
-
     if (parsed.cards.length === 0) {
       setCardImportMessage("Paste at least one valid card line first.");
       return;
     }
-
     const newCards = withCardIds(parsed.cards, selectedDeck.cards.map((card) => card.id));
-
     startTransition(() => {
       setLibrarySections((currentSections) =>
         updateDeckInSections(currentSections, selectedDeck.id, (deck) => ({
@@ -584,49 +490,80 @@ export default function App() {
           cards: [...deck.cards, ...newCards],
         })),
       );
-
       setDeckProgress((currentProgress) => {
         const currentDeckProgress =
           currentProgress[selectedDeck.id] ?? createDeckProgress(selectedDeck);
-
         return {
           ...currentProgress,
           [selectedDeck.id]: {
             ...currentDeckProgress,
-            currentCardId:
-              currentDeckProgress.currentCardId || newCards[0]?.id || "",
+            currentCardId: currentDeckProgress.currentCardId || newCards[0]?.id || "",
           },
         };
       });
     });
-
     setCardPaste("");
     setCardImportMessage(
       `Added ${newCards.length} card${newCards.length === 1 ? "" : "s"} to ${selectedDeck.title}.`,
     );
   };
 
+  const handleAddSingleCard = () => {
+    if (!selectedDeck) return;
+    const word = wordInput.trim();
+    const def = defInput.trim();
+    if (!word || !def) {
+      setToast("Add both a word and a definition.");
+      return;
+    }
+    const existingIds = selectedDeck.cards.map((c) => c.id);
+    const newCards = withCardIds([{ term: word, definition: def }], existingIds);
+    const newCard = newCards[0];
+    if (!newCard) return;
+    startTransition(() => {
+      setLibrarySections((curr) =>
+        updateDeckInSections(curr, selectedDeck.id, (deck) => ({
+          ...deck,
+          cards: [...deck.cards, newCard],
+        })),
+      );
+      setDeckProgress((curr) => {
+        const progress = curr[selectedDeck.id] ?? createDeckProgress(selectedDeck);
+        return {
+          ...curr,
+          [selectedDeck.id]: {
+            ...progress,
+            currentCardId: progress.currentCardId || newCard.id,
+          },
+        };
+      });
+    });
+    setWordInput("");
+    setDefInput("");
+    setToast(`Added "${word}".`);
+  };
+
   const handleDeleteCard = (cardId: string) => {
     if (!selectedDeck) return;
     const card = selectedDeck.cards.find((c) => c.id === cardId);
-    askConfirm(
-      `Delete the card "${card?.term ?? cardId}"? This cannot be undone.`,
-      () => {
-        startTransition(() => {
-          setLibrarySections((currentSections) =>
-            updateDeckInSections(currentSections, selectedDeck.id, (deck) => ({
-              ...deck,
-              cards: deck.cards.filter((c) => c.id !== cardId),
-            })),
-          );
-        });
-        setConfirmDialog(null);
-      },
-    );
+    askConfirm(`Delete the card "${card?.term ?? cardId}"? This cannot be undone.`, () => {
+      startTransition(() => {
+        setLibrarySections((currentSections) =>
+          updateDeckInSections(currentSections, selectedDeck.id, (deck) => ({
+            ...deck,
+            cards: deck.cards.filter((c) => c.id !== cardId),
+          })),
+        );
+      });
+      setToast(`Deleted card.`);
+      setConfirmDialog(null);
+    });
   };
 
   const handleDeleteDeck = (deckId: string) => {
     const deck = flattenDecks(librarySections).find((d) => d.id === deckId);
+    const sectionForDeck = findSectionForDeck(librarySections, deckId);
+    const currentView = view;
     askConfirm(
       `Delete the deck "${deck?.title ?? deckId}" and all its cards? This cannot be undone.`,
       () => {
@@ -641,6 +578,13 @@ export default function App() {
           delete next[deckId];
           return next;
         });
+        if (currentView.kind === "study" && currentView.deckId === deckId) {
+          setView(
+            sectionForDeck
+              ? { kind: "section", sectionId: sectionForDeck.id }
+              : { kind: "home" },
+          );
+        }
         setConfirmDialog(null);
       },
     );
@@ -660,6 +604,7 @@ export default function App() {
           deckIds.forEach((id) => delete next[id]);
           return next;
         });
+        setView({ kind: "home" });
         setConfirmDialog(null);
       },
     );
@@ -679,45 +624,63 @@ export default function App() {
       decks: [],
     };
     setLibrarySections((current) => [...current, newSection]);
-    setExpandedSections((prev) => new Set([...prev, newSection.id]));
     setSectionComposer(null);
     setSectionComposerMessage("");
   };
 
-  const fetchCloudSnapshot = async (activeSyncKey: string) => {
-    const response = await fetch(`/api/libraries/${encodeURIComponent(activeSyncKey)}`);
-
-    if (!response.ok) {
-      throw new Error(await getFetchErrorMessage(response));
-    }
-
-    return (await response.json()) as {
-      exists?: boolean;
-      snapshot?: unknown;
-      storage?: string;
-    };
+  const googleSearch = (type: string) => {
+    if (!currentCard) return;
+    const query = `${currentCard.term} ${type}`;
+    window.open(
+      `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+    setToast(`Opened Google search for "${currentCard.term} ${type}".`);
   };
 
-  const saveSnapshotToCloud = async (
-    activeSyncKey: string,
-    snapshot: LibrarySnapshot,
-  ) => {
+  const showAiModalFn = () => {
+    if (!currentCard) return;
+    const word = currentCard.term;
+    const prompt = `How do I use the word or phrase "${word}" naturally in a sentence? Give me 3 simple example sentences and explain the best everyday use in simple English.`;
+    setAiModal({ word, prompt });
+  };
+
+  const openAI = async (provider: "chatgpt" | "claude" | "gemini") => {
+    if (!aiModal) return;
+    const { word, prompt } = aiModal;
+    try {
+      await navigator.clipboard.writeText(prompt);
+    } catch {
+      // silent fallback
+    }
+    const urls = {
+      chatgpt: "https://chatgpt.com/",
+      claude: "https://claude.ai/",
+      gemini: "https://gemini.google.com/",
+    };
+    window.open(urls[provider], "_blank", "noopener,noreferrer");
+    setAiModal(null);
+    setToast(`Prompt copied. Paste it into ${provider} to ask about "${word}".`);
+  };
+
+  const fetchCloudSnapshot = async (activeSyncKey: string) => {
+    const response = await fetch(`/api/libraries/${encodeURIComponent(activeSyncKey)}`);
+    if (!response.ok) throw new Error(await getFetchErrorMessage(response));
+    return (await response.json()) as { exists?: boolean; snapshot?: unknown; storage?: string };
+  };
+
+  const saveSnapshotToCloud = async (activeSyncKey: string, snapshot: LibrarySnapshot) => {
     const response = await fetch(`/api/libraries/${encodeURIComponent(activeSyncKey)}`, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(snapshot),
     });
-
-    if (!response.ok) {
-      throw new Error(await getFetchErrorMessage(response));
-    }
+    if (!response.ok) throw new Error(await getFetchErrorMessage(response));
   };
 
   const handleApplySyncKey = () => {
     const nextSyncKey = normalizeSyncKey(syncKeyInput);
-
     if (!isSyncKeyValid(nextSyncKey)) {
       cloudSyncReadyRef.current = false;
       setSyncState("error");
@@ -726,7 +689,6 @@ export default function App() {
       );
       return;
     }
-
     cloudSyncReadyRef.current = false;
     setSyncKey(nextSyncKey);
     setSyncKeyInput(nextSyncKey);
@@ -736,7 +698,6 @@ export default function App() {
 
   const handleGenerateSyncKey = () => {
     const nextSyncKey = createSyncKey();
-
     cloudSyncReadyRef.current = false;
     setSyncKey(nextSyncKey);
     setSyncKeyInput(nextSyncKey);
@@ -755,51 +716,36 @@ export default function App() {
 
   const handleLoadFromCloud = async () => {
     const activeSyncKey = normalizeSyncKey(syncKeyInput || syncKey);
-
     if (!isSyncKeyValid(activeSyncKey)) {
       setSyncState("error");
       setSyncMessage("Enter a valid sync key before loading from cloud.");
       return;
     }
-
     cloudSyncReadyRef.current = false;
     setSyncState("loading");
-    setSyncMessage("Loading cloud library from Railway...");
-
+    setSyncMessage("Loading cloud library...");
     try {
       const payload = await fetchCloudSnapshot(activeSyncKey);
-
       if (!payload.exists) {
         setSyncKey(activeSyncKey);
         setSyncKeyInput(activeSyncKey);
         setSyncState("error");
-        setSyncMessage("No cloud library exists for this key yet. Save it from Chrome first.");
+        setSyncMessage("No cloud library exists for this key yet. Save it first.");
         return;
       }
-
       const snapshot = parseLibrarySnapshot(payload.snapshot);
-
-      if (!snapshot) {
-        throw new Error("The cloud library was not in the expected format.");
-      }
-
+      if (!snapshot) throw new Error("The cloud library was not in the expected format.");
       const mergedSections = mergeSections(librarySections, snapshot.librarySections);
-      const mergedProgress = mergeProgressState(
-        deckProgress,
-        snapshot.deckProgress,
-        mergedSections,
-      );
+      const mergedProgress = mergeProgressState(deckProgress, snapshot.deckProgress, mergedSections);
       const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
       const nextSelectedDeckId = mergedDeckIds.has(snapshot.selectedDeckId)
         ? snapshot.selectedDeckId
         : selectedDeckId;
-
       startTransition(() => {
         setLibrarySections(mergedSections);
         setDeckProgress(mergedProgress);
         setSelectedDeckId(nextSelectedDeckId || defaultDeckId);
       });
-
       setSyncKey(activeSyncKey);
       setSyncKeyInput(activeSyncKey);
       cloudSyncReadyRef.current = true;
@@ -813,16 +759,13 @@ export default function App() {
 
   const handleSaveThisBrowserToCloud = async () => {
     const activeSyncKey = normalizeSyncKey(syncKeyInput || syncKey);
-
     if (!isSyncKeyValid(activeSyncKey)) {
       setSyncState("error");
       setSyncMessage("Enter a valid sync key before saving to cloud.");
       return;
     }
-
     setSyncState("saving");
     setSyncMessage("Saving this device's library to cloud...");
-
     try {
       await saveSnapshotToCloud(activeSyncKey, snapshotRef.current);
       setSyncKey(activeSyncKey);
@@ -838,14 +781,11 @@ export default function App() {
 
   useEffect(() => {
     const nextDecks = flattenDecks(librarySections);
-
     if (!nextDecks.some((deck) => deck.id === selectedDeckId)) {
       setSelectedDeckId(nextDecks[0]?.id ?? "");
     }
-
     setDeckProgress((currentProgress) => {
       const nextProgress: Record<string, DeckProgress> = {};
-
       nextDecks.forEach((deck) => {
         const savedProgress = currentProgress[deck.id] ?? createDeckProgress(deck);
         const validCardIds = new Set(deck.cards.map((card) => card.id));
@@ -853,7 +793,6 @@ export default function App() {
         const currentCardId = validCardIds.has(savedProgress.currentCardId)
           ? savedProgress.currentCardId
           : deck.cards[0]?.id ?? "";
-
         nextProgress[deck.id] = {
           ...savedProgress,
           currentCardId,
@@ -861,16 +800,12 @@ export default function App() {
           knownIds,
         };
       });
-
       return nextProgress;
     });
   }, [librarySections, selectedDeckId]);
 
   useEffect(() => {
-    if (!selectedDeck || !activeProgress) {
-      return;
-    }
-
+    if (!selectedDeck || !activeProgress) return;
     if (!selectedDeck.cards.length) {
       if (activeProgress.isFlipped || activeProgress.currentCardId) {
         updateSelectedDeckProgress((progress) => ({
@@ -879,21 +814,14 @@ export default function App() {
           isFlipped: false,
         }));
       }
-
       return;
     }
-
     if (!visibleCards.length) {
       if (activeProgress.isFlipped) {
-        updateSelectedDeckProgress((progress) => ({
-          ...progress,
-          isFlipped: false,
-        }));
+        updateSelectedDeckProgress((progress) => ({ ...progress, isFlipped: false }));
       }
-
       return;
     }
-
     if (!visibleCards.some((card) => card.id === activeProgress.currentCardId)) {
       updateSelectedDeckProgress((progress) => ({
         ...progress,
@@ -904,32 +832,17 @@ export default function App() {
   }, [activeProgress, selectedDeck, visibleCards]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.localStorage.setItem(
-      LIBRARY_STORAGE_KEY,
-      JSON.stringify(librarySections),
-    );
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(librarySections));
   }, [librarySections]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.localStorage.setItem(
-      PROGRESS_STORAGE_KEY,
-      JSON.stringify(deckProgress),
-    );
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(deckProgress));
   }, [deckProgress]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
+    if (typeof window === "undefined") return;
     window.localStorage.setItem(SELECTED_DECK_STORAGE_KEY, selectedDeckId);
   }, [selectedDeckId]);
 
@@ -943,10 +856,7 @@ export default function App() {
   }, [librarySections, deckProgress, selectedDeckId]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
+    if (typeof window === "undefined") return;
     if (syncKey) {
       window.localStorage.setItem(SYNC_KEY_STORAGE_KEY, syncKey);
     } else {
@@ -955,15 +865,11 @@ export default function App() {
   }, [syncKey]);
 
   useEffect(() => {
-    if (!syncKey || cloudSyncLoadKeyRef.current === syncKey) {
-      return;
-    }
-
+    if (!syncKey || cloudSyncLoadKeyRef.current === syncKey) return;
     cloudSyncLoadKeyRef.current = syncKey;
     cloudSyncReadyRef.current = false;
     setSyncState("loading");
     setSyncMessage("Connecting this device to cloud...");
-
     fetchCloudSnapshot(syncKey)
       .then((payload) => {
         if (!payload.exists) {
@@ -973,13 +879,8 @@ export default function App() {
             setSyncMessage("Created a cloud library for this key. Changes will auto-save.");
           });
         }
-
         const snapshot = parseLibrarySnapshot(payload.snapshot);
-
-        if (!snapshot) {
-          throw new Error("The cloud library was not in the expected format.");
-        }
-
+        if (!snapshot) throw new Error("The cloud library was not in the expected format.");
         const mergedSections = mergeSections(librarySections, snapshot.librarySections);
         const mergedProgress = mergeProgressState(
           deckProgress,
@@ -990,13 +891,11 @@ export default function App() {
         const nextSelectedDeckId = mergedDeckIds.has(selectedDeckId)
           ? selectedDeckId
           : snapshot.selectedDeckId;
-
         startTransition(() => {
           setLibrarySections(mergedSections);
           setDeckProgress(mergedProgress);
           setSelectedDeckId(nextSelectedDeckId || defaultDeckId);
         });
-
         cloudSyncReadyRef.current = true;
         setSyncState("saved");
         setSyncMessage("Cloud sync is active on this device. Changes will auto-save.");
@@ -1011,13 +910,9 @@ export default function App() {
   }, [syncKey]);
 
   useEffect(() => {
-    if (!syncKey || !cloudSyncReadyRef.current) {
-      return;
-    }
-
+    if (!syncKey || !cloudSyncReadyRef.current) return;
     setSyncState("saving");
     setSyncMessage("Auto-saving changes to cloud...");
-
     const timer = window.setTimeout(() => {
       saveSnapshotToCloud(syncKey, snapshotRef.current)
         .then(() => {
@@ -1026,12 +921,9 @@ export default function App() {
         })
         .catch((error) => {
           setSyncState("error");
-          setSyncMessage(
-            error instanceof Error ? error.message : "Cloud auto-save failed.",
-          );
+          setSyncMessage(error instanceof Error ? error.message : "Cloud auto-save failed.");
         });
     }, 900);
-
     return () => window.clearTimeout(timer);
   }, [librarySections, deckProgress, selectedDeckId, syncKey]);
 
@@ -1043,762 +935,604 @@ export default function App() {
   }, [selectedDeckId]);
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (isTypingTarget(event.target)) {
-        return;
-      }
+    if (view.kind !== "study") {
+      setIsAutoPlaying(false);
+    }
+  }, [view.kind]);
 
+  useEffect(() => {
+    if (view.kind !== "study") return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) return;
       if (event.key === " " || event.key === "Enter") {
         event.preventDefault();
         handleFlip();
       }
-
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        moveToCard(1);
-      }
-
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        moveToCard(-1);
-      }
-
-      if (event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        toggleKnown();
-      }
-
-      if (event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        handleShuffle();
-      }
+      if (event.key === "ArrowRight") { event.preventDefault(); moveToCard(1); }
+      if (event.key === "ArrowLeft") { event.preventDefault(); moveToCard(-1); }
+      if (event.key.toLowerCase() === "k") { event.preventDefault(); toggleKnown(); }
+      if (event.key.toLowerCase() === "s") { event.preventDefault(); handleShuffle(); }
     };
-
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   });
 
   useEffect(() => {
-    if (!isAutoPlaying || !currentCard || !activeProgress) return;
-
+    if (!isAutoPlaying || !currentCard || !activeProgress || view.kind !== "study") return;
     const delay = activeProgress.isFlipped ? 3000 : 5000;
     const timer = setTimeout(() => {
-      if (activeProgress.isFlipped) {
-        moveToCard(1);
-      } else {
-        handleFlip();
-      }
+      if (activeProgress.isFlipped) moveToCard(1);
+      else handleFlip();
     }, delay);
-
     return () => clearTimeout(timer);
   });
 
-  if (!selectedDeck || !selectedSection || !activeProgress) {
-    return null;
-  }
+  // ── Shared overlays ─────────────────────────────────────────────────────────
 
-  return (
-    <main className="app-shell">
-      <section className="intro-panel">
-        <p className="eyebrow">Flashcard library</p>
-        <h1>Build decks by source.</h1>
-        <p className="deck-copy">
-          Add new decks under GPT, Wikipedia, or Oxford Dictionaries, then paste
-          cards in the way Quizlet exports them.
+  const ConfirmOverlay = confirmDialog ? (
+    <div className="confirm-overlay" role="dialog" aria-modal="true">
+      <div className="confirm-box">
+        <p>{confirmDialog.message}</p>
+        <div className="confirm-actions">
+          <button className="mini-btn" onClick={() => setConfirmDialog(null)}>Cancel</button>
+          <button className="danger-btn" onClick={confirmDialog.onConfirm}>Yes, delete</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  const AiOverlay = aiModal ? (
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => { if (e.target === e.currentTarget) setAiModal(null); }}
+    >
+      <section className="modal">
+        <h2>Ask AI about &ldquo;{aiModal.word}&rdquo;?</h2>
+        <p>
+          This will copy a prompt asking how to use the word naturally in a sentence. Then
+          choose which AI app to open.
         </p>
+        <div className="prompt-preview">{aiModal.prompt}</div>
+        <div className="modal-actions">
+          <button className="mini-btn" onClick={() => setAiModal(null)}>Cancel</button>
+          <button className="mini-btn" onClick={() => openAI("chatgpt")}>Open ChatGPT</button>
+          <button className="mini-btn" onClick={() => openAI("claude")}>Open Claude</button>
+          <button className="mini-btn" onClick={() => openAI("gemini")}>Open Gemini</button>
+        </div>
+      </section>
+    </div>
+  ) : null;
 
-        <div className="composer-panel sync-panel">
-          <div className="composer-head">
-            <strong>Cloud sync</strong>
-            <button
-              type="button"
-              className="plain-link"
-              onClick={() => setShowSyncPanel((current) => !current)}
-              aria-expanded={showSyncPanel}
-            >
-              {showSyncPanel ? "Hide" : "Show"}
-            </button>
+  // ── HOME VIEW ───────────────────────────────────────────────────────────────
+
+  if (view.kind === "home") {
+    return (
+      <>
+        <div className="home-view">
+          <div className="home-header">
+            <h1 className="home-title">Flashcards</h1>
+            <div className="home-header-actions">
+              <button
+                className="mini-btn"
+                onClick={() => setShowSyncPanel((v) => !v)}
+              >
+                {syncState === "loading" || syncState === "saving" ? "Syncing…" : "☁ Sync"}
+              </button>
+              <button
+                className="mini-btn"
+                onClick={() => {
+                  setSectionComposerMessage("");
+                  setSectionComposer({ title: "", description: "" });
+                }}
+              >
+                + New topic
+              </button>
+            </div>
           </div>
 
-          {showSyncPanel ? (
-            <>
-              <label className="field">
-                <span>Sync key</span>
+          {showSyncPanel && (
+            <div className="panel-card home-panel">
+              <div className="panel-card-head">
+                <strong>Cloud sync</strong>
+                <button className="link-btn" onClick={() => setShowSyncPanel(false)}>Close</button>
+              </div>
+              <div className="field">
+                <label>Sync key</label>
                 <input
                   type="text"
                   value={syncKeyInput}
-                  onChange={(event) => {
+                  onChange={(e) => {
                     cloudSyncReadyRef.current = false;
-                    setSyncKeyInput(event.target.value);
+                    setSyncKeyInput(e.target.value);
                   }}
                   placeholder="Shared cloud library key"
                 />
-              </label>
-
-              <p className="hint">
-                This app auto-loads and auto-saves the shared cloud library. Use
-                a different key only when you want a separate private library.
-              </p>
-
-              {!isUsingSharedSyncKey ? (
-                <p className="message-line">
-                  This browser is using a custom sync key. Switch to the shared
-                  library if it should match your other browsers.
-                </p>
-              ) : null}
-
-              <div className="composer-actions">
+              </div>
+              {!isUsingSharedSyncKey && (
+                <p className="hint-text">Using a custom sync key.</p>
+              )}
+              <div className="panel-card-actions">
+                <button className="mini-btn" onClick={handleApplySyncKey}>Use key</button>
                 <button
-                  type="button"
-                  className="primary-button"
-                  onClick={handleApplySyncKey}
-                >
-                  Use key
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button"
+                  className="mini-btn"
                   onClick={handleLoadFromCloud}
                   disabled={syncState === "loading" || syncState === "saving"}
                 >
                   Load cloud
                 </button>
                 <button
-                  type="button"
-                  className="accent-button"
+                  className="mini-btn"
                   onClick={handleSaveThisBrowserToCloud}
                   disabled={syncState === "loading" || syncState === "saving"}
                 >
                   Save to cloud
                 </button>
                 <button
-                  type="button"
-                  className="ghost-button"
+                  className="mini-btn"
                   onClick={handleUseSharedLibrary}
-                  disabled={
-                    isUsingSharedSyncKey ||
-                    syncState === "loading" ||
-                    syncState === "saving"
-                  }
+                  disabled={isUsingSharedSyncKey || syncState === "loading" || syncState === "saving"}
                 >
                   Shared library
                 </button>
-                <button
-                  type="button"
-                  className="text-button"
-                  onClick={handleGenerateSyncKey}
-                >
-                  New key
-                </button>
+                <button className="mini-btn" onClick={handleGenerateSyncKey}>New key</button>
               </div>
-            </>
-          ) : null}
-
-          <p
-            className={
-              syncState === "error"
-                ? "message-line error"
-                : syncState === "saved"
-                  ? "message-line success"
-                  : "message-line"
-            }
-          >
-            {syncMessage}
-          </p>
-        </div>
-
-        <div className="library-stack-header">
-          <button
-            type="button"
-            className="toggle-all-button"
-            onClick={() =>
-              setExpandedSections((prev) =>
-                prev.size === librarySections.length
-                  ? new Set()
-                  : new Set(librarySections.map((s) => s.id)),
-              )
-            }
-          >
-            {expandedSections.size === librarySections.length ? "Collapse all" : "Expand all"}
-          </button>
-          <button
-            type="button"
-            className="inline-button"
-            onClick={() => {
-              setSectionComposerMessage("");
-              setSectionComposer({ title: "", description: "" });
-            }}
-          >
-            New topic
-          </button>
-        </div>
-
-        {sectionComposer && (
-          <div className="composer-panel">
-            <div className="composer-head">
-              <strong>New topic</strong>
-              <button
-                type="button"
-                className="plain-link"
-                onClick={() => {
-                  setSectionComposer(null);
-                  setSectionComposerMessage("");
-                }}
+              <p
+                className={`message-line${syncState === "error" ? " error" : syncState === "saved" ? " success" : ""}`}
               >
-                Close
-              </button>
+                {syncMessage}
+              </p>
             </div>
-            <label className="field">
-              <span>Topic name</span>
-              <input
-                type="text"
-                value={sectionComposer.title}
-                onChange={(e) =>
-                  setSectionComposer((cur) => cur ? { ...cur, title: e.target.value } : cur)
-                }
-                placeholder="e.g. Greek Mythology"
-              />
-            </label>
-            <label className="field">
-              <span>Description (optional)</span>
-              <input
-                type="text"
-                value={sectionComposer.description}
-                onChange={(e) =>
-                  setSectionComposer((cur) => cur ? { ...cur, description: e.target.value } : cur)
-                }
-                placeholder="Short note about this topic"
-              />
-            </label>
-            {sectionComposerMessage && (
-              <p className="message-line error">{sectionComposerMessage}</p>
-            )}
-            <div className="composer-actions">
-              <button
-                type="button"
-                className="primary-button"
-                onClick={handleCreateSection}
-              >
-                Create topic
-              </button>
-            </div>
-          </div>
-        )}
+          )}
 
-        <div className="library-stack">
-          {librarySections.map((section) => {
-            const isExpanded = expandedSections.has(section.id);
-            const toggleSection = () =>
-              setExpandedSections((prev) => {
-                const next = new Set(prev);
-                if (next.has(section.id)) {
-                  next.delete(section.id);
-                } else {
-                  next.add(section.id);
-                }
-                return next;
-              });
-
-            return (
-            <div key={section.id} className="section-block">
-              <div className="section-head">
+          {sectionComposer && (
+            <div className="panel-card home-panel">
+              <div className="panel-card-head">
+                <strong>New topic</strong>
                 <button
-                  type="button"
-                  className="section-toggle"
-                  onClick={toggleSection}
-                  aria-expanded={isExpanded}
-                >
-                  <span className={`section-chevron${isExpanded ? " open" : ""}`}>›</span>
-                  <span className="section-title">{section.title}</span>
-                </button>
-                {isExpanded && (
-                  <div className="section-head-actions">
-                    <button
-                      type="button"
-                      className="inline-button"
-                      onClick={() => {
-                        setDeckComposerMessage("");
-                        setDeckComposer({
-                          sectionId: section.id,
-                          title: "",
-                          subtitle: "",
-                          paste: "",
-                        });
-                      }}
-                    >
-                      New deck
-                    </button>
-                    <button
-                      type="button"
-                      className="danger-link"
-                      onClick={() => handleDeleteSection(section.id)}
-                    >
-                      Delete topic
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {isExpanded && (
-                <div className="deck-list">
-                  {section.decks.length ? (
-                    section.decks.map((deck) => {
-                      const deckState =
-                        deckProgress[deck.id] ?? createDeckProgress(deck);
-                      const isSelected = deck.id === selectedDeck.id;
-
-                      return (
-                        <div key={deck.id} className="deck-row">
-                          <button
-                            type="button"
-                            className={isSelected ? "deck-button active" : "deck-button"}
-                            onClick={() => {
-                              setSelectedDeckId(deck.id);
-                              studyPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                            }}
-                          >
-                            <span className="deck-button-name">{deck.title}</span>
-                            <span className="deck-button-meta">
-                              {deck.cards.length} cards / {deckState.knownIds.length} known
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            className="deck-delete-btn"
-                            title="Delete deck"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteDeck(deck.id);
-                            }}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="empty-library-note">
-                      No decks here yet. Use New deck to add one.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {deckComposer?.sectionId === section.id ? (
-                <div className="composer-panel">
-                  <div className="composer-head">
-                    <strong>New deck in {section.title}</strong>
-                    <button
-                      type="button"
-                      className="plain-link"
-                      onClick={() => {
-                        setDeckComposer(null);
-                        setDeckComposerMessage("");
-                      }}
-                    >
-                      Close
-                    </button>
-                  </div>
-
-                  <label className="field">
-                    <span>Deck name</span>
-                    <input
-                      type="text"
-                      value={deckComposer.title}
-                      onChange={(event) =>
-                        setDeckComposer((current) =>
-                          current
-                            ? {
-                                ...current,
-                                title: event.target.value,
-                              }
-                            : current,
-                        )
-                      }
-                      placeholder="Example: Common compliments"
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Subtitle</span>
-                    <input
-                      type="text"
-                      value={deckComposer.subtitle}
-                      onChange={(event) =>
-                        setDeckComposer((current) =>
-                          current
-                            ? {
-                                ...current,
-                                subtitle: event.target.value,
-                              }
-                            : current,
-                        )
-                      }
-                      placeholder="Optional note about the deck"
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Paste cards</span>
-                    <textarea
-                      value={deckComposer.paste}
-                      onChange={(event) =>
-                        setDeckComposer((current) =>
-                          current
-                            ? {
-                                ...current,
-                                paste: event.target.value,
-                              }
-                            : current,
-                        )
-                      }
-                      placeholder={"adaptable\table to adjust easily\nadmirable\tdeserving respect"}
-                    />
-                  </label>
-
-                  <p className="hint">
-                    Best results: paste Quizlet-style rows with a tab between
-                    term and definition. Auto-import also accepts `term -
-                    definition`, `term: definition`, and simple `term-definition`
-                    lines.
-                  </p>
-
-                  <div className="import-stats">
-                    <span>{deckImportPreview.cards.length} cards ready</span>
-                    <span>{deckImportPreview.invalidLines.length} skipped lines</span>
-                  </div>
-
-                  {deckComposerMessage ? (
-                    <p className="message-line error">{deckComposerMessage}</p>
-                  ) : null}
-
-                  <div className="composer-actions">
-                    <button
-                      type="button"
-                      className="primary-button"
-                      onClick={() => handleCreateDeck(section.id)}
-                    >
-                      Create deck
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          );
-          })}
-        </div>
-
-        <div className="selected-block">
-          <div className="selected-head">
-            <span className="source-chip">{selectedSection.title}</span>
-            <span>{totalCards} cards</span>
-          </div>
-          <h2>{selectedDeck.title}</h2>
-          <p>{selectedDeck.subtitle}</p>
-        </div>
-
-        <div className="meter-block">
-          <div className="meter-head">
-            <span>{knownCount} mastered</span>
-            <span>{remainingCount} left</span>
-          </div>
-          <div className="meter-track" aria-hidden="true">
-            <div
-              className="meter-fill"
-              style={{ width: `${completionRatio * 100}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="stat-row" aria-label="Deck statistics">
-          <div>
-            <strong>{totalCards}</strong>
-            <span>Total cards</span>
-          </div>
-          <div>
-            <strong>{visibleCards.length}</strong>
-            <span>In view</span>
-          </div>
-          <div>
-            <strong>{knownCount}</strong>
-            <span>Known</span>
-          </div>
-        </div>
-
-        <div className="mode-switch" aria-label="Study mode">
-          <button
-            type="button"
-            className={
-              activeProgress.studyMode === "all" ? "mode-button active" : "mode-button"
-            }
-            onClick={() => handleStudyModeChange("all")}
-            aria-pressed={activeProgress.studyMode === "all"}
-          >
-            Study all
-          </button>
-          <button
-            type="button"
-            className={
-              activeProgress.studyMode === "remaining"
-                ? "mode-button active"
-                : "mode-button"
-            }
-            onClick={() => handleStudyModeChange("remaining")}
-            disabled={!hasRemainingCards}
-            aria-pressed={activeProgress.studyMode === "remaining"}
-          >
-            Only remaining
-          </button>
-        </div>
-
-        <div className="shortcut-list">
-          <p>Keyboard shortcuts</p>
-          <span>Space or Enter to flip</span>
-          <span>Left and Right arrows to move</span>
-          <span>K to mark known, S to shuffle</span>
-        </div>
-      </section>
-
-      <section className="study-panel" ref={studyPanelRef}>
-        <div className="study-head">
-          <div>
-            <p className="eyebrow">{selectedSection.title}</p>
-            <h2>{selectedDeck.title}</h2>
-            <p className="study-subtitle">
-              {isDeckEmpty
-                ? "This deck is empty until you paste some cards."
-                : !currentCard
-                  ? "You've finished the remaining cards in this study view."
-                : `Card ${Math.max(cardPosition + 1, 1)} of ${Math.max(
-                    visibleCards.length,
-                    1,
-                  )}`}
-            </p>
-          </div>
-          <div className="card-status">
-            <span>
-              {activeProgress.studyMode === "all" ? "Whole deck" : "Remaining only"}
-            </span>
-            {currentCardIsKnown ? (
-              <strong className="known-pill">Known</strong>
-            ) : (
-              <strong className="fresh-pill">
-                {isDeckEmpty ? "Needs cards" : "In rotation"}
-              </strong>
-            )}
-          </div>
-        </div>
-
-        <div className="builder-bar">
-          <button
-            type="button"
-            className={showCardImporter ? "accent-button active" : "accent-button"}
-            onClick={() => {
-              setShowCardImporter((current) => !current);
-              setCardImportMessage("");
-            }}
-          >
-            {showCardImporter ? "Hide add cards" : "Add cards"}
-          </button>
-          <p>Paste Quizlet rows or one card per line to extend this deck.</p>
-        </div>
-
-        {showCardImporter || isDeckEmpty ? (
-          <div className="composer-panel wide">
-            <div className="composer-head">
-              <strong>Add cards to {selectedDeck.title}</strong>
-              {!isDeckEmpty ? (
-                <button
-                  type="button"
-                  className="plain-link"
-                  onClick={() => {
-                    setShowCardImporter(false);
-                    setCardImportMessage("");
-                  }}
+                  className="link-btn"
+                  onClick={() => { setSectionComposer(null); setSectionComposerMessage(""); }}
                 >
                   Close
                 </button>
-              ) : null}
-            </div>
-
-            <label className="field">
-              <span>Paste cards</span>
-              <textarea
-                value={cardPaste}
-                onChange={(event) => setCardPaste(event.target.value)}
-                placeholder={"adaptable\table to adjust easily\nadmirable\tdeserving respect"}
-              />
-            </label>
-
-            <p className="hint">
-              Works best with Quizlet-style pasted rows. You can also use `term -
-              definition`, `term: definition`, or `term-definition`.
-            </p>
-
-            <div className="import-stats">
-              <span>{cardImportPreview.cards.length} cards ready</span>
-              <span>{cardImportPreview.invalidLines.length} skipped lines</span>
-            </div>
-
-            {cardImportMessage ? (
-              <p
-                className={
-                  cardImportMessage.startsWith("Added")
-                    ? "message-line success"
-                    : "message-line error"
-                }
-              >
-                {cardImportMessage}
-              </p>
-            ) : null}
-
-            <div className="composer-actions">
-              <button type="button" className="primary-button" onClick={handleAddCards}>
-                Add pasted cards
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        {isDeckEmpty ? (
-          <div className="empty-deck-panel">
-            <p className="eyebrow">Ready for imports</p>
-            <h3>Paste your flashcards to start this deck.</h3>
-            <p>
-              Once cards are added, this space becomes the normal study view with
-              flip, shuffle, and progress tracking.
-            </p>
-          </div>
-        ) : currentCard ? (
-          <>
-            <div
-              className="card-shell"
-              onClick={handleFlip}
-              role="button"
-              tabIndex={0}
-              aria-label={`Flip card for ${currentCard.term}`}
-            >
-              <div
-                className={activeProgress.isFlipped ? "flashcard is-flipped" : "flashcard"}
-              >
-                <article className="card-face card-front">
-                  <div className="card-labels">
-                    <span>Word</span>
-                    <span>Tap to reveal meaning</span>
-                  </div>
-                  <div className="card-body">
-                    <p className="term">{currentCard.term}</p>
-                  </div>
-                  <p className="card-foot">
-                    {selectedDeck.title} / {selectedSection.title}
-                  </p>
-                </article>
-
-                <article className="card-face card-back">
-                  <div className="card-labels">
-                    <span>Meaning</span>
-                    <span>Tap to see the word again</span>
-                  </div>
-                  <div className="card-body">
-                    <p className="definition">{currentCard.definition}</p>
-                  </div>
-                  <p className="card-foot">Use the controls below to keep moving</p>
-                </article>
+              </div>
+              <div className="field">
+                <label>Topic name</label>
+                <input
+                  type="text"
+                  value={sectionComposer.title}
+                  onChange={(e) =>
+                    setSectionComposer((c) => (c ? { ...c, title: e.target.value } : c))
+                  }
+                  placeholder="e.g. Greek Mythology"
+                  autoFocus
+                />
+              </div>
+              <div className="field">
+                <label>Description (optional)</label>
+                <input
+                  type="text"
+                  value={sectionComposer.description}
+                  onChange={(e) =>
+                    setSectionComposer((c) => (c ? { ...c, description: e.target.value } : c))
+                  }
+                  placeholder="Short note about this topic"
+                />
+              </div>
+              {sectionComposerMessage && (
+                <p className="message-line error">{sectionComposerMessage}</p>
+              )}
+              <div className="panel-card-actions">
+                <button className="mini-btn" onClick={handleCreateSection}>Create topic</button>
               </div>
             </div>
+          )}
 
-            <div className="control-row">
-              <button type="button" className="ghost-button" onClick={() => moveToCard(-1)}>
-                Previous
-              </button>
-              <button type="button" className="primary-button" onClick={handleFlip}>
-                {activeProgress.isFlipped ? "Show word" : "Flip card"}
-              </button>
-              <button type="button" className="ghost-button" onClick={() => moveToCard(1)}>
-                Next
-              </button>
-            </div>
-
-            <div className="utility-row">
-              <button
-                type="button"
-                className={currentCardIsKnown ? "accent-button active" : "accent-button"}
-                onClick={toggleKnown}
-                aria-pressed={currentCardIsKnown}
-              >
-                {currentCardIsKnown ? "Marked known" : "Mark as known"}
-              </button>
-              <button
-                type="button"
-                className={isAutoPlaying ? "accent-button active" : "accent-button"}
-                onClick={() => setIsAutoPlaying((v) => !v)}
-                aria-pressed={isAutoPlaying}
-              >
-                {isAutoPlaying ? "⏸ Pause" : "▶ Autoplay"}
-              </button>
-              <button type="button" className="text-button" onClick={handleShuffle}>
-                Shuffle deck
-              </button>
-              <button type="button" className="text-button" onClick={resetProgress}>
-                Reset progress
-              </button>
-              {currentCard && (
-                <button
-                  type="button"
-                  className="text-button danger-text"
-                  onClick={() => handleDeleteCard(currentCard.id)}
-                >
-                  Delete card
-                </button>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="completion-panel">
-            <p className="eyebrow">{selectedDeck.title}</p>
-            <h2>You've worked through every remaining card.</h2>
-            <p>
-              Switch back to the full deck for review or reset your progress to
-              study this set again from the beginning.
-            </p>
-            <div className="control-row">
-              <button
-                type="button"
-                className="primary-button"
-                onClick={() => handleStudyModeChange("all")}
-              >
-                Review full deck
-              </button>
-              <button type="button" className="ghost-button" onClick={resetProgress}>
-                Reset progress
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
-      {confirmDialog && (
-        <div className="confirm-overlay" role="dialog" aria-modal="true">
-          <div className="confirm-box">
-            <p>{confirmDialog.message}</p>
-            <div className="confirm-actions">
-              <button
-                type="button"
-                className="danger-button"
-                onClick={confirmDialog.onConfirm}
-              >
-                Yes, delete
-              </button>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => setConfirmDialog(null)}
-              >
-                Cancel
-              </button>
-            </div>
+          <div className="home-main">
+            {librarySections.length === 0 ? (
+              <div className="empty-state">
+                No topics yet. Create one above to get started.
+              </div>
+            ) : (
+              <div className="sections-grid">
+                {librarySections.map((section) => {
+                  const cardCount = section.decks.reduce((sum, d) => sum + d.cards.length, 0);
+                  const sectionKnown = section.decks.reduce((sum, d) => {
+                    return sum + (deckProgress[d.id]?.knownIds.length ?? 0);
+                  }, 0);
+                  return (
+                    <button
+                      key={section.id}
+                      className="section-card"
+                      onClick={() => setView({ kind: "section", sectionId: section.id })}
+                    >
+                      <div className="section-card-inner">
+                        <div>
+                          <div className="section-card-title">{section.title}</div>
+                          <div className="section-card-meta">
+                            {section.decks.length} deck{section.decks.length !== 1 ? "s" : ""}{" "}
+                            · {cardCount} card{cardCount !== 1 ? "s" : ""}
+                            {sectionKnown > 0 ? ` · ${sectionKnown} known` : ""}
+                          </div>
+                          {section.description && (
+                            <div className="section-card-desc">{section.description}</div>
+                          )}
+                        </div>
+                        <span className="section-card-arrow">›</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
-      )}
-    </main>
+        {ConfirmOverlay}
+      </>
+    );
+  }
+
+  // ── SECTION VIEW ────────────────────────────────────────────────────────────
+
+  if (view.kind === "section") {
+    const section = librarySections.find((s) => s.id === view.sectionId);
+    if (!section) {
+      setView({ kind: "home" });
+      return null;
+    }
+
+    return (
+      <>
+        <div className="app">
+          <header className="topbar">
+            <button className="topbar-btn" onClick={() => setView({ kind: "home" })}>
+              ‹ Home
+            </button>
+            <div className="top-title">{section.title}</div>
+            <div className="topbar-right">
+              <button
+                className="topbar-btn"
+                onClick={() => {
+                  setDeckComposerMessage("");
+                  setDeckComposer({ sectionId: section.id, title: "", subtitle: "", paste: "" });
+                }}
+              >
+                New deck
+              </button>
+              <button
+                className="topbar-btn danger-topbar-btn"
+                onClick={() => handleDeleteSection(section.id)}
+              >
+                Delete topic
+              </button>
+            </div>
+          </header>
+
+          <div className="section-view-main">
+            {deckComposer?.sectionId === section.id && (
+              <div className="panel-card" style={{ marginBottom: 12 }}>
+                <div className="panel-card-head">
+                  <strong>New deck in {section.title}</strong>
+                  <button
+                    className="link-btn"
+                    onClick={() => { setDeckComposer(null); setDeckComposerMessage(""); }}
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="field">
+                  <label>Deck name</label>
+                  <input
+                    type="text"
+                    value={deckComposer.title}
+                    onChange={(e) =>
+                      setDeckComposer((c) => (c ? { ...c, title: e.target.value } : c))
+                    }
+                    placeholder="e.g. Common compliments"
+                    autoFocus
+                  />
+                </div>
+                <div className="field">
+                  <label>Subtitle (optional)</label>
+                  <input
+                    type="text"
+                    value={deckComposer.subtitle}
+                    onChange={(e) =>
+                      setDeckComposer((c) => (c ? { ...c, subtitle: e.target.value } : c))
+                    }
+                    placeholder="Optional note about the deck"
+                  />
+                </div>
+                <div className="field">
+                  <label>Paste cards (optional)</label>
+                  <textarea
+                    value={deckComposer.paste}
+                    onChange={(e) =>
+                      setDeckComposer((c) => (c ? { ...c, paste: e.target.value } : c))
+                    }
+                    placeholder={"adaptable\ttable to adjust easily\nadmirable\tdeserving respect"}
+                  />
+                </div>
+                <p className="hint-text">
+                  Best results: paste Quizlet-style rows with a tab between term and definition.
+                </p>
+                <div className="import-stats">
+                  <span>{deckImportPreview.cards.length} cards ready</span>
+                  <span>{deckImportPreview.invalidLines.length} skipped lines</span>
+                </div>
+                {deckComposerMessage && (
+                  <p className="message-line error">{deckComposerMessage}</p>
+                )}
+                <div className="panel-card-actions">
+                  <button className="mini-btn" onClick={() => handleCreateDeck(section.id)}>
+                    Create deck
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {section.decks.length === 0 ? (
+              <div className="empty-state">No decks yet. Use New deck to add one.</div>
+            ) : (
+              <div className="decks-list">
+                {section.decks.map((deck) => {
+                  const progress = deckProgress[deck.id] ?? createDeckProgress(deck);
+                  const known = progress.knownIds.length;
+                  const total = deck.cards.length;
+                  const ratio = total ? known / total : 0;
+                  return (
+                    <div key={deck.id} className="deck-card-row">
+                      <button
+                        className="deck-card"
+                        onClick={() => {
+                          setSelectedDeckId(deck.id);
+                          setView({ kind: "study", deckId: deck.id });
+                        }}
+                      >
+                        <div className="deck-card-info">
+                          <div className="deck-card-title">{deck.title}</div>
+                          <div className="deck-card-subtitle">{deck.subtitle}</div>
+                          <div className="progress-bar-track">
+                            <div
+                              className="progress-bar-fill"
+                              style={{ width: `${ratio * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="deck-card-stats">
+                          <span>{total} cards</span>
+                          <span>{known} known</span>
+                          <span className="section-card-arrow">›</span>
+                        </div>
+                      </button>
+                      <button
+                        className="deck-card-delete"
+                        title="Delete deck"
+                        onClick={() => handleDeleteDeck(deck.id)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+        {ConfirmOverlay}
+      </>
+    );
+  }
+
+  // ── STUDY VIEW ──────────────────────────────────────────────────────────────
+
+  if (!selectedDeck || !selectedSection || !activeProgress) return null;
+
+  return (
+    <>
+      <div className="app">
+        <header className="topbar">
+          <button
+            className="topbar-btn"
+            onClick={() => setView({ kind: "section", sectionId: selectedSection.id })}
+          >
+            ‹ Go back
+          </button>
+          <div className="top-title">
+            {selectedDeck.title} · {selectedSection.title}
+          </div>
+          <div className="topbar-right">
+            <div className="study-mode-toggle">
+              <button
+                className={`study-mode-btn${activeProgress.studyMode === "all" ? " active" : ""}`}
+                onClick={() => handleStudyModeChange("all")}
+              >
+                All
+              </button>
+              <button
+                className={`study-mode-btn${activeProgress.studyMode === "remaining" ? " active" : ""}`}
+                onClick={() => handleStudyModeChange("remaining")}
+                disabled={!hasRemainingCards}
+              >
+                Remaining
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <section className="stage">
+          <div className="study-wrap">
+            {currentCard ? (
+              <>
+                <section className="card-shell-new" aria-live="polite">
+                  <article
+                    className={`card-3d${activeProgress.isFlipped ? " flipped" : ""}`}
+                    onClick={handleFlip}
+                    title="Click to flip the card"
+                  >
+                    <div className="face front">
+                      <div className="card-word">{currentCard.term}</div>
+                    </div>
+                    <div className="face back">
+                      <p className="card-definition">{currentCard.definition}</p>
+                    </div>
+                  </article>
+                </section>
+
+                <nav className="player" aria-label="Flashcard controls">
+                  <button className="icon-btn" onClick={handleShuffle} title="Shuffle deck">
+                    ↭
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={toggleKnown}
+                    title={currentCardIsKnown ? "Unmark known" : "Mark as known"}
+                    style={{ color: currentCardIsKnown ? "#2a7d4f" : undefined }}
+                  >
+                    {currentCardIsKnown ? "✓" : "×"}
+                  </button>
+                  <button className="circle-btn" onClick={() => moveToCard(-1)} title="Previous">
+                    ‹
+                  </button>
+                  <div className="counter">
+                    {cardPosition + 1} / {visibleCards.length}
+                  </div>
+                  <button className="circle-btn" onClick={() => moveToCard(1)} title="Next">
+                    ›
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={() => setIsAutoPlaying((v) => !v)}
+                    title="Autoplay"
+                  >
+                    {isAutoPlaying ? "❚❚" : "▶"}
+                  </button>
+                  <button className="icon-btn" onClick={handleFlip} title="Flip card">
+                    ⟳
+                  </button>
+                </nav>
+
+                <section className="deep-tools">
+                  <div className="deep-title">Deeper understanding tools</div>
+                  <div className="lookup-bar">
+                    <button className="lookup-chip" onClick={() => googleSearch("definition")}>
+                      Google definition
+                    </button>
+                    <button className="lookup-chip" onClick={() => googleSearch("synonyms")}>
+                      Google synonyms
+                    </button>
+                    <button className="lookup-chip" onClick={() => googleSearch("antonyms")}>
+                      Google antonyms
+                    </button>
+                    <button className="lookup-chip" onClick={() => googleSearch("etymology")}>
+                      Google etymology
+                    </button>
+                    <button className="lookup-chip ai" onClick={showAiModalFn}>
+                      Ask AI
+                    </button>
+                  </div>
+                </section>
+              </>
+            ) : isDeckEmpty ? (
+              <div className="state-card">
+                <p>This deck is empty. Add cards using the form below.</p>
+              </div>
+            ) : (
+              <div className="state-card">
+                <h3>All done!</h3>
+                <p>You&apos;ve worked through every remaining card.</p>
+                <div className="state-card-actions">
+                  <button className="mini-btn" onClick={() => handleStudyModeChange("all")}>
+                    Review full deck
+                  </button>
+                  <button className="mini-btn" onClick={resetProgress}>
+                    Reset progress
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="bottom-panel" aria-label="Deck tools">
+          {showCardImporter && (
+            <div className="bulk-import-panel">
+              <div className="panel-card-head">
+                <strong>Bulk import cards</strong>
+                <button
+                  className="link-btn"
+                  onClick={() => { setShowCardImporter(false); setCardImportMessage(""); }}
+                >
+                  Close
+                </button>
+              </div>
+              <div className="field">
+                <textarea
+                  value={cardPaste}
+                  onChange={(e) => setCardPaste(e.target.value)}
+                  placeholder={"adaptable\ttable to adjust easily\nadmirable\tdeserving respect"}
+                />
+              </div>
+              <div className="import-stats">
+                <span>{cardImportPreview.cards.length} cards ready</span>
+                <span>{cardImportPreview.invalidLines.length} skipped</span>
+              </div>
+              {cardImportMessage && (
+                <p
+                  className={`message-line${cardImportMessage.startsWith("Added") ? " success" : " error"}`}
+                >
+                  {cardImportMessage}
+                </p>
+              )}
+              <div className="panel-card-actions">
+                <button className="mini-btn" onClick={handleAddCards}>
+                  Add pasted cards
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="add-card-form">
+            <input
+              value={wordInput}
+              onChange={(e) => setWordInput(e.target.value)}
+              placeholder="Word..."
+              onKeyDown={(e) => {
+                if (e.key === "Enter") document.getElementById("study-def-input")?.focus();
+              }}
+            />
+            <input
+              id="study-def-input"
+              className="wide"
+              value={defInput}
+              onChange={(e) => setDefInput(e.target.value)}
+              placeholder="Definition..."
+              onKeyDown={(e) => { if (e.key === "Enter") handleAddSingleCard(); }}
+            />
+            <button className="mini-btn" onClick={handleAddSingleCard}>Add</button>
+          </div>
+          <button
+            className="mini-btn"
+            onClick={() => { setShowCardImporter((v) => !v); setCardImportMessage(""); }}
+          >
+            {showCardImporter ? "Hide import" : "Bulk import"}
+          </button>
+          <button className="mini-btn" onClick={resetProgress}>Reset</button>
+          {currentCard && (
+            <button
+              className="mini-btn danger"
+              onClick={() => handleDeleteCard(currentCard.id)}
+            >
+              Delete card
+            </button>
+          )}
+          <div className="toast">{toast}</div>
+        </section>
+      </div>
+
+      {AiOverlay}
+      {ConfirmOverlay}
+    </>
   );
 }
