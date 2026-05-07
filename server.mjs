@@ -5,6 +5,13 @@ import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 import handler from "serve-handler";
 
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception (kept alive):", error);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection (kept alive):", reason);
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const distPath = join(__dirname, "dist");
@@ -503,7 +510,23 @@ const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
     if (url.pathname.startsWith("/api/")) {
-      await handleApiRequest(request, response, url.pathname);
+      const apiPromise = handleApiRequest(request, response, url.pathname);
+      apiPromise.catch(() => {});
+      const apiTimeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("API request timed out")), 15000),
+      );
+      apiTimeout.catch(() => {});
+      try {
+        await Promise.race([apiPromise, apiTimeout]);
+      } catch (apiError) {
+        console.error("API request failed or timed out", apiError);
+        if (!response.headersSent) {
+          sendJson(response, 503, {
+            error: "request_timeout",
+            message: "The request took too long. Database may be unreachable.",
+          });
+        }
+      }
       return;
     }
 
