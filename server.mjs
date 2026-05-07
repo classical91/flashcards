@@ -5,6 +5,13 @@ import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 import handler from "serve-handler";
 
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception (kept alive):", error);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection (kept alive):", reason);
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const distPath = join(__dirname, "dist");
