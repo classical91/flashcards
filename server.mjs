@@ -23,6 +23,7 @@ let pool = process.env.DATABASE_URL
   : null;
 
 let storageKind = pool ? "postgres" : "memory";
+let dbInitFailed = false;
 
 const initializeDatabase = async () => {
   if (!pool) {
@@ -65,7 +66,9 @@ const databaseReady = initializeDatabase().catch((error) => {
     console.error(
       "DATABASE_URL is required in production. Set ALLOW_MEMORY_STORAGE=true to allow in-memory fallback.",
     );
-    process.exit(1);
+    dbInitFailed = true;
+    storageKind = "unavailable";
+    return;
   }
 
   console.warn("Using in-memory storage fallback. Data will be lost on server restart.");
@@ -343,9 +346,17 @@ const saveSharedDeck = async (shareId, snapshot) => {
 
 const handleApiRequest = async (request, response, pathname) => {
   if (pathname === "/api/health" && request.method === "GET") {
-    return sendJson(response, 200, {
-      ok: true,
+    const ok = !dbInitFailed;
+    return sendJson(response, ok ? 200 : 503, {
+      ok,
       storage: storageKind,
+    });
+  }
+
+  if (dbInitFailed) {
+    return sendJson(response, 503, {
+      error: "database_unavailable",
+      message: "The database is currently unavailable. Please check DATABASE_URL or set ALLOW_MEMORY_STORAGE=true.",
     });
   }
 
