@@ -81,14 +81,20 @@ For durable cross-device storage, configure `DATABASE_URL` for the Node server. 
 For real deployment, publish the generated `dist/` assets to any static hosting provider.
 
 ## Environment Variables
-No environment variables are currently required by the codebase.
 
-If future client-side config is added, Vite variables should use the `VITE_` prefix, for example:
+### Server (Node API)
 
-- `VITE_APP_TITLE`
-- `VITE_API_BASE_URL`
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | Yes in production | PostgreSQL connection string. Without it the server uses in-memory storage (data lost on restart). |
+| `PORT` | No | HTTP port for the Node server (default: `3000`). |
+| `ALLOW_MEMORY_STORAGE` | No | Set to `true` to allow in-memory fallback even when `NODE_ENV=production`. Useful for local staging runs without a database. |
 
-(These are placeholders only; they are not used today.)
+### Client (Vite build-time)
+
+| Variable | Required | Description |
+|---|---|---|
+| `VITE_FLASHCARDS_SYNC_KEY` | No | Default sync key baked into the client bundle. Useful when deploying a private instance so all browsers share the same library without manual configuration. Falls back to `"jasons-flashcards-library"` when unset. |
 
 ## Deployment Notes
 - Build output directory: `dist/`
