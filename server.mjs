@@ -53,11 +53,22 @@ const initializeDatabase = async () => {
 };
 
 const databaseReady = initializeDatabase().catch((error) => {
-  console.error("Failed to initialize Postgres storage; using in-memory fallback", error);
+  console.error("Failed to initialize Postgres storage", error);
   pool?.end().catch((endError) => {
     console.error("Failed to close unavailable Postgres pool", endError);
   });
   pool = null;
+
+  const allowMemoryFallback = process.env.ALLOW_MEMORY_STORAGE === "true";
+
+  if (process.env.NODE_ENV === "production" && !allowMemoryFallback) {
+    console.error(
+      "DATABASE_URL is required in production. Set ALLOW_MEMORY_STORAGE=true to allow in-memory fallback.",
+    );
+    process.exit(1);
+  }
+
+  console.warn("Using in-memory storage fallback. Data will be lost on server restart.");
   storageKind = "memory";
 });
 

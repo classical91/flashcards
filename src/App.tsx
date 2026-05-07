@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { defaultDeckId, starterSections } from "./data/decks";
 import {
   Deck,
@@ -309,7 +309,7 @@ const mergeProgressState = (
 export default function App() {
   const [librarySections, setLibrarySections] = useState(loadLibrarySections);
   const [deckProgress, setDeckProgress] = useState(() =>
-    loadProgressState(loadLibrarySections()),
+    loadProgressState(librarySections),
   );
   const [selectedDeckId, setSelectedDeckId] = useState(loadSelectedDeckId);
   const [deckComposer, setDeckComposer] = useState<DeckComposer | null>(null);
@@ -345,30 +345,54 @@ export default function App() {
     setConfirmDialog({ message, onConfirm });
   };
 
-  const allDecks = flattenDecks(librarySections);
-  const selectedDeck = findDeckById(librarySections, selectedDeckId) ?? allDecks[0] ?? null;
-  const selectedSection = selectedDeck
-    ? findSectionForDeck(librarySections, selectedDeck.id)
-    : librarySections[0] ?? null;
+  const allDecks = useMemo(() => flattenDecks(librarySections), [librarySections]);
 
-  const activeProgress = selectedDeck
-    ? deckProgress[selectedDeck.id] ?? createDeckProgress(selectedDeck)
-    : null;
+  const selectedDeck = useMemo(
+    () => findDeckById(librarySections, selectedDeckId) ?? allDecks[0] ?? null,
+    [librarySections, selectedDeckId, allDecks],
+  );
 
-  const knownSet = new Set(activeProgress?.knownIds ?? []);
-  const visibleCards =
-    selectedDeck && activeProgress?.studyMode === "remaining"
+  const selectedSection = useMemo(
+    () =>
+      selectedDeck
+        ? findSectionForDeck(librarySections, selectedDeck.id)
+        : librarySections[0] ?? null,
+    [selectedDeck, librarySections],
+  );
+
+  const activeProgress = useMemo(
+    () =>
+      selectedDeck
+        ? deckProgress[selectedDeck.id] ?? createDeckProgress(selectedDeck)
+        : null,
+    [selectedDeck, deckProgress],
+  );
+
+  const knownSet = useMemo(
+    () => new Set(activeProgress?.knownIds ?? []),
+    [activeProgress],
+  );
+
+  const visibleCards = useMemo(() => {
+    if (!selectedDeck) return [];
+    return activeProgress?.studyMode === "remaining"
       ? selectedDeck.cards.filter((card) => !knownSet.has(card.id))
-      : selectedDeck?.cards ?? [];
+      : selectedDeck.cards;
+  }, [selectedDeck, activeProgress?.studyMode, knownSet]);
 
-  const currentCard =
-    visibleCards.find((card) => card.id === activeProgress?.currentCardId) ??
-    visibleCards[0] ??
-    null;
+  const currentCard = useMemo(
+    () =>
+      visibleCards.find((card) => card.id === activeProgress?.currentCardId) ??
+      visibleCards[0] ??
+      null,
+    [visibleCards, activeProgress?.currentCardId],
+  );
 
-  const cardPosition = currentCard
-    ? visibleCards.findIndex((card) => card.id === currentCard.id)
-    : -1;
+  const cardPosition = useMemo(
+    () =>
+      currentCard ? visibleCards.findIndex((card) => card.id === currentCard.id) : -1,
+    [currentCard, visibleCards],
+  );
 
   const totalCards = selectedDeck?.cards.length ?? 0;
   const knownCount = activeProgress?.knownIds.length ?? 0;
@@ -379,12 +403,19 @@ export default function App() {
   const isDeckEmpty = totalCards === 0;
   const isUsingSharedSyncKey = normalizeSyncKey(syncKeyInput) === DEFAULT_SYNC_KEY;
 
-  const deckImportPreview = deckComposer?.paste
-    ? parsePastedFlashcards(deckComposer.paste)
-    : { cards: [], invalidLines: [] };
-  const cardImportPreview = cardPaste
-    ? parsePastedFlashcards(cardPaste)
-    : { cards: [], invalidLines: [] };
+  const deckImportPreview = useMemo(
+    () =>
+      deckComposer?.paste
+        ? parsePastedFlashcards(deckComposer.paste)
+        : { cards: [], invalidLines: [] },
+    [deckComposer?.paste],
+  );
+
+  const cardImportPreview = useMemo(
+    () =>
+      cardPaste ? parsePastedFlashcards(cardPaste) : { cards: [], invalidLines: [] },
+    [cardPaste],
+  );
 
   const updateSelectedDeckProgress = (
     updater: (progress: DeckProgress) => DeckProgress,
