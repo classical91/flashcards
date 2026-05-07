@@ -1621,7 +1621,7 @@ export default function App() {
             </div>
           )}
 
-          <div className="add-card-form">
+          {showCardEditor && <div className="add-card-form">
             <input
               value={wordInput}
               onChange={(e) => setWordInput(e.target.value)}
@@ -1639,7 +1639,7 @@ export default function App() {
               onKeyDown={(e) => { if (e.key === "Enter") handleAddSingleCard(); }}
             />
             <button className="mini-btn" onClick={handleAddSingleCard}>Add</button>
-          </div>
+          </div>}
           <button
             className="mini-btn"
             onClick={() => { setShowCardImporter((v) => !v); setCardImportMessage(""); if (showCardEditor) setShowCardEditor(false); }}
