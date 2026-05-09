@@ -43,6 +43,7 @@ type SyncState = "idle" | "loading" | "saving" | "saved" | "error";
 
 type ViewState =
   | { kind: "home" }
+  | { kind: "pinned" }
   | { kind: "section"; sectionId: string }
   | { kind: "study"; deckId: string };
 
@@ -55,6 +56,7 @@ const LIBRARY_STORAGE_KEY = "flashcards.library.v2";
 const PROGRESS_STORAGE_KEY = "flashcards.progress.v2";
 const SELECTED_DECK_STORAGE_KEY = "flashcards.selectedDeck.v2";
 const SYNC_KEY_STORAGE_KEY = "flashcards.syncKey.v1";
+const PINNED_DECKS_STORAGE_KEY = "flashcards.pinnedDecks.v1";
 const DEFAULT_SYNC_KEY =
   import.meta.env.VITE_FLASHCARDS_SYNC_KEY?.trim() || "jasons-flashcards-library";
 const syncKeyPattern = /^[A-Za-z0-9_-]{8,120}$/;
@@ -202,6 +204,18 @@ const loadSyncKey = () => {
   return isSyncKeyValid(saved) ? saved : DEFAULT_SYNC_KEY;
 };
 
+const loadPinnedDeckIds = (): string[] => {
+  if (typeof window === "undefined") return [];
+  try {
+    const saved = window.localStorage.getItem(PINNED_DECKS_STORAGE_KEY);
+    if (!saved) return [];
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
 const getFetchErrorMessage = async (response: Response) => {
   try {
     const payload = (await response.clone().json()) as { message?: string; error?: string };
@@ -289,6 +303,7 @@ export default function App() {
   const [aiModal, setAiModal] = useState<AiModal>(null);
   const [wordInput, setWordInput] = useState("");
   const [defInput, setDefInput] = useState("");
+  const [pinnedDeckIds, setPinnedDeckIds] = useState<string[]>(loadPinnedDeckIds);
 
   const cloudSyncReadyRef = useRef(false);
   const cloudSyncLoadKeyRef = useRef("");
@@ -564,6 +579,12 @@ export default function App() {
     openRandomDeck(section.decks);
   };
 
+  const togglePinDeck = (deckId: string) => {
+    setPinnedDeckIds((current) =>
+      current.includes(deckId) ? current.filter((id) => id !== deckId) : [...current, deckId],
+    );
+  };
+
   const handleDeleteCard = (cardId: string) => {
     if (!selectedDeck) return;
     const card = selectedDeck.cards.find((c) => c.id === cardId);
@@ -627,6 +648,7 @@ export default function App() {
           delete next[deckId];
           return next;
         });
+        setPinnedDeckIds((current) => current.filter((id) => id !== deckId));
         if (currentView.kind === "study" && currentView.deckId === deckId) {
           setView(
             sectionForDeck
@@ -653,6 +675,7 @@ export default function App() {
           deckIds.forEach((id) => delete next[id]);
           return next;
         });
+        setPinnedDeckIds((current) => current.filter((id) => !deckIds.includes(id)));
         setView({ kind: "home" });
         setConfirmDialog(null);
       },
@@ -914,6 +937,11 @@ export default function App() {
   }, [syncKey]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(PINNED_DECKS_STORAGE_KEY, JSON.stringify(pinnedDeckIds));
+  }, [pinnedDeckIds]);
+
+  useEffect(() => {
     if (!syncKey || cloudSyncLoadKeyRef.current === syncKey) return;
     cloudSyncLoadKeyRef.current = syncKey;
     cloudSyncReadyRef.current = false;
@@ -1075,6 +1103,15 @@ export default function App() {
               >
                 {syncState === "loading" || syncState === "saving" ? "Syncing…" : "☁ Sync"}
               </button>
+              {pinnedDeckIds.length > 0 && (
+                <button
+                  className="mini-btn pinned-nav-btn"
+                  onClick={() => setView({ kind: "pinned" })}
+                  title="View pinned decks"
+                >
+                  📌 Pinned ({pinnedDeckIds.length})
+                </button>
+              )}
               <button
                 className="mini-btn"
                 onClick={() => openRandomDeck(allDecks)}
@@ -1244,6 +1281,95 @@ export default function App() {
     );
   }
 
+  // ── PINNED VIEW ─────────────────────────────────────────────────────────────
+
+  if (view.kind === "pinned") {
+    const pinnedDecks = pinnedDeckIds
+      .map((id) => {
+        const deck = findDeckById(librarySections, id);
+        const section = deck ? findSectionForDeck(librarySections, deck.id) : null;
+        return deck && section ? { deck, section } : null;
+      })
+      .filter((entry): entry is { deck: Deck; section: DeckSection } => entry !== null);
+
+    return (
+      <>
+        <div className="app">
+          <header className="topbar">
+            <button className="topbar-btn" onClick={() => setView({ kind: "home" })}>
+              ‹ Home
+            </button>
+            <div className="top-title">Pinned Decks</div>
+            <div className="topbar-right">
+              <button
+                className="topbar-btn"
+                onClick={() => openRandomDeck(pinnedDecks.map((e) => e.deck))}
+                disabled={pinnedDecks.length === 0}
+                title="Open a random pinned deck"
+              >
+                Random pinned
+              </button>
+            </div>
+          </header>
+
+          <div className="section-view-main">
+            {pinnedDecks.length === 0 ? (
+              <div className="empty-state">
+                No pinned decks yet. Pin a deck from any topic to see it here.
+              </div>
+            ) : (
+              <div className="decks-list">
+                {pinnedDecks.map(({ deck, section }) => {
+                  const progress = deckProgress[deck.id] ?? createDeckProgress(deck);
+                  const known = progress.knownIds.length;
+                  const total = deck.cards.length;
+                  const ratio = total ? known / total : 0;
+                  return (
+                    <div key={deck.id} className="deck-card-row">
+                      <button
+                        className="deck-card"
+                        onClick={() => {
+                          setSelectedDeckId(deck.id);
+                          setView({ kind: "study", deckId: deck.id });
+                        }}
+                      >
+                        <div className="deck-card-info">
+                          <div className="deck-card-title">{deck.title}</div>
+                          <div className="deck-card-subtitle">
+                            {section.title} · {deck.subtitle}
+                          </div>
+                          <div className="progress-bar-track">
+                            <div
+                              className="progress-bar-fill"
+                              style={{ width: `${ratio * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="deck-card-stats">
+                          <span>{total} cards</span>
+                          <span>{known} known</span>
+                          <span className="section-card-arrow">›</span>
+                        </div>
+                      </button>
+                      <button
+                        className="deck-card-pin pinned"
+                        title="Unpin deck"
+                        onClick={() => togglePinDeck(deck.id)}
+                      >
+                        📌
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+        {ConfirmOverlay}
+      </>
+    );
+  }
+
   // ── SECTION VIEW ────────────────────────────────────────────────────────────
 
   if (view.kind === "section") {
@@ -1386,6 +1512,13 @@ export default function App() {
                         </div>
                       </button>
                       <button
+                        className={`deck-card-pin${pinnedDeckIds.includes(deck.id) ? " pinned" : ""}`}
+                        title={pinnedDeckIds.includes(deck.id) ? "Unpin deck" : "Pin deck"}
+                        onClick={() => togglePinDeck(deck.id)}
+                      >
+                        📌
+                      </button>
+                      <button
                         className="deck-card-delete"
                         title="Delete deck"
                         onClick={() => handleDeleteDeck(deck.id)}
@@ -1422,6 +1555,13 @@ export default function App() {
             {selectedDeck.title} · {selectedSection.title}
           </div>
           <div className="topbar-right">
+            <button
+              className={`topbar-btn topbar-pin-btn${pinnedDeckIds.includes(selectedDeck.id) ? " pinned" : ""}`}
+              title={pinnedDeckIds.includes(selectedDeck.id) ? "Unpin deck" : "Pin deck"}
+              onClick={() => togglePinDeck(selectedDeck.id)}
+            >
+              {pinnedDeckIds.includes(selectedDeck.id) ? "📌 Pinned" : "📌 Pin"}
+            </button>
             <div className="study-mode-toggle">
               <button
                 className={`study-mode-btn${activeProgress.studyMode === "all" ? " active" : ""}`}
