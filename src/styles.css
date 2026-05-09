@@ -303,6 +303,30 @@ button {
   flex-shrink: 0;
 }
 
+.deck-card-pin {
+  flex-shrink: 0;
+  width: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0.3;
+  transition: opacity 150ms ease;
+}
+
+.deck-card-pin:hover {
+  opacity: 0.8;
+}
+
+.deck-card-pin.pinned {
+  opacity: 1;
+  background: #fffbea;
+  border-color: #f0d060;
+}
+
 .deck-card-delete {
   flex-shrink: 0;
   width: 36px;
@@ -320,6 +344,25 @@ button {
 
 .deck-card-delete:hover {
   opacity: 1;
+}
+
+.topbar-pin-btn {
+  opacity: 0.5;
+}
+
+.topbar-pin-btn:hover {
+  opacity: 1;
+}
+
+.topbar-pin-btn.pinned {
+  opacity: 1;
+  color: #b57a00;
+}
+
+.pinned-nav-btn {
+  background: #fffbea;
+  border: 1px solid #f0d060;
+  color: #7a5800;
 }
 
 /* Progress bar */
