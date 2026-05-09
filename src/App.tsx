@@ -557,6 +557,13 @@ export default function App() {
     setView({ kind: "study", deckId: deck.id });
   };
 
+  const openRandomTopicDeck = () => {
+    const sectionsWithDecks = librarySections.filter((s) => s.decks.length > 0);
+    if (!sectionsWithDecks.length) return;
+    const section = sectionsWithDecks[Math.floor(Math.random() * sectionsWithDecks.length)];
+    openRandomDeck(section.decks);
+  };
+
   const handleDeleteCard = (cardId: string) => {
     if (!selectedDeck) return;
     const card = selectedDeck.cards.find((c) => c.id === cardId);
@@ -1075,6 +1082,14 @@ export default function App() {
                 title="Open a random deck from any topic"
               >
                 Shuffle all
+              </button>
+              <button
+                className="mini-btn"
+                onClick={openRandomTopicDeck}
+                disabled={librarySections.filter((s) => s.decks.length > 0).length === 0}
+                title="Pick a random topic, then a random deck within it"
+              >
+                Random topic
               </button>
               <button
                 className="mini-btn"
