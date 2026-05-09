@@ -354,6 +354,15 @@ button {
   font-weight: 600;
   color: var(--text-secondary, #555);
   text-align: center;
+  margin-bottom: 0.2rem;
+}
+
+.deck-study-topic {
+  font-size: 0.82rem;
+  color: var(--muted, #888);
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   margin-bottom: 0.75rem;
 }
 

@@ -1445,6 +1445,9 @@ export default function App() {
             {currentCard ? (
               <>
                 <div className="deck-study-title">{selectedDeck.title}</div>
+                {selectedSection && (
+                  <div className="deck-study-topic">{selectedSection.title}</div>
+                )}
                 <section className="card-shell-new" aria-live="polite">
                   <article
                     className={`card-3d${activeProgress.isFlipped ? " flipped" : ""}`}
