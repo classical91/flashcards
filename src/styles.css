@@ -349,6 +349,14 @@ button {
   width: min(760px, 100%);
 }
 
+.deck-study-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-secondary, #555);
+  text-align: center;
+  margin-bottom: 0.75rem;
+}
+
 /* 3-D flip card */
 .card-shell-new {
   perspective: 1400px;
