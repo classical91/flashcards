@@ -57,7 +57,7 @@ const PROGRESS_STORAGE_KEY = "flashcards.progress.v2";
 const SELECTED_DECK_STORAGE_KEY = "flashcards.selectedDeck.v2";
 const SYNC_KEY_STORAGE_KEY = "flashcards.syncKey.v1";
 const PINNED_DECKS_STORAGE_KEY = "flashcards.pinnedDecks.v1";
-const RECENT_DECKS_STORAGE_KEY = "flashcards.recentDecks.v1";
+const RECENT_DECKS_STORAGE_KEY = "flashcards.recentDecks.v2";
 const MAX_RECENT_DECKS = 6;
 const DEFAULT_SYNC_KEY =
   import.meta.env.VITE_FLASHCARDS_SYNC_KEY?.trim() || "jasons-flashcards-library";
@@ -218,7 +218,9 @@ const loadPinnedDeckIds = (): string[] => {
   }
 };
 
-const loadRecentDeckIds = (): string[] => {
+type RecentDeckEntry = { id: string; viewedAt: number };
+
+const loadRecentDeckIds = (): RecentDeckEntry[] => {
   if (typeof window === "undefined") return [];
   try {
     const saved = window.localStorage.getItem(RECENT_DECKS_STORAGE_KEY);
@@ -228,6 +230,20 @@ const loadRecentDeckIds = (): string[] => {
   } catch {
     return [];
   }
+};
+
+const formatRelativeTime = (ts: number): string => {
+  const diffMs = Date.now() - ts;
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay === 1) return "yesterday";
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 };
 
 const getFetchErrorMessage = async (response: Response) => {
@@ -318,7 +334,7 @@ export default function App() {
   const [wordInput, setWordInput] = useState("");
   const [defInput, setDefInput] = useState("");
   const [pinnedDeckIds, setPinnedDeckIds] = useState<string[]>(loadPinnedDeckIds);
-  const [recentDeckIds, setRecentDeckIds] = useState<string[]>(loadRecentDeckIds);
+  const [recentDeckIds, setRecentDeckIds] = useState<RecentDeckEntry[]>(loadRecentDeckIds);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
 
   const cloudSyncReadyRef = useRef(false);
@@ -585,7 +601,7 @@ export default function App() {
   const openDeck = (deckId: string) => {
     setSelectedDeckId(deckId);
     setView({ kind: "study", deckId });
-    setRecentDeckIds((prev) => [deckId, ...prev.filter((id) => id !== deckId)].slice(0, MAX_RECENT_DECKS));
+    setRecentDeckIds((prev) => [{ id: deckId, viewedAt: Date.now() }, ...prev.filter((e) => e.id !== deckId)].slice(0, MAX_RECENT_DECKS));
   };
 
   const openRandomDeck = (decks: Deck[]) => {
@@ -1286,25 +1302,28 @@ export default function App() {
 
           {recentDeckIds.length > 0 && (() => {
             const recentDecks = recentDeckIds
-              .map((id) => {
-                const deck = findDeckById(librarySections, id);
+              .map((entry) => {
+                const deck = findDeckById(librarySections, entry.id);
                 const section = deck ? findSectionForDeck(librarySections, deck.id) : null;
-                return deck && section ? { deck, section } : null;
+                return deck && section ? { deck, section, viewedAt: entry.viewedAt } : null;
               })
-              .filter((x): x is { deck: Deck; section: DeckSection } => x !== null);
+              .filter((x): x is { deck: Deck; section: DeckSection; viewedAt: number } => x !== null);
             if (recentDecks.length === 0) return null;
             return (
               <div className="home-recent">
                 <div className="home-recent-label">Recently viewed</div>
                 <div className="home-recent-list">
-                  {recentDecks.map(({ deck, section }) => (
+                  {recentDecks.map(({ deck, section, viewedAt }) => (
                     <button
                       key={deck.id}
-                      className="home-recent-chip"
+                      className="home-recent-item"
                       onClick={() => openDeck(deck.id)}
                     >
-                      <span className="home-recent-chip-title">{deck.title}</span>
-                      <span className="home-recent-chip-section">{section.title}</span>
+                      <div className="home-recent-item-info">
+                        <span className="home-recent-item-title">{deck.title}</span>
+                        <span className="home-recent-item-section">{section.title}</span>
+                      </div>
+                      <span className="home-recent-item-time">{formatRelativeTime(viewedAt)}</span>
                     </button>
                   ))}
                 </div>
