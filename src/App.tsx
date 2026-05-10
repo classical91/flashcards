@@ -1300,37 +1300,6 @@ export default function App() {
             </div>
           )}
 
-          {recentDeckIds.length > 0 && (() => {
-            const recentDecks = recentDeckIds
-              .map((entry) => {
-                const deck = findDeckById(librarySections, entry.id);
-                const section = deck ? findSectionForDeck(librarySections, deck.id) : null;
-                return deck && section ? { deck, section, viewedAt: entry.viewedAt } : null;
-              })
-              .filter((x): x is { deck: Deck; section: DeckSection; viewedAt: number } => x !== null);
-            if (recentDecks.length === 0) return null;
-            return (
-              <div className="home-recent">
-                <div className="home-recent-label">Recently viewed</div>
-                <div className="home-recent-list">
-                  {recentDecks.map(({ deck, section, viewedAt }) => (
-                    <button
-                      key={deck.id}
-                      className="home-recent-item"
-                      onClick={() => openDeck(deck.id)}
-                    >
-                      <div className="home-recent-item-info">
-                        <span className="home-recent-item-title">{deck.title}</span>
-                        <span className="home-recent-item-section">{section.title}</span>
-                      </div>
-                      <span className="home-recent-item-time">{formatRelativeTime(viewedAt)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
-
           <div className="home-main">
             {librarySections.length === 0 ? (
               <div className="empty-state">
@@ -1369,6 +1338,37 @@ export default function App() {
               </div>
             )}
           </div>
+
+          {recentDeckIds.length > 0 && (() => {
+            const recentDecks = recentDeckIds
+              .map((entry) => {
+                const deck = findDeckById(librarySections, entry.id);
+                const section = deck ? findSectionForDeck(librarySections, deck.id) : null;
+                return deck && section ? { deck, section, viewedAt: entry.viewedAt } : null;
+              })
+              .filter((x): x is { deck: Deck; section: DeckSection; viewedAt: number } => x !== null);
+            if (recentDecks.length === 0) return null;
+            return (
+              <div className="home-recent">
+                <div className="home-recent-label">Recently viewed</div>
+                <div className="home-recent-list">
+                  {recentDecks.map(({ deck, section, viewedAt }) => (
+                    <button
+                      key={deck.id}
+                      className="home-recent-item"
+                      onClick={() => openDeck(deck.id)}
+                    >
+                      <div className="home-recent-item-info">
+                        <span className="home-recent-item-title">{deck.title}</span>
+                        <span className="home-recent-item-section">{section.title}</span>
+                      </div>
+                      <span className="home-recent-item-time">{formatRelativeTime(viewedAt)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
         {ConfirmOverlay}
       </>
