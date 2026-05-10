@@ -57,6 +57,8 @@ const PROGRESS_STORAGE_KEY = "flashcards.progress.v2";
 const SELECTED_DECK_STORAGE_KEY = "flashcards.selectedDeck.v2";
 const SYNC_KEY_STORAGE_KEY = "flashcards.syncKey.v1";
 const PINNED_DECKS_STORAGE_KEY = "flashcards.pinnedDecks.v1";
+const RECENT_DECKS_STORAGE_KEY = "flashcards.recentDecks.v1";
+const MAX_RECENT_DECKS = 6;
 const DEFAULT_SYNC_KEY =
   import.meta.env.VITE_FLASHCARDS_SYNC_KEY?.trim() || "jasons-flashcards-library";
 const syncKeyPattern = /^[A-Za-z0-9_-]{8,120}$/;
@@ -216,6 +218,18 @@ const loadPinnedDeckIds = (): string[] => {
   }
 };
 
+const loadRecentDeckIds = (): string[] => {
+  if (typeof window === "undefined") return [];
+  try {
+    const saved = window.localStorage.getItem(RECENT_DECKS_STORAGE_KEY);
+    if (!saved) return [];
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
 const getFetchErrorMessage = async (response: Response) => {
   try {
     const payload = (await response.clone().json()) as { message?: string; error?: string };
@@ -304,8 +318,11 @@ export default function App() {
   const [wordInput, setWordInput] = useState("");
   const [defInput, setDefInput] = useState("");
   const [pinnedDeckIds, setPinnedDeckIds] = useState<string[]>(loadPinnedDeckIds);
+  const [recentDeckIds, setRecentDeckIds] = useState<string[]>(loadRecentDeckIds);
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
 
   const cloudSyncReadyRef = useRef(false);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
   const cloudSyncLoadKeyRef = useRef("");
   const snapshotRef = useRef<LibrarySnapshot>(
     createLibrarySnapshot({
@@ -565,11 +582,16 @@ export default function App() {
     setToast(`Added "${word}".`);
   };
 
+  const openDeck = (deckId: string) => {
+    setSelectedDeckId(deckId);
+    setView({ kind: "study", deckId });
+    setRecentDeckIds((prev) => [deckId, ...prev.filter((id) => id !== deckId)].slice(0, MAX_RECENT_DECKS));
+  };
+
   const openRandomDeck = (decks: Deck[]) => {
     if (!decks.length) return;
     const deck = decks[Math.floor(Math.random() * decks.length)];
-    setSelectedDeckId(deck.id);
-    setView({ kind: "study", deckId: deck.id });
+    openDeck(deck.id);
   };
 
   const openRandomTopicDeck = () => {
@@ -942,6 +964,22 @@ export default function App() {
   }, [pinnedDeckIds]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(RECENT_DECKS_STORAGE_KEY, JSON.stringify(recentDeckIds));
+  }, [recentDeckIds]);
+
+  useEffect(() => {
+    if (!showActionsMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
+        setShowActionsMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showActionsMenu]);
+
+  useEffect(() => {
     if (!syncKey || cloudSyncLoadKeyRef.current === syncKey) return;
     cloudSyncLoadKeyRef.current = syncKey;
     cloudSyncReadyRef.current = false;
@@ -1096,47 +1134,56 @@ export default function App() {
         <div className="home-view">
           <div className="home-header">
             <h1 className="home-title">Flashcards</h1>
-            <div className="home-header-actions">
+            <div className="home-header-actions" ref={actionsMenuRef}>
               <button
-                className="mini-btn"
-                onClick={() => setShowSyncPanel((v) => !v)}
+                className="home-actions-trigger"
+                onClick={() => setShowActionsMenu((v) => !v)}
+                title="Actions"
               >
-                {syncState === "loading" || syncState === "saving" ? "Syncing…" : "☁ Sync"}
+                ⋯
               </button>
-              {pinnedDeckIds.length > 0 && (
-                <button
-                  className="mini-btn pinned-nav-btn"
-                  onClick={() => setView({ kind: "pinned" })}
-                  title="View pinned decks"
-                >
-                  📌 Pinned ({pinnedDeckIds.length})
-                </button>
+              {showActionsMenu && (
+                <div className="home-actions-menu">
+                  <button
+                    className="home-actions-item"
+                    onClick={() => { setShowActionsMenu(false); setShowSyncPanel((v) => !v); }}
+                  >
+                    {syncState === "loading" || syncState === "saving" ? "Syncing…" : "☁ Sync"}
+                  </button>
+                  {pinnedDeckIds.length > 0 && (
+                    <button
+                      className="home-actions-item"
+                      onClick={() => { setShowActionsMenu(false); setView({ kind: "pinned" }); }}
+                    >
+                      📌 Pinned ({pinnedDeckIds.length})
+                    </button>
+                  )}
+                  <button
+                    className="home-actions-item"
+                    onClick={() => { setShowActionsMenu(false); openRandomDeck(allDecks); }}
+                    disabled={allDecks.length === 0}
+                  >
+                    Shuffle all
+                  </button>
+                  <button
+                    className="home-actions-item"
+                    onClick={() => { setShowActionsMenu(false); openRandomTopicDeck(); }}
+                    disabled={librarySections.filter((s) => s.decks.length > 0).length === 0}
+                  >
+                    Random topic
+                  </button>
+                  <button
+                    className="home-actions-item"
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      setSectionComposerMessage("");
+                      setSectionComposer({ title: "", description: "" });
+                    }}
+                  >
+                    + New topic
+                  </button>
+                </div>
               )}
-              <button
-                className="mini-btn"
-                onClick={() => openRandomDeck(allDecks)}
-                disabled={allDecks.length === 0}
-                title="Open a random deck from any topic"
-              >
-                Shuffle all
-              </button>
-              <button
-                className="mini-btn"
-                onClick={openRandomTopicDeck}
-                disabled={librarySections.filter((s) => s.decks.length > 0).length === 0}
-                title="Pick a random topic, then a random deck within it"
-              >
-                Random topic
-              </button>
-              <button
-                className="mini-btn"
-                onClick={() => {
-                  setSectionComposerMessage("");
-                  setSectionComposer({ title: "", description: "" });
-                }}
-              >
-                + New topic
-              </button>
             </div>
           </div>
 
@@ -1237,6 +1284,34 @@ export default function App() {
             </div>
           )}
 
+          {recentDeckIds.length > 0 && (() => {
+            const recentDecks = recentDeckIds
+              .map((id) => {
+                const deck = findDeckById(librarySections, id);
+                const section = deck ? findSectionForDeck(librarySections, deck.id) : null;
+                return deck && section ? { deck, section } : null;
+              })
+              .filter((x): x is { deck: Deck; section: DeckSection } => x !== null);
+            if (recentDecks.length === 0) return null;
+            return (
+              <div className="home-recent">
+                <div className="home-recent-label">Recently viewed</div>
+                <div className="home-recent-list">
+                  {recentDecks.map(({ deck, section }) => (
+                    <button
+                      key={deck.id}
+                      className="home-recent-chip"
+                      onClick={() => openDeck(deck.id)}
+                    >
+                      <span className="home-recent-chip-title">{deck.title}</span>
+                      <span className="home-recent-chip-section">{section.title}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           <div className="home-main">
             {librarySections.length === 0 ? (
               <div className="empty-state">
@@ -1328,10 +1403,7 @@ export default function App() {
                     <div key={deck.id} className="deck-card-row">
                       <button
                         className="deck-card"
-                        onClick={() => {
-                          setSelectedDeckId(deck.id);
-                          setView({ kind: "study", deckId: deck.id });
-                        }}
+                        onClick={() => openDeck(deck.id)}
                       >
                         <div className="deck-card-info">
                           <div className="deck-card-title">{deck.title}</div>
@@ -1490,10 +1562,7 @@ export default function App() {
                     <div key={deck.id} className="deck-card-row">
                       <button
                         className="deck-card"
-                        onClick={() => {
-                          setSelectedDeckId(deck.id);
-                          setView({ kind: "study", deckId: deck.id });
-                        }}
+                        onClick={() => openDeck(deck.id)}
                       >
                         <div className="deck-card-info">
                           <div className="deck-card-title">{deck.title}</div>
