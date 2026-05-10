@@ -1179,14 +1179,7 @@ export default function App() {
                     onClick={() => { setShowActionsMenu(false); openRandomDeck(allDecks); }}
                     disabled={allDecks.length === 0}
                   >
-                    Shuffle all
-                  </button>
-                  <button
-                    className="home-actions-item"
-                    onClick={() => { setShowActionsMenu(false); openRandomTopicDeck(); }}
-                    disabled={librarySections.filter((s) => s.decks.length > 0).length === 0}
-                  >
-                    Random topic
+                    Shuffle home
                   </button>
                   <button
                     className="home-actions-item"
