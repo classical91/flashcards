@@ -652,18 +652,16 @@ export default function App() {
     setToast(`Card updated.`);
   };
 
-  const handleExportDeck = () => {
+  const handleExportDeck = async () => {
     if (!selectedDeck) return;
     const lines = selectedDeck.cards.map((card) => `${card.term}\t${card.definition}`);
     const content = lines.join("\n");
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${selectedDeck.title}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setToast(`Exported ${selectedDeck.cards.length} card${selectedDeck.cards.length === 1 ? "" : "s"} from "${selectedDeck.title}".`);
+    try {
+      await navigator.clipboard.writeText(content);
+      setToast(`Copied ${selectedDeck.cards.length} card${selectedDeck.cards.length === 1 ? "" : "s"} from "${selectedDeck.title}" to clipboard.`);
+    } catch {
+      setToast("Could not copy to clipboard.");
+    }
   };
 
   const handleDeleteDeck = (deckId: string) => {
@@ -1896,7 +1894,7 @@ export default function App() {
           </button>
           <button className="mini-btn" onClick={resetProgress}>Reset</button>
           <button className="mini-btn" onClick={handleExportDeck} disabled={isDeckEmpty}>
-            Export
+            Copy cards
           </button>
           {currentCard && (
             <button
