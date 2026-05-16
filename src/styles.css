@@ -1142,3 +1142,49 @@ button {
     padding: 12px 14px 20px;
   }
 }
+
+/* ── Card list modal ──────────────────────────────────────────────────────── */
+
+.card-list-modal {
+  width: min(600px, 100%);
+  max-height: 80svh;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px 20px;
+}
+
+.card-list-scroll {
+  overflow-y: auto;
+  flex: 1;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.card-list-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 2fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.card-list-row:last-child {
+  border-bottom: none;
+}
+
+.card-list-index {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.card-list-term {
+  font-weight: 500;
+}
+
+.card-list-def {
+  color: var(--muted);
+}
