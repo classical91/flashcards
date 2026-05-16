@@ -298,6 +298,7 @@ export default function App() {
   const [cardPaste, setCardPaste] = useState("");
   const [cardImportMessage, setCardImportMessage] = useState("");
   const [showCardEditor, setShowCardEditor] = useState(false);
+  const [showCardList, setShowCardList] = useState(false);
   const [cardEdits, setCardEdits] = useState<Record<string, { term: string; definition: string }>>({});
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const [sectionComposer, setSectionComposer] = useState<SectionComposer | null>(null);
@@ -1061,6 +1062,7 @@ export default function App() {
     setIsAutoPlaying(false);
     setShowCardEditor(false);
     setCardEdits({});
+    setShowCardList(false);
   }, [selectedDeckId]);
 
   useEffect(() => {
@@ -1133,6 +1135,31 @@ export default function App() {
           <button className="mini-btn" onClick={() => openAI("chatgpt")}>Open ChatGPT</button>
           <button className="mini-btn" onClick={() => openAI("claude")}>Open Claude</button>
           <button className="mini-btn" onClick={() => openAI("gemini")}>Open Gemini</button>
+        </div>
+      </section>
+    </div>
+  ) : null;
+
+  const CardListOverlay = showCardList && selectedDeck ? (
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => { if (e.target === e.currentTarget) setShowCardList(false); }}
+    >
+      <section className="modal card-list-modal">
+        <div className="panel-card-head">
+          <strong>{selectedDeck.title} &mdash; {selectedDeck.cards.length} card{selectedDeck.cards.length !== 1 ? "s" : ""}</strong>
+          <button className="link-btn" onClick={() => setShowCardList(false)}>Close</button>
+        </div>
+        <div className="card-list-scroll">
+          {selectedDeck.cards.map((card, i) => (
+            <div key={card.id} className="card-list-row">
+              <span className="card-list-index">{i + 1}</span>
+              <span className="card-list-term">{card.term}</span>
+              <span className="card-list-def">{card.definition}</span>
+            </div>
+          ))}
         </div>
       </section>
     </div>
@@ -1893,6 +1920,9 @@ export default function App() {
             {showCardEditor ? "Hide editor" : "Edit list"}
           </button>
           <button className="mini-btn" onClick={resetProgress}>Reset</button>
+          <button className="mini-btn" onClick={() => setShowCardList(true)} disabled={isDeckEmpty}>
+            View all
+          </button>
           <button className="mini-btn" onClick={handleExportDeck} disabled={isDeckEmpty}>
             Copy cards
           </button>
@@ -1910,6 +1940,7 @@ export default function App() {
 
       {AiOverlay}
       {ConfirmOverlay}
+      {CardListOverlay}
     </>
   );
 }
