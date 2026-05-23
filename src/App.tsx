@@ -325,6 +325,7 @@ export default function App() {
   const cloudSyncReadyRef = useRef(false);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
   const cloudSyncLoadKeyRef = useRef("");
+  const cloudRevisionRef = useRef<number | null>(null);
   const snapshotRef = useRef<LibrarySnapshot>(
     createLibrarySnapshot({
       librarySections,
@@ -774,16 +775,81 @@ export default function App() {
   const fetchCloudSnapshot = async (activeSyncKey: string) => {
     const response = await fetch(`/api/libraries/${encodeURIComponent(activeSyncKey)}`);
     if (!response.ok) throw new Error(await getFetchErrorMessage(response));
-    return (await response.json()) as { exists?: boolean; snapshot?: unknown; storage?: string };
+    return (await response.json()) as {
+      exists?: boolean;
+      snapshot?: unknown;
+      revision?: number;
+      storage?: string;
+    };
   };
 
-  const saveSnapshotToCloud = async (activeSyncKey: string, snapshot: LibrarySnapshot) => {
+  type SaveOutcome =
+    | { conflict: false; revision: number | null }
+    | { conflict: true; current: { snapshot?: unknown; revision?: number } | null };
+
+  const saveSnapshotToCloud = async (
+    activeSyncKey: string,
+    snapshot: LibrarySnapshot,
+    expectedRevision: number | null,
+  ): Promise<SaveOutcome> => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (expectedRevision !== null) {
+      headers["If-Match"] = String(expectedRevision);
+    }
     const response = await fetch(`/api/libraries/${encodeURIComponent(activeSyncKey)}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(snapshot),
     });
+    if (response.status === 409) {
+      const payload = (await response.json().catch(() => ({}))) as {
+        current?: { snapshot?: unknown; revision?: number } | null;
+      };
+      return { conflict: true, current: payload.current ?? null };
+    }
     if (!response.ok) throw new Error(await getFetchErrorMessage(response));
+    const payload = (await response.json().catch(() => ({}))) as { revision?: number };
+    return {
+      conflict: false,
+      revision: typeof payload.revision === "number" ? payload.revision : null,
+    };
+  };
+
+  const applyRemoteSnapshotMerge = (remoteSnapshot: LibrarySnapshot) => {
+    const mergedSections = mergeSections(librarySections, remoteSnapshot.librarySections);
+    const mergedProgress = mergeProgressState(deckProgress, remoteSnapshot.deckProgress, mergedSections);
+    const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
+    const nextSelectedDeckId = mergedDeckIds.has(selectedDeckId)
+      ? selectedDeckId
+      : remoteSnapshot.selectedDeckId;
+    startTransition(() => {
+      setLibrarySections(mergedSections);
+      setDeckProgress(mergedProgress);
+      setSelectedDeckId(nextSelectedDeckId || defaultDeckId);
+    });
+  };
+
+  const saveWithConflictResolution = async (
+    activeSyncKey: string,
+    snapshot: LibrarySnapshot,
+  ) => {
+    const outcome = await saveSnapshotToCloud(
+      activeSyncKey,
+      snapshot,
+      cloudRevisionRef.current,
+    );
+    if (!outcome.conflict) {
+      if (outcome.revision !== null) cloudRevisionRef.current = outcome.revision;
+      return { resolved: true };
+    }
+    const remoteSnapshot = parseLibrarySnapshot(outcome.current?.snapshot);
+    if (!remoteSnapshot) {
+      throw new Error("Cloud library changed in an unexpected format.");
+    }
+    cloudRevisionRef.current =
+      typeof outcome.current?.revision === "number" ? outcome.current.revision : null;
+    applyRemoteSnapshotMerge(remoteSnapshot);
+    return { resolved: false };
   };
 
   const handleApplySyncKey = () => {
@@ -836,12 +902,14 @@ export default function App() {
       if (!payload.exists) {
         setSyncKey(activeSyncKey);
         setSyncKeyInput(activeSyncKey);
+        cloudRevisionRef.current = 0;
         setSyncState("error");
         setSyncMessage("No cloud library exists for this key yet. Save it first.");
         return;
       }
       const snapshot = parseLibrarySnapshot(payload.snapshot);
       if (!snapshot) throw new Error("The cloud library was not in the expected format.");
+      cloudRevisionRef.current = typeof payload.revision === "number" ? payload.revision : null;
       const mergedSections = mergeSections(librarySections, snapshot.librarySections);
       const mergedProgress = mergeProgressState(deckProgress, snapshot.deckProgress, mergedSections);
       const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
@@ -874,12 +942,17 @@ export default function App() {
     setSyncState("saving");
     setSyncMessage("Saving this device's library to cloud...");
     try {
-      await saveSnapshotToCloud(activeSyncKey, snapshotRef.current);
+      const result = await saveWithConflictResolution(activeSyncKey, snapshotRef.current);
       setSyncKey(activeSyncKey);
       setSyncKeyInput(activeSyncKey);
       cloudSyncReadyRef.current = true;
-      setSyncState("saved");
-      setSyncMessage("Saved to cloud. Use this key on your phone or PC and load cloud.");
+      if (result.resolved) {
+        setSyncState("saved");
+        setSyncMessage("Saved to cloud. Use this key on your phone or PC and load cloud.");
+      } else {
+        setSyncState("saving");
+        setSyncMessage("Merged newer cloud changes with this device. Re-saving...");
+      }
     } catch (error) {
       setSyncState("error");
       setSyncMessage(error instanceof Error ? error.message : "Could not save to cloud.");
@@ -996,12 +1069,18 @@ export default function App() {
     if (!syncKey || cloudSyncLoadKeyRef.current === syncKey) return;
     cloudSyncLoadKeyRef.current = syncKey;
     cloudSyncReadyRef.current = false;
+    cloudRevisionRef.current = null;
     setSyncState("loading");
     setSyncMessage("Connecting this device to cloud...");
     fetchCloudSnapshot(syncKey)
       .then((payload) => {
         if (!payload.exists) {
-          return saveSnapshotToCloud(syncKey, snapshotRef.current).then(() => {
+          cloudRevisionRef.current = 0;
+          return saveSnapshotToCloud(syncKey, snapshotRef.current, 0).then((outcome) => {
+            if (outcome.conflict) {
+              throw new Error("Another device created this cloud library at the same moment.");
+            }
+            if (outcome.revision !== null) cloudRevisionRef.current = outcome.revision;
             cloudSyncReadyRef.current = true;
             setSyncState("saved");
             setSyncMessage("Created a cloud library for this key. Changes will auto-save.");
@@ -1009,6 +1088,8 @@ export default function App() {
         }
         const snapshot = parseLibrarySnapshot(payload.snapshot);
         if (!snapshot) throw new Error("The cloud library was not in the expected format.");
+        cloudRevisionRef.current =
+          typeof payload.revision === "number" ? payload.revision : null;
         const mergedSections = mergeSections(librarySections, snapshot.librarySections);
         const mergedProgress = mergeProgressState(
           deckProgress,
@@ -1042,10 +1123,14 @@ export default function App() {
     setSyncState("saving");
     setSyncMessage("Auto-saving changes to cloud...");
     const timer = window.setTimeout(() => {
-      saveSnapshotToCloud(syncKey, snapshotRef.current)
-        .then(() => {
-          setSyncState("saved");
-          setSyncMessage("Cloud sync is up to date.");
+      saveWithConflictResolution(syncKey, snapshotRef.current)
+        .then((result) => {
+          if (result.resolved) {
+            setSyncState("saved");
+            setSyncMessage("Cloud sync is up to date.");
+          } else {
+            setSyncMessage("Merged newer cloud changes with this device. Re-saving...");
+          }
         })
         .catch((error) => {
           setSyncState("error");

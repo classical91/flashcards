@@ -47,8 +47,14 @@ const initializeDatabase = async () => {
     CREATE TABLE IF NOT EXISTS library_snapshots (
       library_id TEXT PRIMARY KEY,
       data JSONB NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      revision INTEGER NOT NULL DEFAULT 1
     )
+  `);
+
+  await activePool.query(`
+    ALTER TABLE library_snapshots
+    ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1
   `);
 
   await activePool.query(`
@@ -218,7 +224,7 @@ const getLibrarySnapshot = async (libraryId) => {
 
   const result = await pool.query(
     `
-      SELECT data, updated_at
+      SELECT data, updated_at, revision
       FROM library_snapshots
       WHERE library_id = $1
     `,
@@ -232,57 +238,84 @@ const getLibrarySnapshot = async (libraryId) => {
   return {
     snapshot: result.rows[0].data,
     updatedAt: result.rows[0].updated_at,
+    revision: result.rows[0].revision,
   };
 };
 
-const saveLibrarySnapshot = async (libraryId, snapshot) => {
+const saveToMemory = (libraryId, snapshot, expectedRevision) => {
+  const existing = memoryStore.get(libraryId);
+  const currentRevision = existing?.revision ?? 0;
+  if (expectedRevision !== null && currentRevision !== expectedRevision) {
+    return { conflict: true, current: existing ?? null };
+  }
+  const nextRevision = currentRevision + 1;
+  const updatedAt = new Date().toISOString();
+  const record = { snapshot, updatedAt, revision: nextRevision };
+  memoryStore.set(libraryId, record);
+  return record;
+};
+
+const saveLibrarySnapshot = async (libraryId, snapshot, expectedRevision = null) => {
   if (!pool) {
-    const updatedAt = new Date().toISOString();
-
-    memoryStore.set(libraryId, {
-      snapshot,
-      updatedAt,
-    });
-
-    return {
-      snapshot,
-      updatedAt,
-    };
+    return saveToMemory(libraryId, snapshot, expectedRevision);
   }
 
   await databaseReady;
 
   if (!pool) {
-    const updatedAt = new Date().toISOString();
+    return saveToMemory(libraryId, snapshot, expectedRevision);
+  }
 
-    memoryStore.set(libraryId, {
-      snapshot,
-      updatedAt,
-    });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const existing = await client.query(
+      `SELECT data, updated_at, revision FROM library_snapshots WHERE library_id = $1 FOR UPDATE`,
+      [libraryId],
+    );
+    const currentRevision = existing.rowCount ? existing.rows[0].revision : 0;
+
+    if (expectedRevision !== null && currentRevision !== expectedRevision) {
+      await client.query("ROLLBACK");
+      return {
+        conflict: true,
+        current: existing.rowCount
+          ? {
+              snapshot: existing.rows[0].data,
+              updatedAt: existing.rows[0].updated_at,
+              revision: existing.rows[0].revision,
+            }
+          : null,
+      };
+    }
+
+    const nextRevision = currentRevision + 1;
+    const result = await client.query(
+      `
+        INSERT INTO library_snapshots (library_id, data, updated_at, revision)
+        VALUES ($1, $2::jsonb, NOW(), $3)
+        ON CONFLICT (library_id)
+        DO UPDATE SET
+          data = EXCLUDED.data,
+          updated_at = NOW(),
+          revision = EXCLUDED.revision
+        RETURNING updated_at, revision
+      `,
+      [libraryId, JSON.stringify(snapshot), nextRevision],
+    );
+    await client.query("COMMIT");
 
     return {
       snapshot,
-      updatedAt,
+      updatedAt: result.rows[0].updated_at,
+      revision: result.rows[0].revision,
     };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
   }
-
-  const result = await pool.query(
-    `
-      INSERT INTO library_snapshots (library_id, data, updated_at)
-      VALUES ($1, $2::jsonb, NOW())
-      ON CONFLICT (library_id)
-      DO UPDATE SET
-        data = EXCLUDED.data,
-        updated_at = NOW()
-      RETURNING updated_at
-    `,
-    [libraryId, JSON.stringify(snapshot)],
-  );
-
-  return {
-    snapshot,
-    updatedAt: result.rows[0].updated_at,
-  };
 };
 
 const getSharedDeck = async (shareId) => {
@@ -468,6 +501,7 @@ const handleApiRequest = async (request, response, pathname) => {
       return sendJson(response, 200, {
         exists: false,
         snapshot: null,
+        revision: 0,
         storage: storageKind,
       });
     }
@@ -477,6 +511,7 @@ const handleApiRequest = async (request, response, pathname) => {
       libraryId,
       snapshot: record.snapshot,
       updatedAt: record.updatedAt,
+      revision: record.revision,
       storage: storageKind,
     });
   }
@@ -503,11 +538,35 @@ const handleApiRequest = async (request, response, pathname) => {
       });
     }
 
-    const record = await saveLibrarySnapshot(libraryId, body);
+    const ifMatchHeader = request.headers["if-match"];
+    let expectedRevision = null;
+    if (typeof ifMatchHeader === "string" && ifMatchHeader.length > 0) {
+      const parsed = Number.parseInt(ifMatchHeader.replace(/^"|"$/g, ""), 10);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        return sendJson(response, 400, {
+          error: "invalid_if_match",
+          message: "If-Match must be a non-negative integer revision.",
+        });
+      }
+      expectedRevision = parsed;
+    }
+
+    const record = await saveLibrarySnapshot(libraryId, body, expectedRevision);
+
+    if (record.conflict) {
+      return sendJson(response, 409, {
+        error: "revision_conflict",
+        message:
+          "The cloud library changed since you last loaded it. The current cloud version was returned so it can be merged.",
+        current: record.current,
+        storage: storageKind,
+      });
+    }
 
     return sendJson(response, 200, {
       libraryId,
       updatedAt: record.updatedAt,
+      revision: record.revision,
       storage: storageKind,
     });
   }
