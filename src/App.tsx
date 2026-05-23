@@ -58,7 +58,12 @@ const SELECTED_DECK_STORAGE_KEY = "flashcards.selectedDeck.v2";
 const SYNC_KEY_STORAGE_KEY = "flashcards.syncKey.v1";
 const PINNED_DECKS_STORAGE_KEY = "flashcards.pinnedDecks.v1";
 const RECENT_DECKS_STORAGE_KEY = "flashcards.recentDecks.v2";
+const THEME_STORAGE_KEY = "flashcards.theme.v1";
+const ACCENT_STORAGE_KEY = "flashcards.accent.v1";
 const MAX_RECENT_DECKS = 6;
+
+type Theme = "light" | "dark";
+type AccentColor = "blue" | "purple" | "green" | "red" | "amber";
 const DEFAULT_SYNC_KEY =
   import.meta.env.VITE_FLASHCARDS_SYNC_KEY?.trim() || "jasons-flashcards-library";
 const syncKeyPattern = /^[A-Za-z0-9_-]{8,120}$/;
@@ -158,6 +163,24 @@ const buildProgressState = (sections: DeckSection[]) =>
   Object.fromEntries(
     flattenDecks(sections).map((deck) => [deck.id, createDeckProgress(deck)]),
   ) as Record<string, DeckProgress>;
+
+const loadTheme = (): Theme => {
+  try {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === "light" || stored === "dark") return stored;
+  } catch {}
+  return "light";
+};
+
+const loadAccentColor = (): AccentColor => {
+  try {
+    const stored = window.localStorage.getItem(ACCENT_STORAGE_KEY);
+    if (["blue", "purple", "green", "red", "amber"].includes(stored || "")) {
+      return stored as AccentColor;
+    }
+  } catch {}
+  return "blue";
+};
 
 const loadLibrarySections = () => {
   if (typeof window === "undefined") return cloneSections(starterSections);
@@ -323,6 +346,7 @@ export default function App() {
   const [syncKey, setSyncKey] = useState(loadSyncKey);
   const [syncKeyInput, setSyncKeyInput] = useState(loadSyncKey);
   const [showSyncPanel, setShowSyncPanel] = useState(false);
+  const [showThemesPanel, setShowThemesPanel] = useState(false);
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const [syncMessage, setSyncMessage] = useState(
     "Cloud sync starts automatically for this shared library.",
@@ -337,6 +361,8 @@ export default function App() {
   const [pinnedDeckIds, setPinnedDeckIds] = useState<string[]>(loadPinnedDeckIds);
   const [recentDeckIds, setRecentDeckIds] = useState<RecentDeckEntry[]>(loadRecentDeckIds);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const [theme, setTheme] = useState<Theme>(loadTheme);
+  const [accentColor, setAccentColor] = useState<AccentColor>(loadAccentColor);
 
   const cloudSyncReadyRef = useRef(false);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
@@ -1071,6 +1097,18 @@ export default function App() {
   }, [recentDeckIds]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    document.documentElement.setAttribute("data-theme", theme);
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    document.documentElement.setAttribute("data-accent", accentColor);
+    window.localStorage.setItem(ACCENT_STORAGE_KEY, accentColor);
+  }, [accentColor]);
+
+  useEffect(() => {
     if (!showActionsMenu) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
@@ -1315,6 +1353,13 @@ export default function App() {
                   >
                     + New topic
                   </button>
+                  <button
+                    className="home-actions-item"
+                    onClick={() => { setShowActionsMenu(false); setShowThemesPanel((v) => !v); }}
+                    style={{ color: "var(--accent)", fontWeight: 500 }}
+                  >
+                    🎨 Themes
+                  </button>
                 </div>
               )}
             </div>
@@ -1371,6 +1416,70 @@ export default function App() {
               >
                 {syncMessage}
               </p>
+            </div>
+          )}
+
+          {showThemesPanel && (
+            <div className="panel-card home-panel">
+              <div className="panel-card-head">
+                <strong>Appearance</strong>
+                <button className="link-btn" onClick={() => setShowThemesPanel(false)}>Close</button>
+              </div>
+              <div style={{ display: "grid", gap: "12px" }}>
+                <div>
+                  <p style={{ margin: "0 0 8px 0", fontSize: "12px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>Theme</p>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button
+                      className="mini-btn"
+                      onClick={() => setTheme("light")}
+                      style={{
+                        background: theme === "light" ? "var(--accent)" : "var(--surface)",
+                        color: theme === "light" ? "#fff" : "var(--ink)",
+                        borderColor: theme === "light" ? "var(--accent)" : "var(--line)",
+                      }}
+                    >
+                      ☀ Light
+                    </button>
+                    <button
+                      className="mini-btn"
+                      onClick={() => setTheme("dark")}
+                      style={{
+                        background: theme === "dark" ? "var(--accent)" : "var(--surface)",
+                        color: theme === "dark" ? "#fff" : "var(--ink)",
+                        borderColor: theme === "dark" ? "var(--accent)" : "var(--line)",
+                      }}
+                    >
+                      🌙 Dark
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <p style={{ margin: "0 0 8px 0", fontSize: "12px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>Accent color</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(60px, 1fr))", gap: "6px" }}>
+                    {(["blue", "purple", "green", "red", "amber"] as const).map((color) => (
+                      <button
+                        key={color}
+                        className="mini-btn"
+                        onClick={() => setAccentColor(color)}
+                        style={{
+                          background: accentColor === color ? `var(--accent)` : "var(--surface)",
+                          color: accentColor === color ? "#fff" : "var(--ink)",
+                          borderColor: accentColor === color ? "var(--accent)" : "var(--line)",
+                          fontSize: "11px",
+                          textTransform: "capitalize",
+                        }}
+                      >
+                        {color === "blue" && "🔵"}
+                        {color === "purple" && "🟣"}
+                        {color === "green" && "🟢"}
+                        {color === "red" && "🔴"}
+                        {color === "amber" && "🟡"}
+                        {" "}{color}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
