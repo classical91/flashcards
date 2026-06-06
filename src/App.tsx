@@ -1,5 +1,5 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
-import { defaultDeckId, starterSections } from "./data/decks";
+import { defaultDeckId } from "./data/decks";
 import {
   Deck,
   DeckSection,
@@ -12,320 +12,66 @@ import {
   createLibrarySnapshot,
   parseLibrarySnapshot,
 } from "./data/librarySnapshot";
-
-type StudyMode = "all" | "remaining";
-
-type DeckProgress = {
-  currentCardId: string;
-  knownIds: string[];
-  isFlipped: boolean;
-  studyMode: StudyMode;
-};
-
-type DeckComposer = {
-  sectionId: string;
-  title: string;
-  subtitle: string;
-  paste: string;
-};
-
-type SectionComposer = {
-  title: string;
-  description: string;
-};
-
-type ConfirmDialog = {
-  message: string;
-  onConfirm: () => void;
-};
-
-type SyncState = "idle" | "loading" | "saving" | "saved" | "error";
-
-type ViewState =
-  | { kind: "home" }
-  | { kind: "pinned" }
-  | { kind: "section"; sectionId: string }
-  | { kind: "study"; deckId: string };
-
-type AiModal = {
-  word: string;
-  prompt: string;
-} | null;
-
-const LIBRARY_STORAGE_KEY = "flashcards.library.v2";
-const PROGRESS_STORAGE_KEY = "flashcards.progress.v2";
-const SELECTED_DECK_STORAGE_KEY = "flashcards.selectedDeck.v2";
-const SYNC_KEY_STORAGE_KEY = "flashcards.syncKey.v1";
-const PINNED_DECKS_STORAGE_KEY = "flashcards.pinnedDecks.v1";
-const RECENT_DECKS_STORAGE_KEY = "flashcards.recentDecks.v2";
-const THEME_STORAGE_KEY = "flashcards.theme.v1";
-const ACCENT_STORAGE_KEY = "flashcards.accent.v1";
-const MAX_RECENT_DECKS = 6;
-
-type Theme = "light" | "dark";
-type AccentColor = "blue" | "purple" | "green" | "red" | "amber";
-const DEFAULT_SYNC_KEY =
-  import.meta.env.VITE_FLASHCARDS_SYNC_KEY?.trim() || "jasons-flashcards-library";
-const syncKeyPattern = /^[A-Za-z0-9_-]{8,120}$/;
-
-const shuffleCards = (cards: { id: string; term: string; definition: string }[]) => {
-  const copy = [...cards];
-  for (let index = copy.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
-  }
-  return copy;
-};
-
-const cloneSections = (sections: DeckSection[]) =>
-  sections.map((section) => ({
-    ...section,
-    decks: section.decks.map((deck) => ({
-      ...deck,
-      cards: deck.cards.map((card) => ({ ...card })),
-    })),
-  }));
-
-const mergeDeck = (cloudDeck: Deck, localDeck: Deck): Deck => {
-  const cloudCardIds = new Set(cloudDeck.cards.map((card) => card.id));
-  return {
-    ...cloudDeck,
-    cards: [
-      ...cloudDeck.cards.map((card) => ({ ...card })),
-      ...localDeck.cards
-        .filter((card) => !cloudCardIds.has(card.id))
-        .map((card) => ({ ...card })),
-    ],
-  };
-};
-
-const mergeSections = (localSections: DeckSection[], cloudSections: DeckSection[]) => {
-  const localSectionsById = new Map(localSections.map((s) => [s.id, s]));
-  const cloudSectionIds = new Set(cloudSections.map((s) => s.id));
-  const mergedSections = cloudSections.map((cloudSection) => {
-    const localSection = localSectionsById.get(cloudSection.id);
-    if (!localSection) {
-      return {
-        ...cloudSection,
-        decks: cloudSection.decks.map((deck) => ({
-          ...deck,
-          cards: deck.cards.map((card) => ({ ...card })),
-        })),
-      };
-    }
-    const localDecksById = new Map(localSection.decks.map((deck) => [deck.id, deck]));
-    const cloudDeckIds = new Set(cloudSection.decks.map((deck) => deck.id));
-    return {
-      ...cloudSection,
-      decks: [
-        ...cloudSection.decks.map((cloudDeck) => {
-          const localDeck = localDecksById.get(cloudDeck.id);
-          return localDeck ? mergeDeck(cloudDeck, localDeck) : { ...cloudDeck };
-        }),
-        ...localSection.decks
-          .filter((deck) => !cloudDeckIds.has(deck.id))
-          .map((deck) => ({ ...deck, cards: deck.cards.map((card) => ({ ...card })) })),
-      ],
-    };
-  });
-  return [
-    ...mergedSections,
-    ...localSections
-      .filter((section) => !cloudSectionIds.has(section.id))
-      .map((section) => ({
-        ...section,
-        decks: section.decks.map((deck) => ({
-          ...deck,
-          cards: deck.cards.map((card) => ({ ...card })),
-        })),
-      })),
-  ];
-};
-
-const flattenDecks = (sections: DeckSection[]) => sections.flatMap((s) => s.decks);
-
-const findDeckById = (sections: DeckSection[], deckId: string) =>
-  flattenDecks(sections).find((deck) => deck.id === deckId) ?? null;
-
-const findSectionForDeck = (sections: DeckSection[], deckId: string) =>
-  sections.find((section) => section.decks.some((deck) => deck.id === deckId)) ??
-  sections[0] ??
-  null;
-
-const createDeckProgress = (deck: Deck): DeckProgress => ({
-  currentCardId: deck.cards[0]?.id ?? "",
-  knownIds: [],
-  isFlipped: false,
-  studyMode: "all",
-});
-
-const buildProgressState = (sections: DeckSection[]) =>
-  Object.fromEntries(
-    flattenDecks(sections).map((deck) => [deck.id, createDeckProgress(deck)]),
-  ) as Record<string, DeckProgress>;
-
-const loadTheme = (): Theme => {
-  try {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored === "light" || stored === "dark") return stored;
-  } catch {}
-  return "light";
-};
-
-const loadAccentColor = (): AccentColor => {
-  try {
-    const stored = window.localStorage.getItem(ACCENT_STORAGE_KEY);
-    if (["blue", "purple", "green", "red", "amber"].includes(stored || "")) {
-      return stored as AccentColor;
-    }
-  } catch {}
-  return "blue";
-};
-
-const loadLibrarySections = () => {
-  if (typeof window === "undefined") return cloneSections(starterSections);
-  const saved = window.localStorage.getItem(LIBRARY_STORAGE_KEY);
-  if (!saved) return cloneSections(starterSections);
-  try {
-    const parsed = JSON.parse(saved) as DeckSection[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return cloneSections(starterSections);
-    return parsed;
-  } catch {
-    return cloneSections(starterSections);
-  }
-};
-
-const loadProgressState = (sections: DeckSection[]) => {
-  if (typeof window === "undefined") return buildProgressState(sections);
-  const saved = window.localStorage.getItem(PROGRESS_STORAGE_KEY);
-  if (!saved) return buildProgressState(sections);
-  try {
-    const parsed = JSON.parse(saved) as Record<string, DeckProgress>;
-    if (!parsed || typeof parsed !== "object") return buildProgressState(sections);
-    return parsed;
-  } catch {
-    return buildProgressState(sections);
-  }
-};
-
-const loadSelectedDeckId = () => {
-  if (typeof window === "undefined") return defaultDeckId;
-  return window.localStorage.getItem(SELECTED_DECK_STORAGE_KEY) ?? defaultDeckId;
-};
-
-const normalizeSyncKey = (value: string) => value.trim();
-const isSyncKeyValid = (value: string) => syncKeyPattern.test(value);
-
-const createSyncKey = () => {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID().replace(/-/g, "").slice(0, 24);
-  }
-  return Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
-};
-
-const loadSyncKey = () => {
-  if (typeof window === "undefined") return DEFAULT_SYNC_KEY;
-  const saved = window.localStorage.getItem(SYNC_KEY_STORAGE_KEY) ?? "";
-  return isSyncKeyValid(saved) ? saved : DEFAULT_SYNC_KEY;
-};
-
-const loadPinnedDeckIds = (): string[] => {
-  if (typeof window === "undefined") return [];
-  try {
-    const saved = window.localStorage.getItem(PINNED_DECKS_STORAGE_KEY);
-    if (!saved) return [];
-    const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-type RecentDeckEntry = { id: string; viewedAt: number };
-
-const loadRecentDeckIds = (): RecentDeckEntry[] => {
-  if (typeof window === "undefined") return [];
-  try {
-    const saved = window.localStorage.getItem(RECENT_DECKS_STORAGE_KEY);
-    if (!saved) return [];
-    const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-const formatRelativeTime = (ts: number): string => {
-  const diffMs = Date.now() - ts;
-  const diffSec = Math.floor(diffMs / 1000);
-  if (diffSec < 60) return "just now";
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay === 1) return "yesterday";
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-};
-
-const getFetchErrorMessage = async (response: Response) => {
-  try {
-    const payload = (await response.clone().json()) as { message?: string; error?: string };
-    return payload.message ?? payload.error ?? `Request failed with ${response.status}.`;
-  } catch {
-    try {
-      const message = (await response.text()).trim();
-      if (message) return `${message} (${response.status})`;
-    } catch {
-      // fall through
-    }
-    return `Request failed with ${response.status}.`;
-  }
-};
-
-const isTypingTarget = (target: EventTarget | null) => {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.isContentEditable ||
-    target.tagName === "INPUT" ||
-    target.tagName === "TEXTAREA" ||
-    target.tagName === "SELECT"
-  );
-};
-
-const updateDeckInSections = (
-  sections: DeckSection[],
-  deckId: string,
-  updater: (deck: Deck) => Deck,
-) =>
-  sections.map((section) => ({
-    ...section,
-    decks: section.decks.map((deck) => (deck.id === deckId ? updater(deck) : deck)),
-  }));
-
-const mergeProgressState = (
-  localProgress: Record<string, DeckProgress>,
-  cloudProgress: Record<string, DeckProgress>,
-  sections: DeckSection[],
-) => {
-  const mergedProgress: Record<string, DeckProgress> = {};
-  flattenDecks(sections).forEach((deck) => {
-    const cloudDeckProgress = cloudProgress[deck.id];
-    const localDeckProgress = localProgress[deck.id];
-    const baseProgress = cloudDeckProgress ?? localDeckProgress ?? createDeckProgress(deck);
-    mergedProgress[deck.id] = {
-      ...baseProgress,
-      knownIds: Array.from(
-        new Set([
-          ...(cloudDeckProgress?.knownIds ?? []),
-          ...(localDeckProgress?.knownIds ?? []),
-        ]),
-      ),
-    };
-  });
-  return mergedProgress;
-};
+import {
+  ACCENT_STORAGE_KEY,
+  DEFAULT_SYNC_KEY,
+  LIBRARY_STORAGE_KEY,
+  MAX_RECENT_DECKS,
+  PINNED_DECKS_STORAGE_KEY,
+  PROGRESS_STORAGE_KEY,
+  RECENT_DECKS_STORAGE_KEY,
+  SELECTED_DECK_STORAGE_KEY,
+  SYNC_KEY_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+} from "./lib/constants";
+import {
+  createDeckProgress,
+  findDeckById,
+  findSectionForDeck,
+  flattenDecks,
+  mergeProgressState,
+  mergeSections,
+  shuffleCards,
+  updateDeckInSections,
+} from "./lib/deckUtils";
+import {
+  loadAccentColor,
+  loadLibrarySections,
+  loadPinnedDeckIds,
+  loadProgressState,
+  loadRecentDeckIds,
+  loadSelectedDeckId,
+  loadSyncKey,
+  loadTheme,
+  safeRemoveItem,
+  safeSetItem,
+} from "./lib/storage";
+import {
+  createSyncKey,
+  fetchCloudSnapshot,
+  isSyncKeyValid,
+  normalizeSyncKey,
+  saveSnapshotToCloud,
+} from "./lib/sync";
+import {
+  AccentColor,
+  AiModal,
+  ConfirmDialog,
+  DeckComposer,
+  DeckProgress,
+  RecentDeckEntry,
+  SectionComposer,
+  StudyMode,
+  SyncState,
+  Theme,
+  ViewState,
+} from "./lib/types";
+import { useStudyKeyboard } from "./hooks/useStudyKeyboard";
+import { AiOverlay, CardListOverlay, ConfirmOverlay } from "./components/Overlays";
+import { HomeView } from "./components/HomeView";
+import { PinnedView } from "./components/PinnedView";
+import { SectionView } from "./components/SectionView";
+import { StudyView } from "./components/StudyView";
 
 export default function App() {
   const [librarySections, setLibrarySections] = useState(loadLibrarySections);
@@ -638,13 +384,6 @@ export default function App() {
     openDeck(deck.id);
   };
 
-  const openRandomTopicDeck = () => {
-    const sectionsWithDecks = librarySections.filter((s) => s.decks.length > 0);
-    if (!sectionsWithDecks.length) return;
-    const section = sectionsWithDecks[Math.floor(Math.random() * sectionsWithDecks.length)];
-    openRandomDeck(section.decks);
-  };
-
   const togglePinDeck = (deckId: string) => {
     setPinnedDeckIds((current) =>
       current.includes(deckId) ? current.filter((id) => id !== deckId) : [...current, deckId],
@@ -812,49 +551,6 @@ export default function App() {
     window.open(urls[provider], "_blank", "noopener,noreferrer");
     setAiModal(null);
     setToast(`Prompt copied. Paste it into ${provider} to ask about "${word}".`);
-  };
-
-  const fetchCloudSnapshot = async (activeSyncKey: string) => {
-    const response = await fetch(`/api/libraries/${encodeURIComponent(activeSyncKey)}`);
-    if (!response.ok) throw new Error(await getFetchErrorMessage(response));
-    return (await response.json()) as {
-      exists?: boolean;
-      snapshot?: unknown;
-      revision?: number;
-      storage?: string;
-    };
-  };
-
-  type SaveOutcome =
-    | { conflict: false; revision: number | null }
-    | { conflict: true; current: { snapshot?: unknown; revision?: number } | null };
-
-  const saveSnapshotToCloud = async (
-    activeSyncKey: string,
-    snapshot: LibrarySnapshot,
-    expectedRevision: number | null,
-  ): Promise<SaveOutcome> => {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (expectedRevision !== null) {
-      headers["If-Match"] = String(expectedRevision);
-    }
-    const response = await fetch(`/api/libraries/${encodeURIComponent(activeSyncKey)}`, {
-      method: "PUT",
-      headers,
-      body: JSON.stringify(snapshot),
-    });
-    if (response.status === 409) {
-      const payload = (await response.json().catch(() => ({}))) as {
-        current?: { snapshot?: unknown; revision?: number } | null;
-      };
-      return { conflict: true, current: payload.current ?? null };
-    }
-    if (!response.ok) throw new Error(await getFetchErrorMessage(response));
-    const payload = (await response.json().catch(() => ({}))) as { revision?: number };
-    return {
-      conflict: false,
-      revision: typeof payload.revision === "number" ? payload.revision : null,
-    };
   };
 
   const applyRemoteSnapshotMerge = (remoteSnapshot: LibrarySnapshot) => {
@@ -1054,18 +750,15 @@ export default function App() {
   }, [activeProgress, selectedDeck, visibleCards]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(librarySections));
+    safeSetItem(LIBRARY_STORAGE_KEY, JSON.stringify(librarySections));
   }, [librarySections]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(deckProgress));
+    safeSetItem(PROGRESS_STORAGE_KEY, JSON.stringify(deckProgress));
   }, [deckProgress]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(SELECTED_DECK_STORAGE_KEY, selectedDeckId);
+    safeSetItem(SELECTED_DECK_STORAGE_KEY, selectedDeckId);
   }, [selectedDeckId]);
 
   useEffect(() => {
@@ -1078,34 +771,31 @@ export default function App() {
   }, [librarySections, deckProgress, selectedDeckId]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
     if (syncKey) {
-      window.localStorage.setItem(SYNC_KEY_STORAGE_KEY, syncKey);
+      safeSetItem(SYNC_KEY_STORAGE_KEY, syncKey);
     } else {
-      window.localStorage.removeItem(SYNC_KEY_STORAGE_KEY);
+      safeRemoveItem(SYNC_KEY_STORAGE_KEY);
     }
   }, [syncKey]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(PINNED_DECKS_STORAGE_KEY, JSON.stringify(pinnedDeckIds));
+    safeSetItem(PINNED_DECKS_STORAGE_KEY, JSON.stringify(pinnedDeckIds));
   }, [pinnedDeckIds]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(RECENT_DECKS_STORAGE_KEY, JSON.stringify(recentDeckIds));
+    safeSetItem(RECENT_DECKS_STORAGE_KEY, JSON.stringify(recentDeckIds));
   }, [recentDeckIds]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     document.documentElement.setAttribute("data-theme", theme);
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    safeSetItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     document.documentElement.setAttribute("data-accent", accentColor);
-    window.localStorage.setItem(ACCENT_STORAGE_KEY, accentColor);
+    safeSetItem(ACCENT_STORAGE_KEY, accentColor);
   }, [accentColor]);
 
   useEffect(() => {
@@ -1210,21 +900,12 @@ export default function App() {
     }
   }, [view.kind]);
 
-  useEffect(() => {
-    if (view.kind !== "study") return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (isTypingTarget(event.target)) return;
-      if (event.key === " " || event.key === "Enter") {
-        event.preventDefault();
-        handleFlip();
-      }
-      if (event.key === "ArrowRight") { event.preventDefault(); moveToCard(1); }
-      if (event.key === "ArrowLeft") { event.preventDefault(); moveToCard(-1); }
-      if (event.key.toLowerCase() === "k") { event.preventDefault(); toggleKnown(); }
-      if (event.key.toLowerCase() === "s") { event.preventDefault(); handleShuffle(); }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+  useStudyKeyboard(view.kind === "study", {
+    onFlip: handleFlip,
+    onNext: () => moveToCard(1),
+    onPrev: () => moveToCard(-1),
+    onToggleKnown: toggleKnown,
+    onShuffle: handleShuffle,
   });
 
   useEffect(() => {
@@ -1241,362 +922,53 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAutoPlaying, currentCard?.id, activeProgress?.isFlipped, view.kind]);
 
-  // ── Shared overlays ─────────────────────────────────────────────────────────
-
-  const ConfirmOverlay = confirmDialog ? (
-    <div className="confirm-overlay" role="dialog" aria-modal="true">
-      <div className="confirm-box">
-        <p>{confirmDialog.message}</p>
-        <div className="confirm-actions">
-          <button className="mini-btn" onClick={() => setConfirmDialog(null)}>Cancel</button>
-          <button className="danger-btn" onClick={confirmDialog.onConfirm}>Yes, delete</button>
-        </div>
-      </div>
-    </div>
-  ) : null;
-
-  const AiOverlay = aiModal ? (
-    <div
-      className="modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      onClick={(e) => { if (e.target === e.currentTarget) setAiModal(null); }}
-    >
-      <section className="modal">
-        <h2>Ask AI about &ldquo;{aiModal.word}&rdquo;?</h2>
-        <p>
-          This will copy a prompt asking how to use the word naturally in a sentence. Then
-          choose which AI app to open.
-        </p>
-        <div className="prompt-preview">{aiModal.prompt}</div>
-        <div className="modal-actions">
-          <button className="mini-btn" onClick={() => setAiModal(null)}>Cancel</button>
-          <button className="mini-btn" onClick={() => openAI("chatgpt")}>Open ChatGPT</button>
-          <button className="mini-btn" onClick={() => openAI("claude")}>Open Claude</button>
-          <button className="mini-btn" onClick={() => openAI("gemini")}>Open Gemini</button>
-        </div>
-      </section>
-    </div>
-  ) : null;
-
-  const CardListOverlay = showCardList && selectedDeck ? (
-    <div
-      className="modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      onClick={(e) => { if (e.target === e.currentTarget) setShowCardList(false); }}
-    >
-      <section className="modal card-list-modal">
-        <div className="panel-card-head">
-          <strong>{selectedDeck.title} &mdash; {selectedDeck.cards.length} card{selectedDeck.cards.length !== 1 ? "s" : ""}</strong>
-          <button className="link-btn" onClick={() => setShowCardList(false)}>Close</button>
-        </div>
-        <div className="card-list-scroll">
-          {selectedDeck.cards.map((card, i) => (
-            <div key={card.id} className="card-list-row">
-              <span className="card-list-index">{i + 1}</span>
-              <span className="card-list-term">{card.term}</span>
-              <span className="card-list-def">{card.definition}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
-  ) : null;
+  const confirmOverlay = (
+    <ConfirmOverlay confirmDialog={confirmDialog} onCancel={() => setConfirmDialog(null)} />
+  );
 
   // ── HOME VIEW ───────────────────────────────────────────────────────────────
 
   if (view.kind === "home") {
     return (
       <>
-        <div className="home-view">
-          <div className="home-header">
-            <h1 className="home-title">Flashcards</h1>
-            <div className="home-header-actions" ref={actionsMenuRef}>
-              <button
-                className="home-actions-trigger"
-                onClick={() => setShowActionsMenu((v) => !v)}
-                title="Actions"
-              >
-                ⋯
-              </button>
-              {showActionsMenu && (
-                <div className="home-actions-menu">
-                  <button
-                    className="home-actions-item"
-                    onClick={() => { setShowActionsMenu(false); setShowSyncPanel((v) => !v); }}
-                  >
-                    {syncState === "loading" || syncState === "saving" ? "Syncing…" : "☁ Sync"}
-                  </button>
-                  {pinnedDeckIds.length > 0 && (
-                    <button
-                      className="home-actions-item"
-                      onClick={() => { setShowActionsMenu(false); setView({ kind: "pinned" }); }}
-                    >
-                      📌 Pinned ({pinnedDeckIds.length})
-                    </button>
-                  )}
-                  <button
-                    className="home-actions-item"
-                    onClick={() => { setShowActionsMenu(false); openRandomDeck(allDecks); }}
-                    disabled={allDecks.length === 0}
-                  >
-                    Shuffle home
-                  </button>
-                  <button
-                    className="home-actions-item"
-                    onClick={() => {
-                      setShowActionsMenu(false);
-                      setSectionComposerMessage("");
-                      setSectionComposer({ title: "", description: "" });
-                    }}
-                  >
-                    + New topic
-                  </button>
-                  <button
-                    className="home-actions-item"
-                    onClick={() => { setShowActionsMenu(false); setShowThemesPanel((v) => !v); }}
-                    style={{ color: "var(--accent)", fontWeight: 500 }}
-                  >
-                    🎨 Themes
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {showSyncPanel && (
-            <div className="panel-card home-panel">
-              <div className="panel-card-head">
-                <strong>Cloud sync</strong>
-                <button className="link-btn" onClick={() => setShowSyncPanel(false)}>Close</button>
-              </div>
-              <div className="field">
-                <label>Sync key</label>
-                <input
-                  type="text"
-                  value={syncKeyInput}
-                  onChange={(e) => {
-                    cloudSyncReadyRef.current = false;
-                    setSyncKeyInput(e.target.value);
-                  }}
-                  placeholder="Shared cloud library key"
-                />
-              </div>
-              {!isUsingSharedSyncKey && (
-                <p className="hint-text">Using a custom sync key.</p>
-              )}
-              <div className="panel-card-actions">
-                <button className="mini-btn" onClick={handleApplySyncKey}>Use key</button>
-                <button
-                  className="mini-btn"
-                  onClick={handleLoadFromCloud}
-                  disabled={syncState === "loading" || syncState === "saving"}
-                >
-                  Load cloud
-                </button>
-                <button
-                  className="mini-btn"
-                  onClick={handleSaveThisBrowserToCloud}
-                  disabled={syncState === "loading" || syncState === "saving"}
-                >
-                  Save to cloud
-                </button>
-                <button
-                  className="mini-btn"
-                  onClick={handleUseSharedLibrary}
-                  disabled={isUsingSharedSyncKey || syncState === "loading" || syncState === "saving"}
-                >
-                  Shared library
-                </button>
-                <button className="mini-btn" onClick={handleGenerateSyncKey}>New key</button>
-              </div>
-              <p
-                className={`message-line${syncState === "error" ? " error" : syncState === "saved" ? " success" : ""}`}
-              >
-                {syncMessage}
-              </p>
-            </div>
-          )}
-
-          {showThemesPanel && (
-            <div className="panel-card home-panel">
-              <div className="panel-card-head">
-                <strong>Appearance</strong>
-                <button className="link-btn" onClick={() => setShowThemesPanel(false)}>Close</button>
-              </div>
-              <div style={{ display: "grid", gap: "12px" }}>
-                <div>
-                  <p style={{ margin: "0 0 8px 0", fontSize: "12px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>Theme</p>
-                  <div style={{ display: "flex", gap: "6px" }}>
-                    <button
-                      className="mini-btn"
-                      onClick={() => setTheme("light")}
-                      style={{
-                        background: theme === "light" ? "var(--accent)" : "var(--surface)",
-                        color: theme === "light" ? "#fff" : "var(--ink)",
-                        borderColor: theme === "light" ? "var(--accent)" : "var(--line)",
-                      }}
-                    >
-                      ☀ Light
-                    </button>
-                    <button
-                      className="mini-btn"
-                      onClick={() => setTheme("dark")}
-                      style={{
-                        background: theme === "dark" ? "var(--accent)" : "var(--surface)",
-                        color: theme === "dark" ? "#fff" : "var(--ink)",
-                        borderColor: theme === "dark" ? "var(--accent)" : "var(--line)",
-                      }}
-                    >
-                      🌙 Dark
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <p style={{ margin: "0 0 8px 0", fontSize: "12px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>Accent color</p>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(60px, 1fr))", gap: "6px" }}>
-                    {(["blue", "purple", "green", "red", "amber"] as const).map((color) => (
-                      <button
-                        key={color}
-                        className="mini-btn"
-                        onClick={() => setAccentColor(color)}
-                        style={{
-                          background: accentColor === color ? `var(--accent)` : "var(--surface)",
-                          color: accentColor === color ? "#fff" : "var(--ink)",
-                          borderColor: accentColor === color ? "var(--accent)" : "var(--line)",
-                          fontSize: "11px",
-                          textTransform: "capitalize",
-                        }}
-                      >
-                        {color === "blue" && "🔵"}
-                        {color === "purple" && "🟣"}
-                        {color === "green" && "🟢"}
-                        {color === "red" && "🔴"}
-                        {color === "amber" && "🟡"}
-                        {" "}{color}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {sectionComposer && (
-            <div className="panel-card home-panel">
-              <div className="panel-card-head">
-                <strong>New topic</strong>
-                <button
-                  className="link-btn"
-                  onClick={() => { setSectionComposer(null); setSectionComposerMessage(""); }}
-                >
-                  Close
-                </button>
-              </div>
-              <div className="field">
-                <label>Topic name</label>
-                <input
-                  type="text"
-                  value={sectionComposer.title}
-                  onChange={(e) =>
-                    setSectionComposer((c) => (c ? { ...c, title: e.target.value } : c))
-                  }
-                  placeholder="e.g. Greek Mythology"
-                  autoFocus
-                />
-              </div>
-              <div className="field">
-                <label>Description (optional)</label>
-                <input
-                  type="text"
-                  value={sectionComposer.description}
-                  onChange={(e) =>
-                    setSectionComposer((c) => (c ? { ...c, description: e.target.value } : c))
-                  }
-                  placeholder="Short note about this topic"
-                />
-              </div>
-              {sectionComposerMessage && (
-                <p className="message-line error">{sectionComposerMessage}</p>
-              )}
-              <div className="panel-card-actions">
-                <button className="mini-btn" onClick={handleCreateSection}>Create topic</button>
-              </div>
-            </div>
-          )}
-
-          <div className="home-main">
-            {librarySections.length === 0 ? (
-              <div className="empty-state">
-                No topics yet. Create one above to get started.
-              </div>
-            ) : (
-              <div className="sections-grid">
-                {librarySections.map((section) => {
-                  const cardCount = section.decks.reduce((sum, d) => sum + d.cards.length, 0);
-                  const sectionKnown = section.decks.reduce((sum, d) => {
-                    return sum + (deckProgress[d.id]?.knownIds.length ?? 0);
-                  }, 0);
-                  return (
-                    <button
-                      key={section.id}
-                      className="section-card"
-                      onClick={() => setView({ kind: "section", sectionId: section.id })}
-                    >
-                      <div className="section-card-inner">
-                        <div>
-                          <div className="section-card-title">{section.title}</div>
-                          <div className="section-card-meta">
-                            {section.decks.length} deck{section.decks.length !== 1 ? "s" : ""}{" "}
-                            · {cardCount} card{cardCount !== 1 ? "s" : ""}
-                            {sectionKnown > 0 ? ` · ${sectionKnown} known` : ""}
-                          </div>
-                          {section.description && (
-                            <div className="section-card-desc">{section.description}</div>
-                          )}
-                        </div>
-                        <span className="section-card-arrow">›</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {recentDeckIds.length > 0 && (() => {
-            const recentDecks = recentDeckIds
-              .map((entry) => {
-                const deck = findDeckById(librarySections, entry.id);
-                const section = deck ? findSectionForDeck(librarySections, deck.id) : null;
-                return deck && section ? { deck, section, viewedAt: entry.viewedAt } : null;
-              })
-              .filter((x): x is { deck: Deck; section: DeckSection; viewedAt: number } => x !== null);
-            if (recentDecks.length === 0) return null;
-            return (
-              <div className="home-recent">
-                <div className="home-recent-label">Recently viewed</div>
-                <div className="home-recent-list">
-                  {recentDecks.map(({ deck, section, viewedAt }) => (
-                    <button
-                      key={deck.id}
-                      className="home-recent-item"
-                      onClick={() => openDeck(deck.id)}
-                    >
-                      <div className="home-recent-item-info">
-                        <span className="home-recent-item-title">{deck.title}</span>
-                        <span className="home-recent-item-section">{section.title}</span>
-                      </div>
-                      <span className="home-recent-item-time">{formatRelativeTime(viewedAt)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-        {ConfirmOverlay}
+        <HomeView
+          librarySections={librarySections}
+          deckProgress={deckProgress}
+          allDecks={allDecks}
+          recentDeckIds={recentDeckIds}
+          pinnedDeckIds={pinnedDeckIds}
+          showActionsMenu={showActionsMenu}
+          setShowActionsMenu={setShowActionsMenu}
+          actionsMenuRef={actionsMenuRef}
+          setView={setView}
+          openDeck={openDeck}
+          openRandomDeck={openRandomDeck}
+          syncState={syncState}
+          syncMessage={syncMessage}
+          syncKeyInput={syncKeyInput}
+          setSyncKeyInput={setSyncKeyInput}
+          cloudSyncReadyRef={cloudSyncReadyRef}
+          isUsingSharedSyncKey={isUsingSharedSyncKey}
+          showSyncPanel={showSyncPanel}
+          setShowSyncPanel={setShowSyncPanel}
+          onApplySyncKey={handleApplySyncKey}
+          onLoadFromCloud={handleLoadFromCloud}
+          onSaveToCloud={handleSaveThisBrowserToCloud}
+          onUseSharedLibrary={handleUseSharedLibrary}
+          onGenerateSyncKey={handleGenerateSyncKey}
+          showThemesPanel={showThemesPanel}
+          setShowThemesPanel={setShowThemesPanel}
+          theme={theme}
+          setTheme={setTheme}
+          accentColor={accentColor}
+          setAccentColor={setAccentColor}
+          sectionComposer={sectionComposer}
+          setSectionComposer={setSectionComposer}
+          sectionComposerMessage={sectionComposerMessage}
+          setSectionComposerMessage={setSectionComposerMessage}
+          onCreateSection={handleCreateSection}
+        />
+        {confirmOverlay}
       </>
     );
   }
@@ -1604,85 +976,18 @@ export default function App() {
   // ── PINNED VIEW ─────────────────────────────────────────────────────────────
 
   if (view.kind === "pinned") {
-    const pinnedDecks = pinnedDeckIds
-      .map((id) => {
-        const deck = findDeckById(librarySections, id);
-        const section = deck ? findSectionForDeck(librarySections, deck.id) : null;
-        return deck && section ? { deck, section } : null;
-      })
-      .filter((entry): entry is { deck: Deck; section: DeckSection } => entry !== null);
-
     return (
       <>
-        <div className="app">
-          <header className="topbar">
-            <button className="topbar-btn" onClick={() => setView({ kind: "home" })}>
-              ‹ Home
-            </button>
-            <div className="top-title">Pinned Decks</div>
-            <div className="topbar-right">
-              <button
-                className="topbar-btn"
-                onClick={() => openRandomDeck(pinnedDecks.map((e) => e.deck))}
-                disabled={pinnedDecks.length === 0}
-                title="Open a random pinned deck"
-              >
-                Random pinned
-              </button>
-            </div>
-          </header>
-
-          <div className="section-view-main">
-            {pinnedDecks.length === 0 ? (
-              <div className="empty-state">
-                No pinned decks yet. Pin a deck from any topic to see it here.
-              </div>
-            ) : (
-              <div className="decks-list">
-                {pinnedDecks.map(({ deck, section }) => {
-                  const progress = deckProgress[deck.id] ?? createDeckProgress(deck);
-                  const known = progress.knownIds.length;
-                  const total = deck.cards.length;
-                  const ratio = total ? known / total : 0;
-                  return (
-                    <div key={deck.id} className="deck-card-row">
-                      <button
-                        className="deck-card"
-                        onClick={() => openDeck(deck.id)}
-                      >
-                        <div className="deck-card-info">
-                          <div className="deck-card-title">{deck.title}</div>
-                          <div className="deck-card-subtitle">
-                            {section.title} · {deck.subtitle}
-                          </div>
-                          <div className="progress-bar-track">
-                            <div
-                              className="progress-bar-fill"
-                              style={{ width: `${ratio * 100}%` }}
-                            />
-                          </div>
-                        </div>
-                        <div className="deck-card-stats">
-                          <span>{total} cards</span>
-                          <span>{known} known</span>
-                          <span className="section-card-arrow">›</span>
-                        </div>
-                      </button>
-                      <button
-                        className="deck-card-pin pinned"
-                        title="Unpin deck"
-                        onClick={() => togglePinDeck(deck.id)}
-                      >
-                        📌
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-        {ConfirmOverlay}
+        <PinnedView
+          librarySections={librarySections}
+          deckProgress={deckProgress}
+          pinnedDeckIds={pinnedDeckIds}
+          setView={setView}
+          openDeck={openDeck}
+          openRandomDeck={openRandomDeck}
+          togglePinDeck={togglePinDeck}
+        />
+        {confirmOverlay}
       </>
     );
   }
@@ -1698,155 +1003,24 @@ export default function App() {
 
     return (
       <>
-        <div className="app">
-          <header className="topbar">
-            <button className="topbar-btn" onClick={() => setView({ kind: "home" })}>
-              ‹ Home
-            </button>
-            <div className="top-title">{section.title}</div>
-            <div className="topbar-right">
-              <button
-                className="topbar-btn"
-                onClick={() => openRandomDeck(section.decks)}
-                disabled={section.decks.length === 0}
-                title="Open a random deck from this topic"
-              >
-                Random deck
-              </button>
-              <button
-                className="topbar-btn"
-                onClick={() => {
-                  setDeckComposerMessage("");
-                  setDeckComposer({ sectionId: section.id, title: "", subtitle: "", paste: "" });
-                }}
-              >
-                New deck
-              </button>
-              <button
-                className="topbar-btn danger-topbar-btn"
-                onClick={() => handleDeleteSection(section.id)}
-              >
-                Delete topic
-              </button>
-            </div>
-          </header>
-
-          <div className="section-view-main">
-            {deckComposer?.sectionId === section.id && (
-              <div className="panel-card" style={{ marginBottom: 12 }}>
-                <div className="panel-card-head">
-                  <strong>New deck in {section.title}</strong>
-                  <button
-                    className="link-btn"
-                    onClick={() => { setDeckComposer(null); setDeckComposerMessage(""); }}
-                  >
-                    Close
-                  </button>
-                </div>
-                <div className="field">
-                  <label>Deck name</label>
-                  <input
-                    type="text"
-                    value={deckComposer.title}
-                    onChange={(e) =>
-                      setDeckComposer((c) => (c ? { ...c, title: e.target.value } : c))
-                    }
-                    placeholder="e.g. Common compliments"
-                    autoFocus
-                  />
-                </div>
-                <div className="field">
-                  <label>Subtitle (optional)</label>
-                  <input
-                    type="text"
-                    value={deckComposer.subtitle}
-                    onChange={(e) =>
-                      setDeckComposer((c) => (c ? { ...c, subtitle: e.target.value } : c))
-                    }
-                    placeholder="Optional note about the deck"
-                  />
-                </div>
-                <div className="field">
-                  <label>Paste cards (optional)</label>
-                  <textarea
-                    value={deckComposer.paste}
-                    onChange={(e) =>
-                      setDeckComposer((c) => (c ? { ...c, paste: e.target.value } : c))
-                    }
-                    placeholder={"adaptable\ttable to adjust easily\nadmirable\tdeserving respect"}
-                  />
-                </div>
-                <p className="hint-text">
-                  Best results: paste Quizlet-style rows with a tab between term and definition.
-                </p>
-                <div className="import-stats">
-                  <span>{deckImportPreview.cards.length} cards ready</span>
-                  <span>{deckImportPreview.invalidLines.length} skipped lines</span>
-                </div>
-                {deckComposerMessage && (
-                  <p className="message-line error">{deckComposerMessage}</p>
-                )}
-                <div className="panel-card-actions">
-                  <button className="mini-btn" onClick={() => handleCreateDeck(section.id)}>
-                    Create deck
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {section.decks.length === 0 ? (
-              <div className="empty-state">No decks yet. Use New deck to add one.</div>
-            ) : (
-              <div className="decks-list">
-                {section.decks.map((deck) => {
-                  const progress = deckProgress[deck.id] ?? createDeckProgress(deck);
-                  const known = progress.knownIds.length;
-                  const total = deck.cards.length;
-                  const ratio = total ? known / total : 0;
-                  return (
-                    <div key={deck.id} className="deck-card-row">
-                      <button
-                        className="deck-card"
-                        onClick={() => openDeck(deck.id)}
-                      >
-                        <div className="deck-card-info">
-                          <div className="deck-card-title">{deck.title}</div>
-                          <div className="deck-card-subtitle">{deck.subtitle}</div>
-                          <div className="progress-bar-track">
-                            <div
-                              className="progress-bar-fill"
-                              style={{ width: `${ratio * 100}%` }}
-                            />
-                          </div>
-                        </div>
-                        <div className="deck-card-stats">
-                          <span>{total} cards</span>
-                          <span>{known} known</span>
-                          <span className="section-card-arrow">›</span>
-                        </div>
-                      </button>
-                      <button
-                        className={`deck-card-pin${pinnedDeckIds.includes(deck.id) ? " pinned" : ""}`}
-                        title={pinnedDeckIds.includes(deck.id) ? "Unpin deck" : "Pin deck"}
-                        onClick={() => togglePinDeck(deck.id)}
-                      >
-                        📌
-                      </button>
-                      <button
-                        className="deck-card-delete"
-                        title="Delete deck"
-                        onClick={() => handleDeleteDeck(deck.id)}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-        {ConfirmOverlay}
+        <SectionView
+          section={section}
+          deckProgress={deckProgress}
+          pinnedDeckIds={pinnedDeckIds}
+          deckComposer={deckComposer}
+          setDeckComposer={setDeckComposer}
+          deckComposerMessage={deckComposerMessage}
+          setDeckComposerMessage={setDeckComposerMessage}
+          deckImportPreview={deckImportPreview}
+          setView={setView}
+          openDeck={openDeck}
+          openRandomDeck={openRandomDeck}
+          togglePinDeck={togglePinDeck}
+          onCreateDeck={handleCreateDeck}
+          onDeleteDeck={handleDeleteDeck}
+          onDeleteSection={handleDeleteSection}
+        />
+        {confirmOverlay}
       </>
     );
   }
@@ -1857,296 +1031,59 @@ export default function App() {
 
   return (
     <>
-      <div className="app">
-        <header className="topbar">
-          <button
-            className="topbar-btn"
-            onClick={() => setView({ kind: "section", sectionId: selectedSection.id })}
-          >
-            ‹ Go back
-          </button>
-          <div className="top-title">
-            {selectedDeck.title} · {selectedSection.title}
-          </div>
-          <div className="topbar-right">
-            <button
-              className={`topbar-btn topbar-pin-btn${pinnedDeckIds.includes(selectedDeck.id) ? " pinned" : ""}`}
-              title={pinnedDeckIds.includes(selectedDeck.id) ? "Unpin deck" : "Pin deck"}
-              onClick={() => togglePinDeck(selectedDeck.id)}
-            >
-              {pinnedDeckIds.includes(selectedDeck.id) ? "📌 Pinned" : "📌 Pin"}
-            </button>
-            <div className="study-mode-toggle">
-              <button
-                className={`study-mode-btn${activeProgress.studyMode === "all" ? " active" : ""}`}
-                onClick={() => handleStudyModeChange("all")}
-              >
-                All
-              </button>
-              <button
-                className={`study-mode-btn${activeProgress.studyMode === "remaining" ? " active" : ""}`}
-                onClick={() => handleStudyModeChange("remaining")}
-                disabled={!hasRemainingCards}
-              >
-                Remaining
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <section className="stage">
-          <div className="study-wrap">
-            {currentCard ? (
-              <>
-                <div className="deck-study-title">{selectedDeck.title}</div>
-                {selectedSection && (
-                  <div className="deck-study-topic">{selectedSection.title}</div>
-                )}
-                <section className="card-shell-new" aria-live="polite">
-                  <article
-                    className={`card-3d${activeProgress.isFlipped ? " flipped" : ""}`}
-                    onClick={handleFlip}
-                    title="Click to flip the card"
-                  >
-                    <div className="face front">
-                      <div className="card-word">{currentCard.term}</div>
-                    </div>
-                    <div className="face back">
-                      <p className="card-definition">{currentCard.definition}</p>
-                    </div>
-                  </article>
-                </section>
-
-                <nav className="player" aria-label="Flashcard controls">
-                  <button className="icon-btn" onClick={handleShuffle} title="Shuffle deck">
-                    ↭
-                  </button>
-                  <button
-                    className="icon-btn"
-                    onClick={toggleKnown}
-                    title={currentCardIsKnown ? "Unmark known" : "Mark as known"}
-                    style={{ color: currentCardIsKnown ? "#2a7d4f" : undefined }}
-                  >
-                    {currentCardIsKnown ? "✓" : "×"}
-                  </button>
-                  <button className="circle-btn" onClick={() => moveToCard(-1)} title="Previous">
-                    ‹
-                  </button>
-                  <div className="counter">
-                    {cardPosition + 1} / {visibleCards.length}
-                  </div>
-                  <button className="circle-btn" onClick={() => moveToCard(1)} title="Next">
-                    ›
-                  </button>
-                  <button
-                    className="icon-btn"
-                    onClick={() => setIsAutoPlaying((v) => !v)}
-                    title="Autoplay"
-                  >
-                    {isAutoPlaying ? "❚❚" : "▶"}
-                  </button>
-                  <button className="icon-btn" onClick={handleFlip} title="Flip card">
-                    ⟳
-                  </button>
-                </nav>
-
-                <section className="deep-tools">
-                  <div className="deep-title">Deeper understanding tools</div>
-                  <div className="lookup-bar">
-                    <button className="lookup-chip" onClick={() => googleSearch("definition")}>
-                      Google definition
-                    </button>
-                    <button className="lookup-chip" onClick={() => googleSearch("synonyms")}>
-                      Google synonyms
-                    </button>
-                    <button className="lookup-chip" onClick={() => googleSearch("antonyms")}>
-                      Google antonyms
-                    </button>
-                    <button className="lookup-chip" onClick={() => googleSearch("etymology")}>
-                      Google etymology
-                    </button>
-                    <button className="lookup-chip ai" onClick={showAiModalFn}>
-                      Ask AI
-                    </button>
-                  </div>
-                </section>
-              </>
-            ) : isDeckEmpty ? (
-              <div className="state-card">
-                <p>This deck is empty. Add cards using the form below.</p>
-              </div>
-            ) : (
-              <div className="state-card">
-                <h3>All done!</h3>
-                <p>You&apos;ve worked through every remaining card.</p>
-                <div className="state-card-actions">
-                  <button className="mini-btn" onClick={() => handleStudyModeChange("all")}>
-                    Review full deck
-                  </button>
-                  <button className="mini-btn" onClick={resetProgress}>
-                    Reset progress
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="bottom-panel" aria-label="Deck tools">
-          {showCardEditor && selectedDeck && (
-            <div className="card-editor-panel">
-              <div className="panel-card-head">
-                <strong>Edit cards ({selectedDeck.cards.length})</strong>
-                <button
-                  className="link-btn"
-                  onClick={() => { setShowCardEditor(false); setCardEdits({}); }}
-                >
-                  Close
-                </button>
-              </div>
-              <div className="card-editor-list">
-                {selectedDeck.cards.map((card) => {
-                  const edit = cardEdits[card.id];
-                  const term = edit ? edit.term : card.term;
-                  const definition = edit ? edit.definition : card.definition;
-                  const isDirty = !!edit;
-                  return (
-                    <div key={card.id} className="card-editor-row">
-                      <input
-                        className="card-editor-term"
-                        value={term}
-                        placeholder="Term"
-                        onChange={(e) =>
-                          setCardEdits((prev) => ({
-                            ...prev,
-                            [card.id]: { term: e.target.value, definition: prev[card.id]?.definition ?? card.definition },
-                          }))
-                        }
-                      />
-                      <input
-                        className="card-editor-def"
-                        value={definition}
-                        placeholder="Definition"
-                        onChange={(e) =>
-                          setCardEdits((prev) => ({
-                            ...prev,
-                            [card.id]: { term: prev[card.id]?.term ?? card.term, definition: e.target.value },
-                          }))
-                        }
-                        onKeyDown={(e) => { if (e.key === "Enter") handleUpdateCard(card.id); }}
-                      />
-                      <button
-                        className={`mini-btn${isDirty ? " primary" : ""}`}
-                        disabled={!isDirty}
-                        onClick={() => handleUpdateCard(card.id)}
-                        title="Save changes"
-                      >
-                        Save
-                      </button>
-                      <button
-                        className="mini-btn danger"
-                        onClick={() => handleDeleteCard(card.id)}
-                        title="Delete card"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {showCardImporter && (
-            <div className="bulk-import-panel">
-              <div className="panel-card-head">
-                <strong>Bulk import cards</strong>
-                <button
-                  className="link-btn"
-                  onClick={() => { setShowCardImporter(false); setCardImportMessage(""); }}
-                >
-                  Close
-                </button>
-              </div>
-              <div className="field">
-                <textarea
-                  value={cardPaste}
-                  onChange={(e) => setCardPaste(e.target.value)}
-                  placeholder={"adaptable\ttable to adjust easily\nadmirable\tdeserving respect"}
-                />
-              </div>
-              <div className="import-stats">
-                <span>{cardImportPreview.cards.length} cards ready</span>
-                <span>{cardImportPreview.invalidLines.length} skipped</span>
-              </div>
-              {cardImportMessage && (
-                <p
-                  className={`message-line${cardImportMessage.startsWith("Added") ? " success" : " error"}`}
-                >
-                  {cardImportMessage}
-                </p>
-              )}
-              <div className="panel-card-actions">
-                <button className="mini-btn" onClick={handleAddCards}>
-                  Add pasted cards
-                </button>
-              </div>
-            </div>
-          )}
-
-          {showCardEditor && <div className="add-card-form">
-            <input
-              value={wordInput}
-              onChange={(e) => setWordInput(e.target.value)}
-              placeholder="Word..."
-              onKeyDown={(e) => {
-                if (e.key === "Enter") document.getElementById("study-def-input")?.focus();
-              }}
-            />
-            <input
-              id="study-def-input"
-              className="wide"
-              value={defInput}
-              onChange={(e) => setDefInput(e.target.value)}
-              placeholder="Definition..."
-              onKeyDown={(e) => { if (e.key === "Enter") handleAddSingleCard(); }}
-            />
-            <button className="mini-btn" onClick={handleAddSingleCard}>Add</button>
-          </div>}
-          <button
-            className="mini-btn"
-            onClick={() => { setShowCardImporter((v) => !v); setCardImportMessage(""); if (showCardEditor) setShowCardEditor(false); }}
-          >
-            {showCardImporter ? "Hide import" : "Bulk import"}
-          </button>
-          <button
-            className="mini-btn"
-            onClick={() => { setShowCardEditor((v) => !v); setCardEdits({}); if (showCardImporter) { setShowCardImporter(false); setCardImportMessage(""); } }}
-          >
-            {showCardEditor ? "Hide editor" : "Edit list"}
-          </button>
-          <button className="mini-btn" onClick={resetProgress}>Reset</button>
-          <button className="mini-btn" onClick={() => setShowCardList(true)} disabled={isDeckEmpty}>
-            View all
-          </button>
-          <button className="mini-btn" onClick={handleExportDeck} disabled={isDeckEmpty}>
-            Copy cards
-          </button>
-          {currentCard && (
-            <button
-              className="mini-btn danger"
-              onClick={() => handleDeleteCard(currentCard.id)}
-            >
-              Delete card
-            </button>
-          )}
-          <div className="toast">{toast}</div>
-        </section>
-      </div>
-
-      {AiOverlay}
-      {ConfirmOverlay}
-      {CardListOverlay}
+      <StudyView
+        selectedDeck={selectedDeck}
+        selectedSection={selectedSection}
+        activeProgress={activeProgress}
+        currentCard={currentCard}
+        visibleCards={visibleCards}
+        cardPosition={cardPosition}
+        pinnedDeckIds={pinnedDeckIds}
+        currentCardIsKnown={currentCardIsKnown}
+        hasRemainingCards={hasRemainingCards}
+        isDeckEmpty={isDeckEmpty}
+        isAutoPlaying={isAutoPlaying}
+        setIsAutoPlaying={setIsAutoPlaying}
+        showCardEditor={showCardEditor}
+        setShowCardEditor={setShowCardEditor}
+        showCardImporter={showCardImporter}
+        setShowCardImporter={setShowCardImporter}
+        cardEdits={cardEdits}
+        setCardEdits={setCardEdits}
+        cardPaste={cardPaste}
+        setCardPaste={setCardPaste}
+        cardImportMessage={cardImportMessage}
+        setCardImportMessage={setCardImportMessage}
+        cardImportPreview={cardImportPreview}
+        wordInput={wordInput}
+        setWordInput={setWordInput}
+        defInput={defInput}
+        setDefInput={setDefInput}
+        toast={toast}
+        setShowCardList={setShowCardList}
+        setView={setView}
+        togglePinDeck={togglePinDeck}
+        onStudyModeChange={handleStudyModeChange}
+        onFlip={handleFlip}
+        onShuffle={handleShuffle}
+        onToggleKnown={toggleKnown}
+        onMoveToCard={moveToCard}
+        onGoogleSearch={googleSearch}
+        onShowAiModal={showAiModalFn}
+        onResetProgress={resetProgress}
+        onAddCards={handleAddCards}
+        onAddSingleCard={handleAddSingleCard}
+        onDeleteCard={handleDeleteCard}
+        onUpdateCard={handleUpdateCard}
+        onExportDeck={handleExportDeck}
+      />
+      <AiOverlay aiModal={aiModal} onClose={() => setAiModal(null)} onOpenAI={openAI} />
+      {confirmOverlay}
+      <CardListOverlay
+        show={showCardList}
+        selectedDeck={selectedDeck}
+        onClose={() => setShowCardList(false)}
+      />
     </>
   );
 }
