@@ -1,5 +1,4 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
-import { defaultDeckId } from "./data/decks";
 import {
   Deck,
   DeckSection,
@@ -8,20 +7,13 @@ import {
   withCardIds,
 } from "./data/deckBuilder";
 import {
-  LibrarySnapshot,
-  createLibrarySnapshot,
-  parseLibrarySnapshot,
-} from "./data/librarySnapshot";
-import {
   ACCENT_STORAGE_KEY,
-  DEFAULT_SYNC_KEY,
   LIBRARY_STORAGE_KEY,
   MAX_RECENT_DECKS,
   PINNED_DECKS_STORAGE_KEY,
   PROGRESS_STORAGE_KEY,
   RECENT_DECKS_STORAGE_KEY,
   SELECTED_DECK_STORAGE_KEY,
-  SYNC_KEY_STORAGE_KEY,
   THEME_STORAGE_KEY,
 } from "./lib/constants";
 import {
@@ -29,8 +21,6 @@ import {
   findDeckById,
   findSectionForDeck,
   flattenDecks,
-  mergeProgressState,
-  mergeSections,
   shuffleCards,
   updateDeckInSections,
 } from "./lib/deckUtils";
@@ -41,18 +31,9 @@ import {
   loadProgressState,
   loadRecentDeckIds,
   loadSelectedDeckId,
-  loadSyncKey,
   loadTheme,
-  safeRemoveItem,
   safeSetItem,
 } from "./lib/storage";
-import {
-  createSyncKey,
-  fetchCloudSnapshot,
-  isSyncKeyValid,
-  normalizeSyncKey,
-  saveSnapshotToCloud,
-} from "./lib/sync";
 import {
   AccentColor,
   AiModal,
@@ -62,10 +43,10 @@ import {
   RecentDeckEntry,
   SectionComposer,
   StudyMode,
-  SyncState,
   Theme,
   ViewState,
 } from "./lib/types";
+import { useCloudSync } from "./hooks/useCloudSync";
 import { useDebouncedPersist } from "./hooks/useDebouncedPersist";
 import { useStudyKeyboard } from "./hooks/useStudyKeyboard";
 import { AiOverlay, CardListOverlay, ConfirmOverlay } from "./components/Overlays";
@@ -90,14 +71,8 @@ export default function App() {
   const [sectionComposer, setSectionComposer] = useState<SectionComposer | null>(null);
   const [sectionComposerMessage, setSectionComposerMessage] = useState("");
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
-  const [syncKey, setSyncKey] = useState(loadSyncKey);
-  const [syncKeyInput, setSyncKeyInput] = useState(loadSyncKey);
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [showThemesPanel, setShowThemesPanel] = useState(false);
-  const [syncState, setSyncState] = useState<SyncState>("idle");
-  const [syncMessage, setSyncMessage] = useState(
-    "Cloud sync starts automatically for this shared library.",
-  );
   const [view, setView] = useState<ViewState>({ kind: "home" });
   const [toast, setToast] = useState(
     "Flashcard = word on the front, definition on the back. Google/AI tools are separate for deeper understanding.",
@@ -111,18 +86,16 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [accentColor, setAccentColor] = useState<AccentColor>(loadAccentColor);
 
-  const cloudSyncReadyRef = useRef(false);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
-  const cloudSyncLoadKeyRef = useRef("");
-  const cloudRevisionRef = useRef<number | null>(null);
-  const snapshotRef = useRef<LibrarySnapshot>(
-    createLibrarySnapshot({
-      librarySections,
-      deckProgress,
-      selectedDeckId,
-      recentDeckIds: [],
-    }),
-  );
+
+  const cloudSync = useCloudSync({
+    librarySections,
+    deckProgress,
+    selectedDeckId,
+    setLibrarySections,
+    setDeckProgress,
+    setSelectedDeckId,
+  });
 
   const askConfirm = (message: string, onConfirm: () => void) => {
     setConfirmDialog({ message, onConfirm });
@@ -180,7 +153,6 @@ export default function App() {
   const hasRemainingCards = remainingCount > 0;
   const currentCardIsKnown = currentCard ? knownSet.has(currentCard.id) : false;
   const isDeckEmpty = totalCards === 0;
-  const isUsingSharedSyncKey = normalizeSyncKey(syncKeyInput) === DEFAULT_SYNC_KEY;
 
   const deckImportPreview = useMemo(
     () =>
@@ -554,150 +526,6 @@ export default function App() {
     setToast(`Prompt copied. Paste it into ${provider} to ask about "${word}".`);
   };
 
-  const applyRemoteSnapshotMerge = (remoteSnapshot: LibrarySnapshot) => {
-    const mergedSections = mergeSections(librarySections, remoteSnapshot.librarySections);
-    const mergedProgress = mergeProgressState(deckProgress, remoteSnapshot.deckProgress, mergedSections);
-    const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
-    const nextSelectedDeckId = mergedDeckIds.has(selectedDeckId)
-      ? selectedDeckId
-      : remoteSnapshot.selectedDeckId;
-    startTransition(() => {
-      setLibrarySections(mergedSections);
-      setDeckProgress(mergedProgress);
-      setSelectedDeckId(nextSelectedDeckId || defaultDeckId);
-    });
-  };
-
-  const saveWithConflictResolution = async (
-    activeSyncKey: string,
-    snapshot: LibrarySnapshot,
-  ) => {
-    const outcome = await saveSnapshotToCloud(
-      activeSyncKey,
-      snapshot,
-      cloudRevisionRef.current,
-    );
-    if (!outcome.conflict) {
-      if (outcome.revision !== null) cloudRevisionRef.current = outcome.revision;
-      return { resolved: true };
-    }
-    const remoteSnapshot = parseLibrarySnapshot(outcome.current?.snapshot);
-    if (!remoteSnapshot) {
-      throw new Error("Cloud library changed in an unexpected format.");
-    }
-    cloudRevisionRef.current =
-      typeof outcome.current?.revision === "number" ? outcome.current.revision : null;
-    applyRemoteSnapshotMerge(remoteSnapshot);
-    return { resolved: false };
-  };
-
-  const handleApplySyncKey = () => {
-    const nextSyncKey = normalizeSyncKey(syncKeyInput);
-    if (!isSyncKeyValid(nextSyncKey)) {
-      cloudSyncReadyRef.current = false;
-      setSyncState("error");
-      setSyncMessage(
-        "Sync keys must be 8-120 characters and use only letters, numbers, hyphens, or underscores.",
-      );
-      return;
-    }
-    cloudSyncReadyRef.current = false;
-    setSyncKey(nextSyncKey);
-    setSyncKeyInput(nextSyncKey);
-    setSyncState("saved");
-    setSyncMessage("Sync key is active. Save to cloud here, then load cloud on your phone or PC.");
-  };
-
-  const handleGenerateSyncKey = () => {
-    const nextSyncKey = createSyncKey();
-    cloudSyncReadyRef.current = false;
-    setSyncKey(nextSyncKey);
-    setSyncKeyInput(nextSyncKey);
-    setSyncState("saved");
-    setSyncMessage("New sync key created. Save to cloud to publish this library to your devices.");
-  };
-
-  const handleUseSharedLibrary = () => {
-    cloudSyncReadyRef.current = false;
-    cloudSyncLoadKeyRef.current = "";
-    setSyncKey(DEFAULT_SYNC_KEY);
-    setSyncKeyInput(DEFAULT_SYNC_KEY);
-    setSyncState("loading");
-    setSyncMessage("Switching this browser back to the shared cloud library...");
-  };
-
-  const handleLoadFromCloud = async () => {
-    const activeSyncKey = normalizeSyncKey(syncKeyInput || syncKey);
-    if (!isSyncKeyValid(activeSyncKey)) {
-      setSyncState("error");
-      setSyncMessage("Enter a valid sync key before loading from cloud.");
-      return;
-    }
-    cloudSyncReadyRef.current = false;
-    setSyncState("loading");
-    setSyncMessage("Loading cloud library...");
-    try {
-      const payload = await fetchCloudSnapshot(activeSyncKey);
-      if (!payload.exists) {
-        setSyncKey(activeSyncKey);
-        setSyncKeyInput(activeSyncKey);
-        cloudRevisionRef.current = 0;
-        setSyncState("error");
-        setSyncMessage("No cloud library exists for this key yet. Save it first.");
-        return;
-      }
-      const snapshot = parseLibrarySnapshot(payload.snapshot);
-      if (!snapshot) throw new Error("The cloud library was not in the expected format.");
-      cloudRevisionRef.current = typeof payload.revision === "number" ? payload.revision : null;
-      const mergedSections = mergeSections(librarySections, snapshot.librarySections);
-      const mergedProgress = mergeProgressState(deckProgress, snapshot.deckProgress, mergedSections);
-      const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
-      const nextSelectedDeckId = mergedDeckIds.has(snapshot.selectedDeckId)
-        ? snapshot.selectedDeckId
-        : selectedDeckId;
-      startTransition(() => {
-        setLibrarySections(mergedSections);
-        setDeckProgress(mergedProgress);
-        setSelectedDeckId(nextSelectedDeckId || defaultDeckId);
-      });
-      setSyncKey(activeSyncKey);
-      setSyncKeyInput(activeSyncKey);
-      cloudSyncReadyRef.current = true;
-      setSyncState("saved");
-      setSyncMessage("Merged the cloud library with this device. New changes will auto-save.");
-    } catch (error) {
-      setSyncState("error");
-      setSyncMessage(error instanceof Error ? error.message : "Could not load from cloud.");
-    }
-  };
-
-  const handleSaveThisBrowserToCloud = async () => {
-    const activeSyncKey = normalizeSyncKey(syncKeyInput || syncKey);
-    if (!isSyncKeyValid(activeSyncKey)) {
-      setSyncState("error");
-      setSyncMessage("Enter a valid sync key before saving to cloud.");
-      return;
-    }
-    setSyncState("saving");
-    setSyncMessage("Saving this device's library to cloud...");
-    try {
-      const result = await saveWithConflictResolution(activeSyncKey, snapshotRef.current);
-      setSyncKey(activeSyncKey);
-      setSyncKeyInput(activeSyncKey);
-      cloudSyncReadyRef.current = true;
-      if (result.resolved) {
-        setSyncState("saved");
-        setSyncMessage("Saved to cloud. Use this key on your phone or PC and load cloud.");
-      } else {
-        setSyncState("saving");
-        setSyncMessage("Merged newer cloud changes with this device. Re-saving...");
-      }
-    } catch (error) {
-      setSyncState("error");
-      setSyncMessage(error instanceof Error ? error.message : "Could not save to cloud.");
-    }
-  };
-
   useEffect(() => {
     const nextDecks = flattenDecks(librarySections);
     if (!nextDecks.some((deck) => deck.id === selectedDeckId)) {
@@ -765,23 +593,6 @@ export default function App() {
   useDebouncedPersist(RECENT_DECKS_STORAGE_KEY, serializedRecent);
 
   useEffect(() => {
-    snapshotRef.current = createLibrarySnapshot({
-      librarySections,
-      deckProgress,
-      selectedDeckId,
-      recentDeckIds: [],
-    });
-  }, [librarySections, deckProgress, selectedDeckId]);
-
-  useEffect(() => {
-    if (syncKey) {
-      safeSetItem(SYNC_KEY_STORAGE_KEY, syncKey);
-    } else {
-      safeRemoveItem(SYNC_KEY_STORAGE_KEY);
-    }
-  }, [syncKey]);
-
-  useEffect(() => {
     if (typeof window === "undefined") return;
     document.documentElement.setAttribute("data-theme", theme);
     safeSetItem(THEME_STORAGE_KEY, theme);
@@ -803,81 +614,6 @@ export default function App() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showActionsMenu]);
-
-  useEffect(() => {
-    if (!syncKey || cloudSyncLoadKeyRef.current === syncKey) return;
-    cloudSyncLoadKeyRef.current = syncKey;
-    cloudSyncReadyRef.current = false;
-    cloudRevisionRef.current = null;
-    setSyncState("loading");
-    setSyncMessage("Connecting this device to cloud...");
-    fetchCloudSnapshot(syncKey)
-      .then((payload) => {
-        if (!payload.exists) {
-          cloudRevisionRef.current = 0;
-          return saveSnapshotToCloud(syncKey, snapshotRef.current, 0).then((outcome) => {
-            if (outcome.conflict) {
-              throw new Error("Another device created this cloud library at the same moment.");
-            }
-            if (outcome.revision !== null) cloudRevisionRef.current = outcome.revision;
-            cloudSyncReadyRef.current = true;
-            setSyncState("saved");
-            setSyncMessage("Created a cloud library for this key. Changes will auto-save.");
-          });
-        }
-        const snapshot = parseLibrarySnapshot(payload.snapshot);
-        if (!snapshot) throw new Error("The cloud library was not in the expected format.");
-        cloudRevisionRef.current =
-          typeof payload.revision === "number" ? payload.revision : null;
-        const mergedSections = mergeSections(librarySections, snapshot.librarySections);
-        const mergedProgress = mergeProgressState(
-          deckProgress,
-          snapshot.deckProgress,
-          mergedSections,
-        );
-        const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
-        const nextSelectedDeckId = mergedDeckIds.has(selectedDeckId)
-          ? selectedDeckId
-          : snapshot.selectedDeckId;
-        startTransition(() => {
-          setLibrarySections(mergedSections);
-          setDeckProgress(mergedProgress);
-          setSelectedDeckId(nextSelectedDeckId || defaultDeckId);
-        });
-        cloudSyncReadyRef.current = true;
-        setSyncState("saved");
-        setSyncMessage("Cloud sync is active on this device. Changes will auto-save.");
-      })
-      .catch((error) => {
-        cloudSyncLoadKeyRef.current = "";
-        setSyncState("error");
-        setSyncMessage(
-          error instanceof Error ? error.message : "Could not connect to cloud sync.",
-        );
-      });
-  }, [syncKey]);
-
-  useEffect(() => {
-    if (!syncKey || !cloudSyncReadyRef.current) return;
-    setSyncState("saving");
-    setSyncMessage("Auto-saving changes to cloud...");
-    const timer = window.setTimeout(() => {
-      saveWithConflictResolution(syncKey, snapshotRef.current)
-        .then((result) => {
-          if (result.resolved) {
-            setSyncState("saved");
-            setSyncMessage("Cloud sync is up to date.");
-          } else {
-            setSyncMessage("Merged newer cloud changes with this device. Re-saving...");
-          }
-        })
-        .catch((error) => {
-          setSyncState("error");
-          setSyncMessage(error instanceof Error ? error.message : "Cloud auto-save failed.");
-        });
-    }, 900);
-    return () => window.clearTimeout(timer);
-  }, [librarySections, deckProgress, selectedDeckId, syncKey]);
 
   useEffect(() => {
     setShowCardImporter(false);
@@ -938,19 +674,18 @@ export default function App() {
           setView={setView}
           openDeck={openDeck}
           openRandomDeck={openRandomDeck}
-          syncState={syncState}
-          syncMessage={syncMessage}
-          syncKeyInput={syncKeyInput}
-          setSyncKeyInput={setSyncKeyInput}
-          cloudSyncReadyRef={cloudSyncReadyRef}
-          isUsingSharedSyncKey={isUsingSharedSyncKey}
+          syncState={cloudSync.syncState}
+          syncMessage={cloudSync.syncMessage}
+          syncKeyInput={cloudSync.syncKeyInput}
+          onSyncKeyInputChange={cloudSync.onSyncKeyInputChange}
+          isUsingSharedSyncKey={cloudSync.isUsingSharedSyncKey}
           showSyncPanel={showSyncPanel}
           setShowSyncPanel={setShowSyncPanel}
-          onApplySyncKey={handleApplySyncKey}
-          onLoadFromCloud={handleLoadFromCloud}
-          onSaveToCloud={handleSaveThisBrowserToCloud}
-          onUseSharedLibrary={handleUseSharedLibrary}
-          onGenerateSyncKey={handleGenerateSyncKey}
+          onApplySyncKey={cloudSync.onApplySyncKey}
+          onLoadFromCloud={cloudSync.onLoadFromCloud}
+          onSaveToCloud={cloudSync.onSaveToCloud}
+          onUseSharedLibrary={cloudSync.onUseSharedLibrary}
+          onGenerateSyncKey={cloudSync.onGenerateSyncKey}
           showThemesPanel={showThemesPanel}
           setShowThemesPanel={setShowThemesPanel}
           theme={theme}
