@@ -66,6 +66,7 @@ import {
   Theme,
   ViewState,
 } from "./lib/types";
+import { useDebouncedPersist } from "./hooks/useDebouncedPersist";
 import { useStudyKeyboard } from "./hooks/useStudyKeyboard";
 import { AiOverlay, CardListOverlay, ConfirmOverlay } from "./components/Overlays";
 import { HomeView } from "./components/HomeView";
@@ -749,17 +750,19 @@ export default function App() {
     }
   }, [activeProgress, selectedDeck, visibleCards]);
 
-  useEffect(() => {
-    safeSetItem(LIBRARY_STORAGE_KEY, JSON.stringify(librarySections));
-  }, [librarySections]);
+  const serializedLibrary = useMemo(
+    () => JSON.stringify(librarySections),
+    [librarySections],
+  );
+  const serializedProgress = useMemo(() => JSON.stringify(deckProgress), [deckProgress]);
+  const serializedPinned = useMemo(() => JSON.stringify(pinnedDeckIds), [pinnedDeckIds]);
+  const serializedRecent = useMemo(() => JSON.stringify(recentDeckIds), [recentDeckIds]);
 
-  useEffect(() => {
-    safeSetItem(PROGRESS_STORAGE_KEY, JSON.stringify(deckProgress));
-  }, [deckProgress]);
-
-  useEffect(() => {
-    safeSetItem(SELECTED_DECK_STORAGE_KEY, selectedDeckId);
-  }, [selectedDeckId]);
+  useDebouncedPersist(LIBRARY_STORAGE_KEY, serializedLibrary);
+  useDebouncedPersist(PROGRESS_STORAGE_KEY, serializedProgress);
+  useDebouncedPersist(SELECTED_DECK_STORAGE_KEY, selectedDeckId);
+  useDebouncedPersist(PINNED_DECKS_STORAGE_KEY, serializedPinned);
+  useDebouncedPersist(RECENT_DECKS_STORAGE_KEY, serializedRecent);
 
   useEffect(() => {
     snapshotRef.current = createLibrarySnapshot({
@@ -777,14 +780,6 @@ export default function App() {
       safeRemoveItem(SYNC_KEY_STORAGE_KEY);
     }
   }, [syncKey]);
-
-  useEffect(() => {
-    safeSetItem(PINNED_DECKS_STORAGE_KEY, JSON.stringify(pinnedDeckIds));
-  }, [pinnedDeckIds]);
-
-  useEffect(() => {
-    safeSetItem(RECENT_DECKS_STORAGE_KEY, JSON.stringify(recentDeckIds));
-  }, [recentDeckIds]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
