@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { parsePastedFlashcards, createUniqueId } from "../deckBuilder";
+import {
+  parsePastedFlashcards,
+  createUniqueId,
+  withCardIds,
+  createDeckFromRaw,
+} from "../deckBuilder";
 
 describe("parsePastedFlashcards", () => {
   it("parses tab-separated lines (Quizlet format)", () => {
@@ -115,5 +120,85 @@ describe("createUniqueId", () => {
   it("does not add suffix when id is unique in the set", () => {
     const existing = new Set(["other-deck"]);
     expect(createUniqueId("My Deck", existing)).toBe("my-deck");
+  });
+});
+
+describe("withCardIds", () => {
+  it("assigns unique ids to cards that share a term", () => {
+    const cards = withCardIds([
+      { term: "Joy", definition: "a feeling of happiness" },
+      { term: "Joy", definition: "great pleasure" },
+      { term: "Joy", definition: "delight" },
+    ]);
+    expect(cards.map((card) => card.id)).toEqual(["joy", "joy-2", "joy-3"]);
+  });
+
+  it("seeds de-duplication from existing ids", () => {
+    const cards = withCardIds(
+      [{ term: "Joy", definition: "happiness" }],
+      ["joy"],
+    );
+    expect(cards[0].id).toBe("joy-2");
+  });
+
+  it("trims terms and normalizes definitions", () => {
+    const cards = withCardIds([
+      { term: "  Joy  ", definition: "happiness,delight   and   cheer" },
+    ]);
+    expect(cards[0].term).toBe("Joy");
+    expect(cards[0].definition).toBe("happiness, delight and cheer");
+  });
+
+  it("falls back to the 'deck' id for blank terms and still de-duplicates", () => {
+    const cards = withCardIds([
+      { term: "", definition: "first" },
+      { term: "   ", definition: "second" },
+    ]);
+    expect(cards.map((card) => card.id)).toEqual(["deck", "deck-2"]);
+  });
+});
+
+describe("createDeckFromRaw", () => {
+  it("keeps protected terms intact instead of hyphen-splitting them", () => {
+    const deck = createDeckFromRaw({
+      id: "tech",
+      title: "Tech",
+      raw: "e-mail-electronic message sent over a network",
+      protectedTerms: ["e-mail"],
+    });
+    expect(deck.cards).toHaveLength(1);
+    expect(deck.cards[0].term).toBe("e-mail");
+    expect(deck.cards[0].definition).toBe("electronic message sent over a network");
+  });
+
+  it("assigns unique ids when a protected term repeats", () => {
+    const deck = createDeckFromRaw({
+      id: "tech",
+      title: "Tech",
+      raw: "e-mail-first definition\ne-mail-second definition",
+      protectedTerms: ["e-mail"],
+    });
+    expect(deck.cards.map((card) => card.id)).toEqual(["e-mail", "e-mail-2"]);
+  });
+
+  it("uses fallbackDefinitions when an entry cannot be split", () => {
+    const deck = createDeckFromRaw({
+      id: "calm",
+      title: "Calm",
+      raw: "Serenity",
+      fallbackDefinitions: { Serenity: "the state of being calm and peaceful" },
+    });
+    expect(deck.cards[0].term).toBe("Serenity");
+    expect(deck.cards[0].definition).toBe("the state of being calm and peaceful");
+  });
+
+  it("falls back to a placeholder definition for unsplittable entries", () => {
+    const deck = createDeckFromRaw({
+      id: "x",
+      title: "X",
+      raw: "Mystery",
+    });
+    expect(deck.cards[0].term).toBe("Mystery");
+    expect(deck.cards[0].definition).toBe("definition coming soon");
   });
 });
