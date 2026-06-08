@@ -29,8 +29,7 @@ type HomeViewProps = {
   syncState: SyncState;
   syncMessage: string;
   syncKeyInput: string;
-  setSyncKeyInput: (value: string) => void;
-  cloudSyncReadyRef: MutableRefObject<boolean>;
+  onSyncKeyInputChange: (value: string) => void;
   isUsingSharedSyncKey: boolean;
   showSyncPanel: boolean;
   setShowSyncPanel: Dispatch<SetStateAction<boolean>>;
@@ -77,8 +76,7 @@ export function HomeView({
   syncState,
   syncMessage,
   syncKeyInput,
-  setSyncKeyInput,
-  cloudSyncReadyRef,
+  onSyncKeyInputChange,
   isUsingSharedSyncKey,
   showSyncPanel,
   setShowSyncPanel,
@@ -175,10 +173,7 @@ export function HomeView({
             <input
               type="text"
               value={syncKeyInput}
-              onChange={(e) => {
-                cloudSyncReadyRef.current = false;
-                setSyncKeyInput(e.target.value);
-              }}
+              onChange={(e) => onSyncKeyInputChange(e.target.value)}
               placeholder="Shared cloud library key"
             />
           </div>
