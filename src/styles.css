@@ -683,7 +683,8 @@ button {
 
 .deck-study-topic {
   font-size: 0.82rem;
-  color: var(--muted, #888);
+  font-weight: 700;
+  color: var(--ink);
   text-align: center;
   text-transform: uppercase;
   letter-spacing: 0.08em;
