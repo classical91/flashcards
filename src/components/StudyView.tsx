@@ -289,6 +289,26 @@ export function StudyView({
                 Save name
               </button>
             </div>
+            <div className="card-editor-toolbar">
+              <button
+                className="mini-btn"
+                onClick={() => { setShowCardImporter((v) => !v); setCardImportMessage(""); }}
+              >
+                {showCardImporter ? "Hide import" : "Bulk import"}
+              </button>
+              <button className="mini-btn" onClick={onResetProgress}>Reset</button>
+              <button className="mini-btn" onClick={() => setShowCardList(true)} disabled={isDeckEmpty}>
+                View all
+              </button>
+              <button className="mini-btn" onClick={onExportDeck} disabled={isDeckEmpty}>
+                Copy cards
+              </button>
+              {currentCard && (
+                <button className="mini-btn danger" onClick={() => onDeleteCard(currentCard.id)}>
+                  Delete card
+                </button>
+              )}
+            </div>
             <div className="add-card-form">
               <input
                 value={wordInput}
@@ -398,33 +418,34 @@ export function StudyView({
           </div>
         )}
 
-        <button
-          className="mini-btn"
-          onClick={() => { setShowCardImporter((v) => !v); setCardImportMessage(""); if (showCardEditor) setShowCardEditor(false); }}
-        >
-          {showCardImporter ? "Hide import" : "Bulk import"}
-        </button>
+        {!showCardEditor && (
+          <>
+            <button
+              className="mini-btn"
+              onClick={() => { setShowCardImporter((v) => !v); setCardImportMessage(""); }}
+            >
+              {showCardImporter ? "Hide import" : "Bulk import"}
+            </button>
+            <button className="mini-btn" onClick={onResetProgress}>Reset</button>
+            <button className="mini-btn" onClick={() => setShowCardList(true)} disabled={isDeckEmpty}>
+              View all
+            </button>
+            <button className="mini-btn" onClick={onExportDeck} disabled={isDeckEmpty}>
+              Copy cards
+            </button>
+            {currentCard && (
+              <button className="mini-btn danger" onClick={() => onDeleteCard(currentCard.id)}>
+                Delete card
+              </button>
+            )}
+          </>
+        )}
         <button
           className="mini-btn"
           onClick={() => { setShowCardEditor((v) => !v); setCardEdits({}); if (showCardImporter) { setShowCardImporter(false); setCardImportMessage(""); } }}
         >
           {showCardEditor ? "Hide editor" : "Edit list"}
         </button>
-        <button className="mini-btn" onClick={onResetProgress}>Reset</button>
-        <button className="mini-btn" onClick={() => setShowCardList(true)} disabled={isDeckEmpty}>
-          View all
-        </button>
-        <button className="mini-btn" onClick={onExportDeck} disabled={isDeckEmpty}>
-          Copy cards
-        </button>
-        {currentCard && (
-          <button
-            className="mini-btn danger"
-            onClick={() => onDeleteCard(currentCard.id)}
-          >
-            Delete card
-          </button>
-        )}
         <div className="toast">{toast}</div>
       </section>
     </div>
