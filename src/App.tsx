@@ -408,6 +408,16 @@ export default function App() {
     setToast(`Card updated.`);
   };
 
+  const handleUpdateDeckInfo = ({ title, subtitle }: { title: string; subtitle: string }) => {
+    if (!selectedDeck || !title) return;
+    startTransition(() => {
+      setLibrarySections((curr) =>
+        updateDeckInSections(curr, selectedDeck.id, (deck) => ({ ...deck, title, subtitle })),
+      );
+    });
+    setToast("Deck updated.");
+  };
+
   const handleExportDeck = async () => {
     if (!selectedDeck) return;
     const lines = selectedDeck.cards.map((card) => `${card.term}\t${card.definition}`);
@@ -805,6 +815,7 @@ export default function App() {
         onAddSingleCard={handleAddSingleCard}
         onDeleteCard={handleDeleteCard}
         onUpdateCard={handleUpdateCard}
+        onUpdateDeckInfo={handleUpdateDeckInfo}
         onExportDeck={handleExportDeck}
       />
       <AiOverlay aiModal={aiModal} onClose={() => setAiModal(null)} onOpenAI={openAI} />
