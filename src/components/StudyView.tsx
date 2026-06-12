@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction } from "react";
+import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Deck, DeckSection, Flashcard } from "../data/deckBuilder";
 import { DeckProgress, StudyMode } from "../data/librarySnapshot";
 import { ViewState } from "../lib/types";
@@ -56,6 +56,7 @@ type StudyViewProps = {
   onAddSingleCard: () => void;
   onDeleteCard: (cardId: string) => void;
   onUpdateCard: (cardId: string) => void;
+  onUpdateDeckInfo: (info: { title: string; subtitle: string }) => void;
   onExportDeck: () => void;
 };
 
@@ -103,9 +104,18 @@ export function StudyView({
   onAddSingleCard,
   onDeleteCard,
   onUpdateCard,
+  onUpdateDeckInfo,
   onExportDeck,
 }: StudyViewProps) {
   const isPinned = pinnedDeckIds.includes(selectedDeck.id);
+
+  const [deckTitleEdit, setDeckTitleEdit] = useState(selectedDeck.title);
+  const [deckSubtitleEdit, setDeckSubtitleEdit] = useState(selectedDeck.subtitle ?? "");
+
+  useEffect(() => {
+    setDeckTitleEdit(selectedDeck.title);
+    setDeckSubtitleEdit(selectedDeck.subtitle ?? "");
+  }, [selectedDeck.id]);
   return (
     <div className="app">
       <header className="topbar">
@@ -252,6 +262,31 @@ export function StudyView({
                 onClick={() => { setShowCardEditor(false); setCardEdits({}); }}
               >
                 Close
+              </button>
+            </div>
+            <div className="deck-info-edit">
+              <input
+                className="deck-info-edit-input"
+                value={deckTitleEdit}
+                onChange={(e) => setDeckTitleEdit(e.target.value)}
+                placeholder="Deck name"
+              />
+              <input
+                className="deck-info-edit-input"
+                value={deckSubtitleEdit}
+                onChange={(e) => setDeckSubtitleEdit(e.target.value)}
+                placeholder="Subtitle (optional)"
+              />
+              <button
+                className="mini-btn"
+                onClick={() => onUpdateDeckInfo({ title: deckTitleEdit.trim(), subtitle: deckSubtitleEdit.trim() })}
+                disabled={
+                  !deckTitleEdit.trim() ||
+                  (deckTitleEdit.trim() === selectedDeck.title &&
+                    deckSubtitleEdit.trim() === (selectedDeck.subtitle ?? ""))
+                }
+              >
+                Save name
               </button>
             </div>
             <div className="card-editor-list">
