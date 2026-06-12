@@ -866,28 +866,33 @@ button {
 .add-card-form {
   display: flex;
   align-items: center;
-  gap: 0;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 6px 4px 14px;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+  flex-wrap: wrap;
 }
 
 .add-card-form input {
-  width: 120px;
-  border: 0;
-  outline: 0;
+  flex: 1 1 120px;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
   color: var(--ink);
-  font-size: 12px;
+  font-size: 13px;
   font-family: inherit;
-  background: transparent;
+  outline: none;
+  transition: border-color 150ms ease;
 }
 
 .add-card-form input.wide {
-  width: 200px;
-  border-left: 1px solid var(--line);
-  padding-left: 10px;
-  margin-left: 6px;
+  flex: 2 1 200px;
+}
+
+.add-card-form input:focus {
+  border-color: var(--accent);
 }
 
 .add-card-form input::placeholder {
@@ -1310,21 +1315,6 @@ button {
 
   .player {
     gap: 8px;
-  }
-
-  .add-card-form {
-    width: 100%;
-    border-radius: 14px;
-    flex-wrap: wrap;
-    padding: 10px 14px;
-  }
-
-  .add-card-form input,
-  .add-card-form input.wide {
-    width: 100%;
-    border-left: none;
-    padding-left: 0;
-    margin-left: 0;
   }
 
   .sections-grid {

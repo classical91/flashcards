@@ -289,6 +289,25 @@ export function StudyView({
                 Save name
               </button>
             </div>
+            <div className="add-card-form">
+              <input
+                value={wordInput}
+                onChange={(e) => setWordInput(e.target.value)}
+                placeholder="Word..."
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") document.getElementById("study-def-input")?.focus();
+                }}
+              />
+              <input
+                id="study-def-input"
+                className="wide"
+                value={defInput}
+                onChange={(e) => setDefInput(e.target.value)}
+                placeholder="Definition..."
+                onKeyDown={(e) => { if (e.key === "Enter") onAddSingleCard(); }}
+              />
+              <button className="mini-btn" onClick={onAddSingleCard}>Add</button>
+            </div>
             <div className="card-editor-list">
               {selectedDeck.cards.map((card) => {
                 const edit = cardEdits[card.id];
@@ -379,25 +398,6 @@ export function StudyView({
           </div>
         )}
 
-        {showCardEditor && <div className="add-card-form">
-          <input
-            value={wordInput}
-            onChange={(e) => setWordInput(e.target.value)}
-            placeholder="Word..."
-            onKeyDown={(e) => {
-              if (e.key === "Enter") document.getElementById("study-def-input")?.focus();
-            }}
-          />
-          <input
-            id="study-def-input"
-            className="wide"
-            value={defInput}
-            onChange={(e) => setDefInput(e.target.value)}
-            placeholder="Definition..."
-            onKeyDown={(e) => { if (e.key === "Enter") onAddSingleCard(); }}
-          />
-          <button className="mini-btn" onClick={onAddSingleCard}>Add</button>
-        </div>}
         <button
           className="mini-btn"
           onClick={() => { setShowCardImporter((v) => !v); setCardImportMessage(""); if (showCardEditor) setShowCardEditor(false); }}
