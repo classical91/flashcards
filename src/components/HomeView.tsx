@@ -1,4 +1,4 @@
-import { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { Dispatch, MutableRefObject, SetStateAction, useState } from "react";
 import { Deck, DeckSection } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
 import { ACCENT_COLORS } from "../lib/constants";
@@ -97,6 +97,8 @@ export function HomeView({
   setSectionComposerMessage,
   onCreateSection,
 }: HomeViewProps) {
+  const [searchQuery, setSearchQuery] = useState("");
+
   const recentDecks = recentDeckIds
     .map((entry) => {
       const deck = findDeckById(librarySections, entry.id);
@@ -104,6 +106,20 @@ export function HomeView({
       return deck && section ? { deck, section, viewedAt: entry.viewedAt } : null;
     })
     .filter((x): x is { deck: Deck; section: DeckSection; viewedAt: number } => x !== null);
+
+  const trimmedQuery = searchQuery.trim().toLowerCase();
+  const searchResults = trimmedQuery
+    ? librarySections.flatMap((section) =>
+        section.decks
+          .filter(
+            (deck) =>
+              deck.title.toLowerCase().includes(trimmedQuery) ||
+              (deck.subtitle ?? "").toLowerCase().includes(trimmedQuery) ||
+              section.title.toLowerCase().includes(trimmedQuery),
+          )
+          .map((deck) => ({ deck, section })),
+      )
+    : [];
 
   return (
     <div className="home-view">
@@ -160,6 +176,16 @@ export function HomeView({
             </div>
           )}
         </div>
+      </div>
+
+      <div className="home-search">
+        <input
+          className="home-search-input"
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search decks…"
+        />
       </div>
 
       {showSyncPanel && (
@@ -317,7 +343,31 @@ export function HomeView({
       )}
 
       <div className="home-main">
-        {librarySections.length === 0 ? (
+        {trimmedQuery ? (
+          searchResults.length === 0 ? (
+            <div className="empty-state">No decks match "{searchQuery}".</div>
+          ) : (
+            <div className="search-results">
+              {searchResults.map(({ deck, section }) => (
+                <button
+                  key={deck.id}
+                  className="search-result-item"
+                  onClick={() => openDeck(deck.id)}
+                >
+                  <div className="search-result-info">
+                    <span className="search-result-title">{deck.title}</span>
+                    <span className="search-result-meta">
+                      {section.title}
+                      {deck.subtitle ? ` · ${deck.subtitle}` : ""}
+                      {` · ${deck.cards.length} card${deck.cards.length !== 1 ? "s" : ""}`}
+                    </span>
+                  </div>
+                  <span className="section-card-arrow">›</span>
+                </button>
+              ))}
+            </div>
+          )
+        ) : librarySections.length === 0 ? (
           <div className="empty-state">
             No topics yet. Create one above to get started.
           </div>
