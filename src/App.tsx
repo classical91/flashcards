@@ -392,12 +392,13 @@ export default function App() {
     }
     startTransition(() => {
       setLibrarySections((curr) =>
-        updateDeckInSections(curr, selectedDeck.id, (deck) => ({
-          ...deck,
-          cards: deck.cards.map((card) =>
-            card.id === cardId ? { ...card, term, definition } : card,
-          ),
-        })),
+        updateDeckInSections(curr, selectedDeck.id, (deck) => {
+          const updated = { ...deck.cards.find((c) => c.id === cardId)!, term, definition };
+          return {
+            ...deck,
+            cards: [updated, ...deck.cards.filter((c) => c.id !== cardId)],
+          };
+        }),
       );
     });
     setCardEdits((prev) => {
