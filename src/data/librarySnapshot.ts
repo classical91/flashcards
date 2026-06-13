@@ -28,27 +28,68 @@ type CreateLibrarySnapshotOptions = {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const isFlashcard = (value: unknown): value is DeckSection["decks"][number]["cards"][number] =>
-  isRecord(value) &&
-  typeof value.id === "string" &&
-  typeof value.term === "string" &&
-  typeof value.definition === "string";
+const parseFlashcard = (value: unknown): DeckSection["decks"][number]["cards"][number] | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.term !== "string" ||
+    typeof value.definition !== "string"
+  ) {
+    return null;
+  }
 
-const isDeck = (value: unknown): value is DeckSection["decks"][number] =>
-  isRecord(value) &&
-  typeof value.id === "string" &&
-  typeof value.title === "string" &&
-  typeof value.subtitle === "string" &&
-  Array.isArray(value.cards) &&
-  value.cards.every(isFlashcard);
+  return {
+    id: value.id,
+    term: value.term,
+    definition: value.definition,
+  };
+};
 
-const isDeckSection = (value: unknown): value is DeckSection =>
-  isRecord(value) &&
-  typeof value.id === "string" &&
-  typeof value.title === "string" &&
-  typeof value.description === "string" &&
-  Array.isArray(value.decks) &&
-  value.decks.every(isDeck);
+const parseDeck = (value: unknown): DeckSection["decks"][number] | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.title !== "string" ||
+    !Array.isArray(value.cards)
+  ) {
+    return null;
+  }
+
+  const cards = value.cards.map(parseFlashcard);
+  if (cards.some((card) => !card)) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    title: value.title,
+    subtitle: typeof value.subtitle === "string" ? value.subtitle : "",
+    cards: cards as DeckSection["decks"][number]["cards"],
+  };
+};
+
+const parseDeckSection = (value: unknown): DeckSection | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.title !== "string" ||
+    !Array.isArray(value.decks)
+  ) {
+    return null;
+  }
+
+  const decks = value.decks.map(parseDeck);
+  if (decks.some((deck) => !deck)) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    title: value.title,
+    description: typeof value.description === "string" ? value.description : "",
+    decks: decks as DeckSection["decks"],
+  };
+};
 
 const isStudyMode = (value: unknown): value is StudyMode =>
   value === "all" || value === "remaining";
@@ -62,11 +103,16 @@ const isDeckProgress = (value: unknown): value is DeckProgress =>
   isStudyMode(value.studyMode);
 
 export const parseLibrarySections = (value: unknown): DeckSection[] | null => {
-  if (!Array.isArray(value) || !value.every(isDeckSection)) {
+  if (!Array.isArray(value)) {
     return null;
   }
 
-  return value;
+  const sections = value.map(parseDeckSection);
+  if (sections.some((section) => !section)) {
+    return null;
+  }
+
+  return sections as DeckSection[];
 };
 
 export const parseLibrarySnapshot = (value: unknown): LibrarySnapshot | null => {
