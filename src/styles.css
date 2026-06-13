@@ -13,7 +13,8 @@
   --shadow: 0 12px 28px rgba(22, 34, 51, 0.08);
   --shadow-sm: 0 4px 12px rgba(22, 34, 51, 0.06);
 
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -87,16 +88,25 @@
 
 * {
   box-sizing: border-box;
-  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+  transition:
+    background-color 200ms ease,
+    color 200ms ease,
+    border-color 200ms ease;
 }
 
 *:not(input):not(textarea) {
-  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+  transition:
+    background-color 200ms ease,
+    color 200ms ease,
+    border-color 200ms ease;
 }
 
 input,
 textarea {
-  transition: border-color 200ms ease, background-color 200ms ease, color 200ms ease;
+  transition:
+    border-color 200ms ease,
+    background-color 200ms ease,
+    color 200ms ease;
 }
 
 html,
@@ -203,7 +213,9 @@ button {
   cursor: pointer;
   background: transparent;
   color: var(--muted);
-  transition: background 150ms ease, color 150ms ease;
+  transition:
+    background 150ms ease,
+    color 150ms ease;
   white-space: nowrap;
 }
 
@@ -379,6 +391,78 @@ button {
   margin: 0 20px 12px;
 }
 
+.home-search {
+  padding: 0 20px 12px;
+}
+
+.home-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 150ms ease;
+}
+
+.home-search-input:focus {
+  border-color: var(--accent);
+}
+
+.search-results {
+  display: grid;
+  gap: 6px;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease;
+}
+
+.search-result-item:hover {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.search-result-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.search-result-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-result-meta {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .home-main {
   padding: 0 20px 24px;
 }
@@ -400,7 +484,11 @@ button {
   cursor: pointer;
   text-align: left;
   color: var(--ink);
-  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease, background 180ms ease;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    background 180ms ease;
 }
 
 .section-card:hover {
@@ -473,7 +561,10 @@ button {
   text-align: left;
   color: var(--ink);
   gap: 12px;
-  transition: border-color 180ms ease, transform 180ms ease, background 180ms ease;
+  transition:
+    border-color 180ms ease,
+    transform 180ms ease,
+    background 180ms ease;
 }
 
 .deck-card:hover {
@@ -613,7 +704,8 @@ button {
 
 .deck-study-topic {
   font-size: 0.82rem;
-  color: var(--muted, #888);
+  font-weight: 700;
+  color: var(--ink);
   text-align: center;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -763,7 +855,9 @@ button {
   padding: 6px 12px;
   font-size: 11px;
   font-family: inherit;
-  transition: border-color 150ms ease, background 150ms ease;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease;
 }
 
 .lookup-chip:hover {
@@ -786,38 +880,49 @@ button {
 
 .bottom-panel {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 8px;
   padding: 8px 18px 18px;
+}
+
+.bottom-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
 }
 
 .add-card-form {
   display: flex;
   align-items: center;
-  gap: 0;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 6px 4px 14px;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+  flex-wrap: wrap;
 }
 
 .add-card-form input {
-  width: 120px;
-  border: 0;
-  outline: 0;
+  flex: 1 1 120px;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
   color: var(--ink);
-  font-size: 12px;
+  font-size: 13px;
   font-family: inherit;
-  background: transparent;
+  outline: none;
+  transition: border-color 150ms ease;
 }
 
 .add-card-form input.wide {
-  width: 200px;
-  border-left: 1px solid var(--line);
-  padding-left: 10px;
-  margin-left: 6px;
+  flex: 2 1 200px;
+}
+
+.add-card-form input:focus {
+  border-color: var(--accent);
 }
 
 .add-card-form input::placeholder {
@@ -1018,15 +1123,52 @@ button {
 
 /* ── Card editor panel ───────────────────────────────────────────────────── */
 
+.deck-info-edit {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.deck-info-edit-input {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 150ms ease;
+}
+
+.deck-info-edit-input:focus {
+  border-color: var(--accent);
+}
+
 .card-editor-panel {
   width: 100%;
   max-width: 760px;
+  margin: 0 auto;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 14px;
   display: grid;
   gap: 10px;
+}
+
+.card-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
 }
 
 .card-editor-list {
@@ -1213,21 +1355,6 @@ button {
 
   .player {
     gap: 8px;
-  }
-
-  .add-card-form {
-    width: 100%;
-    border-radius: 14px;
-    flex-wrap: wrap;
-    padding: 10px 14px;
-  }
-
-  .add-card-form input,
-  .add-card-form input.wide {
-    width: 100%;
-    border-left: none;
-    padding-left: 0;
-    margin-left: 0;
   }
 
   .sections-grid {

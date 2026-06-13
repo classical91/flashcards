@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { SYNC_KEY_STORAGE_KEY, isSyncKeyValid, loadSyncKey } from "../syncKey";
+import { SYNC_KEY_STORAGE_KEY } from "../lib/constants";
+import { loadSyncKey } from "../lib/storage";
+import { isSyncKeyValid } from "../lib/sync";
 
 const createStorage = (initialValue?: string) => {
   let value = initialValue ?? null;

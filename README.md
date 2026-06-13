@@ -131,11 +131,34 @@ For real deployment, publish the generated `dist/` assets to any static hosting 
    ├─ App.tsx
    ├─ styles.css
    ├─ vite-env.d.ts
+   ├─ components/
+   │  ├─ HomeView.tsx
+   │  ├─ StudyView.tsx
+   │  ├─ PinnedView.tsx
+   │  ├─ SectionView.tsx
+   │  └─ Overlays.tsx
+   ├─ hooks/
+   │  ├─ useCloudSync.ts
+   │  ├─ useStudyKeyboard.ts
+   │  └─ useDebouncedPersist.ts
+   ├─ lib/
+   │  ├─ constants.ts
+   │  ├─ deckUtils.ts
+   │  ├─ format.ts
+   │  ├─ storage.ts
+   │  ├─ sync.ts
+   │  └─ types.ts
    └─ data/
       ├─ deckBuilder.ts
       ├─ decks.ts
+      ├─ librarySnapshot.ts
+      ├─ sharedDeck.ts
       ├─ positiveAdjectives.ts
-      └─ emotions1.ts
+      ├─ emotions1.ts
+      ├─ emotions2.ts
+      └─ __tests__/
+         ├─ deckBuilder.test.ts
+         └─ librarySnapshot.test.ts
 ```
 
 ## Important Files
@@ -159,8 +182,6 @@ For real deployment, publish the generated `dist/` assets to any static hosting 
 
 ## Known Limitations / TODO Signals
 
-- No automated test suite is configured in npm scripts.
-- No lint/format scripts are configured.
 - No user accounts are implemented; anyone with the same sync key can access or edit that cloud library.
 - Large starter content is embedded directly in TypeScript source files.
 - `index.html` title/description currently emphasize “Positive Adjectives,” while the app now supports a broader multi-section library.
