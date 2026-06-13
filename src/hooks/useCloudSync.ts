@@ -240,15 +240,10 @@ export function useCloudSync({
       .then((payload) => {
         if (!payload.exists) {
           cloudRevisionRef.current = 0;
-          return saveSnapshotToCloud(syncKey, snapshotRef.current, 0).then((outcome) => {
-            if (outcome.conflict) {
-              throw new Error("Another device created this cloud library at the same moment.");
-            }
-            if (outcome.revision !== null) cloudRevisionRef.current = outcome.revision;
-            cloudSyncReadyRef.current = true;
-            setSyncState("saved");
-            setSyncMessage("Created a cloud library for this key. Changes will auto-save.");
-          });
+          cloudSyncReadyRef.current = false;
+          setSyncState("idle");
+          setSyncMessage("This private key has no cloud library yet. Save to cloud when ready.");
+          return;
         }
         const snapshot = parseLibrarySnapshot(payload.snapshot);
         if (!snapshot) throw new Error("The cloud library was not in the expected format.");

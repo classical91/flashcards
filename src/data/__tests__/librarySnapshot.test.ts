@@ -151,7 +151,7 @@ describe("parseLibrarySections", () => {
     expect(parseLibrarySections(sections)).toEqual(sections);
   });
 
-  it("returns null when a local storage deck is missing subtitle", () => {
+  it("normalizes older local storage decks missing subtitle", () => {
     const sections = validSnapshot().librarySections;
     const { subtitle: _, ...deckWithoutSubtitle } = sections[0].decks[0];
     const malformed = [
@@ -161,7 +161,14 @@ describe("parseLibrarySections", () => {
       },
     ];
 
-    expect(parseLibrarySections(malformed)).toBeNull();
+    expect(parseLibrarySections(malformed)?.[0].decks[0].subtitle).toBe("");
+  });
+
+  it("normalizes older local storage sections missing description", () => {
+    const sections = validSnapshot().librarySections;
+    const { description: _, ...sectionWithoutDescription } = sections[0];
+
+    expect(parseLibrarySections([sectionWithoutDescription])?.[0].description).toBe("");
   });
 
   it("returns null when local storage card fields are malformed", () => {
