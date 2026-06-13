@@ -30,13 +30,11 @@ type HomeViewProps = {
   syncMessage: string;
   syncKeyInput: string;
   onSyncKeyInputChange: (value: string) => void;
-  isUsingSharedSyncKey: boolean;
   showSyncPanel: boolean;
   setShowSyncPanel: Dispatch<SetStateAction<boolean>>;
   onApplySyncKey: () => void;
   onLoadFromCloud: () => void;
   onSaveToCloud: () => void;
-  onUseSharedLibrary: () => void;
   onGenerateSyncKey: () => void;
   // Themes panel
   showThemesPanel: boolean;
@@ -77,13 +75,11 @@ export function HomeView({
   syncMessage,
   syncKeyInput,
   onSyncKeyInputChange,
-  isUsingSharedSyncKey,
   showSyncPanel,
   setShowSyncPanel,
   onApplySyncKey,
   onLoadFromCloud,
   onSaveToCloud,
-  onUseSharedLibrary,
   onGenerateSyncKey,
   showThemesPanel,
   setShowThemesPanel,
@@ -137,21 +133,30 @@ export function HomeView({
             <div className="home-actions-menu">
               <button
                 className="home-actions-item"
-                onClick={() => { setShowActionsMenu(false); setShowSyncPanel((v) => !v); }}
+                onClick={() => {
+                  setShowActionsMenu(false);
+                  setShowSyncPanel((v) => !v);
+                }}
               >
                 {syncState === "loading" || syncState === "saving" ? "Syncing…" : "☁ Sync"}
               </button>
               {pinnedDeckIds.length > 0 && (
                 <button
                   className="home-actions-item"
-                  onClick={() => { setShowActionsMenu(false); setView({ kind: "pinned" }); }}
+                  onClick={() => {
+                    setShowActionsMenu(false);
+                    setView({ kind: "pinned" });
+                  }}
                 >
                   📌 Pinned ({pinnedDeckIds.length})
                 </button>
               )}
               <button
                 className="home-actions-item"
-                onClick={() => { setShowActionsMenu(false); openRandomDeck(allDecks); }}
+                onClick={() => {
+                  setShowActionsMenu(false);
+                  openRandomDeck(allDecks);
+                }}
                 disabled={allDecks.length === 0}
               >
                 Shuffle home
@@ -168,7 +173,10 @@ export function HomeView({
               </button>
               <button
                 className="home-actions-item"
-                onClick={() => { setShowActionsMenu(false); setShowThemesPanel((v) => !v); }}
+                onClick={() => {
+                  setShowActionsMenu(false);
+                  setShowThemesPanel((v) => !v);
+                }}
                 style={{ color: "var(--accent)", fontWeight: 500 }}
               >
                 🎨 Themes
@@ -192,7 +200,9 @@ export function HomeView({
         <div className="panel-card home-panel">
           <div className="panel-card-head">
             <strong>Cloud sync</strong>
-            <button className="link-btn" onClick={() => setShowSyncPanel(false)}>Close</button>
+            <button className="link-btn" onClick={() => setShowSyncPanel(false)}>
+              Close
+            </button>
           </div>
           <div className="field">
             <label>Sync key</label>
@@ -200,14 +210,16 @@ export function HomeView({
               type="text"
               value={syncKeyInput}
               onChange={(e) => onSyncKeyInputChange(e.target.value)}
-              placeholder="Shared cloud library key"
+              placeholder="Private cloud library key"
             />
           </div>
-          {!isUsingSharedSyncKey && (
-            <p className="hint-text">Using a custom sync key.</p>
-          )}
+          <p className="hint-text">
+            Anyone with this key can access or edit this cloud library. There are no user accounts.
+          </p>
           <div className="panel-card-actions">
-            <button className="mini-btn" onClick={onApplySyncKey}>Use key</button>
+            <button className="mini-btn" onClick={onApplySyncKey}>
+              Use key
+            </button>
             <button
               className="mini-btn"
               onClick={onLoadFromCloud}
@@ -222,14 +234,9 @@ export function HomeView({
             >
               Save to cloud
             </button>
-            <button
-              className="mini-btn"
-              onClick={onUseSharedLibrary}
-              disabled={isUsingSharedSyncKey || syncState === "loading" || syncState === "saving"}
-            >
-              Shared library
+            <button className="mini-btn" onClick={onGenerateSyncKey}>
+              New key
             </button>
-            <button className="mini-btn" onClick={onGenerateSyncKey}>New key</button>
           </div>
           <p
             className={`message-line${syncState === "error" ? " error" : syncState === "saved" ? " success" : ""}`}
@@ -243,11 +250,23 @@ export function HomeView({
         <div className="panel-card home-panel">
           <div className="panel-card-head">
             <strong>Appearance</strong>
-            <button className="link-btn" onClick={() => setShowThemesPanel(false)}>Close</button>
+            <button className="link-btn" onClick={() => setShowThemesPanel(false)}>
+              Close
+            </button>
           </div>
           <div style={{ display: "grid", gap: "12px" }}>
             <div>
-              <p style={{ margin: "0 0 8px 0", fontSize: "12px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>Theme</p>
+              <p
+                style={{
+                  margin: "0 0 8px 0",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  color: "var(--muted)",
+                  textTransform: "uppercase",
+                }}
+              >
+                Theme
+              </p>
               <div style={{ display: "flex", gap: "6px" }}>
                 <button
                   className="mini-btn"
@@ -274,8 +293,24 @@ export function HomeView({
               </div>
             </div>
             <div>
-              <p style={{ margin: "0 0 8px 0", fontSize: "12px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>Accent color</p>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(60px, 1fr))", gap: "6px" }}>
+              <p
+                style={{
+                  margin: "0 0 8px 0",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  color: "var(--muted)",
+                  textTransform: "uppercase",
+                }}
+              >
+                Accent color
+              </p>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(60px, 1fr))",
+                  gap: "6px",
+                }}
+              >
                 {ACCENT_COLORS.map((color) => (
                   <button
                     key={color}
@@ -289,8 +324,7 @@ export function HomeView({
                       textTransform: "capitalize",
                     }}
                   >
-                    {ACCENT_EMOJI[color]}
-                    {" "}{color}
+                    {ACCENT_EMOJI[color]} {color}
                   </button>
                 ))}
               </div>
@@ -305,7 +339,10 @@ export function HomeView({
             <strong>New topic</strong>
             <button
               className="link-btn"
-              onClick={() => { setSectionComposer(null); setSectionComposerMessage(""); }}
+              onClick={() => {
+                setSectionComposer(null);
+                setSectionComposerMessage("");
+              }}
             >
               Close
             </button>
@@ -315,9 +352,7 @@ export function HomeView({
             <input
               type="text"
               value={sectionComposer.title}
-              onChange={(e) =>
-                setSectionComposer((c) => (c ? { ...c, title: e.target.value } : c))
-              }
+              onChange={(e) => setSectionComposer((c) => (c ? { ...c, title: e.target.value } : c))}
               placeholder="e.g. Greek Mythology"
               autoFocus
             />
@@ -333,11 +368,11 @@ export function HomeView({
               placeholder="Short note about this topic"
             />
           </div>
-          {sectionComposerMessage && (
-            <p className="message-line error">{sectionComposerMessage}</p>
-          )}
+          {sectionComposerMessage && <p className="message-line error">{sectionComposerMessage}</p>}
           <div className="panel-card-actions">
-            <button className="mini-btn" onClick={onCreateSection}>Create topic</button>
+            <button className="mini-btn" onClick={onCreateSection}>
+              Create topic
+            </button>
           </div>
         </div>
       )}
@@ -368,9 +403,7 @@ export function HomeView({
             </div>
           )
         ) : librarySections.length === 0 ? (
-          <div className="empty-state">
-            No topics yet. Create one above to get started.
-          </div>
+          <div className="empty-state">No topics yet. Create one above to get started.</div>
         ) : (
           <div className="sections-grid">
             {librarySections.map((section) => {
@@ -388,8 +421,8 @@ export function HomeView({
                     <div>
                       <div className="section-card-title">{section.title}</div>
                       <div className="section-card-meta">
-                        {section.decks.length} deck{section.decks.length !== 1 ? "s" : ""}{" "}
-                        · {cardCount} card{cardCount !== 1 ? "s" : ""}
+                        {section.decks.length} deck{section.decks.length !== 1 ? "s" : ""} ·{" "}
+                        {cardCount} card{cardCount !== 1 ? "s" : ""}
                         {sectionKnown > 0 ? ` · ${sectionKnown} known` : ""}
                       </div>
                       {section.description && (
@@ -410,11 +443,7 @@ export function HomeView({
           <div className="home-recent-label">Recently viewed</div>
           <div className="home-recent-list">
             {recentDecks.map(({ deck, section, viewedAt }) => (
-              <button
-                key={deck.id}
-                className="home-recent-item"
-                onClick={() => openDeck(deck.id)}
-              >
+              <button key={deck.id} className="home-recent-item" onClick={() => openDeck(deck.id)}>
                 <div className="home-recent-item-info">
                   <span className="home-recent-item-title">{deck.title}</span>
                   <span className="home-recent-item-section">{section.title}</span>

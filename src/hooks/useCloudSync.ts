@@ -7,7 +7,7 @@ import {
   createLibrarySnapshot,
   parseLibrarySnapshot,
 } from "../data/librarySnapshot";
-import { DEFAULT_SYNC_KEY, SYNC_KEY_STORAGE_KEY } from "../lib/constants";
+import { SYNC_KEY_STORAGE_KEY } from "../lib/constants";
 import { flattenDecks, mergeProgressState, mergeSections } from "../lib/deckUtils";
 import { loadSyncKey, safeRemoveItem, safeSetItem } from "../lib/storage";
 import {
@@ -32,11 +32,9 @@ export type CloudSync = {
   syncKeyInput: string;
   syncState: SyncState;
   syncMessage: string;
-  isUsingSharedSyncKey: boolean;
   onSyncKeyInputChange: (value: string) => void;
   onApplySyncKey: () => void;
   onGenerateSyncKey: () => void;
-  onUseSharedLibrary: () => void;
   onLoadFromCloud: () => void;
   onSaveToCloud: () => void;
 };
@@ -58,7 +56,7 @@ export function useCloudSync({
   const [syncKeyInput, setSyncKeyInput] = useState(loadSyncKey);
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const [syncMessage, setSyncMessage] = useState(
-    "Cloud sync starts automatically for this shared library.",
+    "Cloud sync uses this private key. Anyone with the key can access or edit this cloud library.",
   );
 
   const cloudSyncReadyRef = useRef(false);
@@ -73,11 +71,13 @@ export function useCloudSync({
     }),
   );
 
-  const isUsingSharedSyncKey = normalizeSyncKey(syncKeyInput) === DEFAULT_SYNC_KEY;
-
   const applyRemoteSnapshotMerge = (remoteSnapshot: LibrarySnapshot) => {
     const mergedSections = mergeSections(librarySections, remoteSnapshot.librarySections);
-    const mergedProgress = mergeProgressState(deckProgress, remoteSnapshot.deckProgress, mergedSections);
+    const mergedProgress = mergeProgressState(
+      deckProgress,
+      remoteSnapshot.deckProgress,
+      mergedSections,
+    );
     const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
     const nextSelectedDeckId = mergedDeckIds.has(selectedDeckId)
       ? selectedDeckId
@@ -89,15 +89,8 @@ export function useCloudSync({
     });
   };
 
-  const saveWithConflictResolution = async (
-    activeSyncKey: string,
-    snapshot: LibrarySnapshot,
-  ) => {
-    const outcome = await saveSnapshotToCloud(
-      activeSyncKey,
-      snapshot,
-      cloudRevisionRef.current,
-    );
+  const saveWithConflictResolution = async (activeSyncKey: string, snapshot: LibrarySnapshot) => {
+    const outcome = await saveSnapshotToCloud(activeSyncKey, snapshot, cloudRevisionRef.current);
     if (!outcome.conflict) {
       if (outcome.revision !== null) cloudRevisionRef.current = outcome.revision;
       return { resolved: true };
@@ -143,15 +136,6 @@ export function useCloudSync({
     setSyncMessage("New sync key created. Save to cloud to publish this library to your devices.");
   };
 
-  const onUseSharedLibrary = () => {
-    cloudSyncReadyRef.current = false;
-    cloudSyncLoadKeyRef.current = "";
-    setSyncKey(DEFAULT_SYNC_KEY);
-    setSyncKeyInput(DEFAULT_SYNC_KEY);
-    setSyncState("loading");
-    setSyncMessage("Switching this browser back to the shared cloud library...");
-  };
-
   const onLoadFromCloud = async () => {
     const activeSyncKey = normalizeSyncKey(syncKeyInput || syncKey);
     if (!isSyncKeyValid(activeSyncKey)) {
@@ -176,7 +160,11 @@ export function useCloudSync({
       if (!snapshot) throw new Error("The cloud library was not in the expected format.");
       cloudRevisionRef.current = typeof payload.revision === "number" ? payload.revision : null;
       const mergedSections = mergeSections(librarySections, snapshot.librarySections);
-      const mergedProgress = mergeProgressState(deckProgress, snapshot.deckProgress, mergedSections);
+      const mergedProgress = mergeProgressState(
+        deckProgress,
+        snapshot.deckProgress,
+        mergedSections,
+      );
       const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
       const nextSelectedDeckId = mergedDeckIds.has(snapshot.selectedDeckId)
         ? snapshot.selectedDeckId
@@ -264,8 +252,7 @@ export function useCloudSync({
         }
         const snapshot = parseLibrarySnapshot(payload.snapshot);
         if (!snapshot) throw new Error("The cloud library was not in the expected format.");
-        cloudRevisionRef.current =
-          typeof payload.revision === "number" ? payload.revision : null;
+        cloudRevisionRef.current = typeof payload.revision === "number" ? payload.revision : null;
         const mergedSections = mergeSections(librarySections, snapshot.librarySections);
         const mergedProgress = mergeProgressState(
           deckProgress,
@@ -288,11 +275,8 @@ export function useCloudSync({
       .catch((error) => {
         cloudSyncLoadKeyRef.current = "";
         setSyncState("error");
-        setSyncMessage(
-          error instanceof Error ? error.message : "Could not connect to cloud sync.",
-        );
+        setSyncMessage(error instanceof Error ? error.message : "Could not connect to cloud sync.");
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [syncKey]);
 
   useEffect(() => {
@@ -315,18 +299,15 @@ export function useCloudSync({
         });
     }, 900);
     return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [librarySections, deckProgress, selectedDeckId, syncKey]);
 
   return {
     syncKeyInput,
     syncState,
     syncMessage,
-    isUsingSharedSyncKey,
     onSyncKeyInputChange,
     onApplySyncKey,
     onGenerateSyncKey,
-    onUseSharedLibrary,
     onLoadFromCloud,
     onSaveToCloud,
   };

@@ -3,12 +3,16 @@ import { syncKeyPattern } from "./constants";
 
 export const normalizeSyncKey = (value: string) => value.trim();
 export const isSyncKeyValid = (value: string) => syncKeyPattern.test(value);
+export const getBuildSyncKey = (value: string | undefined) => {
+  const normalized = normalizeSyncKey(value ?? "");
+  return isSyncKeyValid(normalized) ? normalized : null;
+};
 
 export const createSyncKey = () => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+    return `fc_${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
   }
-  return Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
+  return `fc_${Math.random().toString(36).slice(2, 14)}${Date.now().toString(36)}`;
 };
 
 export const getFetchErrorMessage = async (response: Response) => {

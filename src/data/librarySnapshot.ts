@@ -28,20 +28,21 @@ type CreateLibrarySnapshotOptions = {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const isFlashcard = (value: unknown) =>
+const isFlashcard = (value: unknown): value is DeckSection["decks"][number]["cards"][number] =>
   isRecord(value) &&
   typeof value.id === "string" &&
   typeof value.term === "string" &&
   typeof value.definition === "string";
 
-const isDeck = (value: unknown) =>
+const isDeck = (value: unknown): value is DeckSection["decks"][number] =>
   isRecord(value) &&
   typeof value.id === "string" &&
   typeof value.title === "string" &&
+  typeof value.subtitle === "string" &&
   Array.isArray(value.cards) &&
   value.cards.every(isFlashcard);
 
-const isDeckSection = (value: unknown) =>
+const isDeckSection = (value: unknown): value is DeckSection =>
   isRecord(value) &&
   typeof value.id === "string" &&
   typeof value.title === "string" &&
@@ -60,13 +61,25 @@ const isDeckProgress = (value: unknown): value is DeckProgress =>
   typeof value.isFlipped === "boolean" &&
   isStudyMode(value.studyMode);
 
+export const parseLibrarySections = (value: unknown): DeckSection[] | null => {
+  if (!Array.isArray(value) || !value.every(isDeckSection)) {
+    return null;
+  }
+
+  return value;
+};
+
 export const parseLibrarySnapshot = (value: unknown): LibrarySnapshot | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const librarySections = parseLibrarySections(value.librarySections);
+
   if (
-    !isRecord(value) ||
     value.version !== 1 ||
     typeof value.exportedAt !== "string" ||
-    !Array.isArray(value.librarySections) ||
-    !value.librarySections.every(isDeckSection) ||
+    !librarySections ||
     !isRecord(value.deckProgress) ||
     typeof value.selectedDeckId !== "string"
   ) {
@@ -88,7 +101,7 @@ export const parseLibrarySnapshot = (value: unknown): LibrarySnapshot | null => 
   return {
     version: 1,
     exportedAt: value.exportedAt,
-    librarySections: value.librarySections as DeckSection[],
+    librarySections,
     deckProgress: value.deckProgress as Record<string, DeckProgress>,
     selectedDeckId: value.selectedDeckId,
     recentDeckIds,

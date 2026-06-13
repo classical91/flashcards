@@ -1,10 +1,10 @@
 import { defaultDeckId, starterSections } from "../data/decks";
 import { DeckSection } from "../data/deckBuilder";
-import { DeckProgress } from "../data/librarySnapshot";
+import { DeckProgress, parseLibrarySections } from "../data/librarySnapshot";
 import {
   ACCENT_COLORS,
   ACCENT_STORAGE_KEY,
-  DEFAULT_SYNC_KEY,
+  BUILD_SYNC_KEY,
   LIBRARY_STORAGE_KEY,
   PINNED_DECKS_STORAGE_KEY,
   PROGRESS_STORAGE_KEY,
@@ -14,7 +14,7 @@ import {
   THEME_STORAGE_KEY,
 } from "./constants";
 import { buildProgressState, cloneSections } from "./deckUtils";
-import { isSyncKeyValid } from "./sync";
+import { createSyncKey, getBuildSyncKey, isSyncKeyValid } from "./sync";
 import { AccentColor, RecentDeckEntry, Theme } from "./types";
 
 /**
@@ -62,8 +62,8 @@ export const loadLibrarySections = () => {
   const saved = window.localStorage.getItem(LIBRARY_STORAGE_KEY);
   if (!saved) return cloneSections(starterSections);
   try {
-    const parsed = JSON.parse(saved) as DeckSection[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return cloneSections(starterSections);
+    const parsed = parseLibrarySections(JSON.parse(saved));
+    if (!parsed || parsed.length === 0) return cloneSections(starterSections);
     return parsed;
   } catch {
     return cloneSections(starterSections);
@@ -88,10 +88,25 @@ export const loadSelectedDeckId = () => {
   return window.localStorage.getItem(SELECTED_DECK_STORAGE_KEY) ?? defaultDeckId;
 };
 
-export const loadSyncKey = () => {
-  if (typeof window === "undefined") return DEFAULT_SYNC_KEY;
-  const saved = window.localStorage.getItem(SYNC_KEY_STORAGE_KEY) ?? "";
-  return isSyncKeyValid(saved) ? saved : DEFAULT_SYNC_KEY;
+export const loadSyncKey = (
+  storage: Pick<Storage, "getItem" | "setItem"> | null = typeof window === "undefined"
+    ? null
+    : window.localStorage,
+  buildSyncKey = getBuildSyncKey(BUILD_SYNC_KEY),
+) => {
+  const saved = storage?.getItem(SYNC_KEY_STORAGE_KEY) ?? "";
+
+  if (isSyncKeyValid(saved)) {
+    return saved.trim();
+  }
+
+  if (buildSyncKey) {
+    return buildSyncKey;
+  }
+
+  const generated = createSyncKey();
+  storage?.setItem(SYNC_KEY_STORAGE_KEY, generated);
+  return generated;
 };
 
 export const loadPinnedDeckIds = (): string[] => {

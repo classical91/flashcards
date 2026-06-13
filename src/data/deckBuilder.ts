@@ -125,14 +125,13 @@ export const createUniqueId = (value: string, existingIds: Set<string>) => {
 const normalizeDefinition = (definition: string) =>
   definition.replace(/,/g, ", ").replace(/\s+/g, " ").trim();
 
-const countWords = (value: string) =>
-  value
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean).length;
+const countWords = (value: string) => value.trim().split(/\s+/).filter(Boolean).length;
 
 const getLeadingWord = (value: string) =>
-  value.trim().match(/^[("'\[]*([A-Za-z]+)/)?.[1]?.toLowerCase() ?? "";
+  value
+    .trim()
+    .match(/^[("'[]*([A-Za-z]+)/)?.[1]
+    ?.toLowerCase() ?? "";
 
 const chooseHyphenSplit = (line: string) => {
   const candidates: Array<{ left: string; right: string; score: number }> = [];
@@ -266,20 +265,14 @@ const splitLine = (line: string) => {
     const separator = spacedMatch[0];
     const separatorIndex = spacedMatch.index;
 
-    return [
-      line.slice(0, separatorIndex),
-      line.slice(separatorIndex + separator.length),
-    ];
+    return [line.slice(0, separatorIndex), line.slice(separatorIndex + separator.length)];
   }
 
   // Handle unspaced en/em dashes: e.g. "Faith–Trust in God" or "Grace—God's favor"
   const unspacedDashMatch = line.match(/[\u2013\u2014]/);
 
   if (unspacedDashMatch?.index !== undefined) {
-    return [
-      line.slice(0, unspacedDashMatch.index),
-      line.slice(unspacedDashMatch.index + 1),
-    ];
+    return [line.slice(0, unspacedDashMatch.index), line.slice(unspacedDashMatch.index + 1)];
   }
 
   const colonIndex = line.indexOf(":");

@@ -8,8 +8,7 @@ export const THEME_STORAGE_KEY = "flashcards.theme.v1";
 export const ACCENT_STORAGE_KEY = "flashcards.accent.v1";
 export const MAX_RECENT_DECKS = 6;
 
-export const DEFAULT_SYNC_KEY =
-  import.meta.env.VITE_FLASHCARDS_SYNC_KEY?.trim() || "jasons-flashcards-library";
 export const syncKeyPattern = /^[A-Za-z0-9_-]{8,120}$/;
+export const BUILD_SYNC_KEY = import.meta.env.VITE_FLASHCARDS_SYNC_KEY?.trim() || "";
 
 export const ACCENT_COLORS = ["blue", "purple", "green", "red", "amber"] as const;

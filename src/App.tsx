@@ -66,7 +66,9 @@ export default function App() {
   const [cardImportMessage, setCardImportMessage] = useState("");
   const [showCardEditor, setShowCardEditor] = useState(false);
   const [showCardList, setShowCardList] = useState(false);
-  const [cardEdits, setCardEdits] = useState<Record<string, { term: string; definition: string }>>({});
+  const [cardEdits, setCardEdits] = useState<Record<string, { term: string; definition: string }>>(
+    {},
+  );
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const [sectionComposer, setSectionComposer] = useState<SectionComposer | null>(null);
   const [sectionComposerMessage, setSectionComposerMessage] = useState("");
@@ -112,15 +114,13 @@ export default function App() {
     () =>
       selectedDeck
         ? findSectionForDeck(librarySections, selectedDeck.id)
-        : librarySections[0] ?? null,
+        : (librarySections[0] ?? null),
     [selectedDeck, librarySections],
   );
 
   const activeProgress = useMemo(
     () =>
-      selectedDeck
-        ? deckProgress[selectedDeck.id] ?? createDeckProgress(selectedDeck)
-        : null,
+      selectedDeck ? (deckProgress[selectedDeck.id] ?? createDeckProgress(selectedDeck)) : null,
     [selectedDeck, deckProgress],
   );
 
@@ -142,8 +142,7 @@ export default function App() {
   );
 
   const cardPosition = useMemo(
-    () =>
-      currentCard ? visibleCards.findIndex((card) => card.id === currentCard.id) : -1,
+    () => (currentCard ? visibleCards.findIndex((card) => card.id === currentCard.id) : -1),
     [currentCard, visibleCards],
   );
 
@@ -284,7 +283,10 @@ export default function App() {
       setCardImportMessage("Paste at least one valid card line first.");
       return;
     }
-    const newCards = withCardIds(parsed.cards, selectedDeck.cards.map((card) => card.id));
+    const newCards = withCardIds(
+      parsed.cards,
+      selectedDeck.cards.map((card) => card.id),
+    );
     startTransition(() => {
       setLibrarySections((currentSections) =>
         updateDeckInSections(currentSections, selectedDeck.id, (deck) => ({
@@ -348,7 +350,12 @@ export default function App() {
   const openDeck = (deckId: string) => {
     setSelectedDeckId(deckId);
     setView({ kind: "study", deckId });
-    setRecentDeckIds((prev) => [{ id: deckId, viewedAt: Date.now() }, ...prev.filter((e) => e.id !== deckId)].slice(0, MAX_RECENT_DECKS));
+    setRecentDeckIds((prev) =>
+      [{ id: deckId, viewedAt: Date.now() }, ...prev.filter((e) => e.id !== deckId)].slice(
+        0,
+        MAX_RECENT_DECKS,
+      ),
+    );
   };
 
   const openRandomDeck = (decks: Deck[]) => {
@@ -425,7 +432,9 @@ export default function App() {
     const content = lines.join("\n");
     try {
       await navigator.clipboard.writeText(content);
-      setToast(`Copied ${selectedDeck.cards.length} card${selectedDeck.cards.length === 1 ? "" : "s"} from "${selectedDeck.title}" to clipboard.`);
+      setToast(
+        `Copied ${selectedDeck.cards.length} card${selectedDeck.cards.length === 1 ? "" : "s"} from "${selectedDeck.title}" to clipboard.`,
+      );
     } catch {
       setToast("Could not copy to clipboard.");
     }
@@ -452,9 +461,7 @@ export default function App() {
         setPinnedDeckIds((current) => current.filter((id) => id !== deckId));
         if (currentView.kind === "study" && currentView.deckId === deckId) {
           setView(
-            sectionForDeck
-              ? { kind: "section", sectionId: sectionForDeck.id }
-              : { kind: "home" },
+            sectionForDeck ? { kind: "section", sectionId: sectionForDeck.id } : { kind: "home" },
           );
         }
         setConfirmDialog(null);
@@ -468,9 +475,7 @@ export default function App() {
       `Delete the topic "${section?.title ?? sectionId}" and all its decks? This cannot be undone.`,
       () => {
         const deckIds = section?.decks.map((d) => d.id) ?? [];
-        setLibrarySections((currentSections) =>
-          currentSections.filter((s) => s.id !== sectionId),
-        );
+        setLibrarySections((currentSections) => currentSections.filter((s) => s.id !== sectionId));
         setDeckProgress((currentProgress) => {
           const next = { ...currentProgress };
           deckIds.forEach((id) => delete next[id]);
@@ -550,7 +555,7 @@ export default function App() {
         const knownIds = savedProgress.knownIds.filter((id) => validCardIds.has(id));
         const currentCardId = validCardIds.has(savedProgress.currentCardId)
           ? savedProgress.currentCardId
-          : deck.cards[0]?.id ?? "";
+          : (deck.cards[0]?.id ?? "");
         nextProgress[deck.id] = {
           ...savedProgress,
           currentCardId,
@@ -589,10 +594,7 @@ export default function App() {
     }
   }, [activeProgress, selectedDeck, visibleCards]);
 
-  const serializedLibrary = useMemo(
-    () => JSON.stringify(librarySections),
-    [librarySections],
-  );
+  const serializedLibrary = useMemo(() => JSON.stringify(librarySections), [librarySections]);
   const serializedProgress = useMemo(() => JSON.stringify(deckProgress), [deckProgress]);
   const serializedPinned = useMemo(() => JSON.stringify(pinnedDeckIds), [pinnedDeckIds]);
   const serializedRecent = useMemo(() => JSON.stringify(recentDeckIds), [recentDeckIds]);
@@ -661,7 +663,6 @@ export default function App() {
     return () => clearTimeout(timer);
     // Only restart when autoplay is toggled, the card changes, or the flip state changes.
     // Omitting other deps intentionally so unrelated re-renders (e.g. cloud sync) don't cancel the timer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAutoPlaying, currentCard?.id, activeProgress?.isFlipped, view.kind]);
 
   const confirmOverlay = (
@@ -689,13 +690,11 @@ export default function App() {
           syncMessage={cloudSync.syncMessage}
           syncKeyInput={cloudSync.syncKeyInput}
           onSyncKeyInputChange={cloudSync.onSyncKeyInputChange}
-          isUsingSharedSyncKey={cloudSync.isUsingSharedSyncKey}
           showSyncPanel={showSyncPanel}
           setShowSyncPanel={setShowSyncPanel}
           onApplySyncKey={cloudSync.onApplySyncKey}
           onLoadFromCloud={cloudSync.onLoadFromCloud}
           onSaveToCloud={cloudSync.onSaveToCloud}
-          onUseSharedLibrary={cloudSync.onUseSharedLibrary}
           onGenerateSyncKey={cloudSync.onGenerateSyncKey}
           showThemesPanel={showThemesPanel}
           setShowThemesPanel={setShowThemesPanel}

@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { parseLibrarySnapshot, createLibrarySnapshot } from "../librarySnapshot";
+import {
+  parseLibrarySnapshot,
+  createLibrarySnapshot,
+  parseLibrarySections,
+} from "../librarySnapshot";
 import type { LibrarySnapshot } from "../librarySnapshot";
 
 const validSnapshot = (): LibrarySnapshot =>
@@ -80,7 +84,8 @@ describe("parseLibrarySnapshot", () => {
 
   it("returns null when a card is missing the definition field", () => {
     const snapshot = validSnapshot();
-    (snapshot.librarySections[0].decks[0].cards[0] as Record<string, unknown>).definition = undefined;
+    (snapshot.librarySections[0].decks[0].cards[0] as Record<string, unknown>).definition =
+      undefined;
     expect(parseLibrarySnapshot(snapshot)).toBeNull();
   });
 
@@ -136,5 +141,43 @@ describe("parseLibrarySnapshot", () => {
     });
     const result = parseLibrarySnapshot(snapshot);
     expect(result?.librarySections).toHaveLength(2);
+  });
+});
+
+describe("parseLibrarySections", () => {
+  it("parses valid library sections for local storage", () => {
+    const sections = validSnapshot().librarySections;
+
+    expect(parseLibrarySections(sections)).toEqual(sections);
+  });
+
+  it("returns null when a local storage deck is missing subtitle", () => {
+    const sections = validSnapshot().librarySections;
+    const { subtitle: _, ...deckWithoutSubtitle } = sections[0].decks[0];
+    const malformed = [
+      {
+        ...sections[0],
+        decks: [deckWithoutSubtitle],
+      },
+    ];
+
+    expect(parseLibrarySections(malformed)).toBeNull();
+  });
+
+  it("returns null when local storage card fields are malformed", () => {
+    const sections = validSnapshot().librarySections;
+    const malformed = [
+      {
+        ...sections[0],
+        decks: [
+          {
+            ...sections[0].decks[0],
+            cards: [{ id: "card-1", term: "hello", definition: 42 }],
+          },
+        ],
+      },
+    ];
+
+    expect(parseLibrarySections(malformed)).toBeNull();
   });
 });
