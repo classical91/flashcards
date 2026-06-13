@@ -103,81 +103,284 @@ const sendJson = (response, statusCode, payload) => {
   response.end(JSON.stringify(payload));
 };
 
-const isRecord = (value) =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 
-const isFlashcard = (value) =>
-  isRecord(value) &&
-  typeof value.id === "string" &&
-  typeof value.term === "string" &&
-  typeof value.definition === "string";
+const contentLimits = Object.freeze({
+  sections: 50,
+  decksPerSection: 100,
+  cardsPerDeck: 1000,
+  progressEntries: 5000,
+  knownIdsPerDeck: 1000,
+  recentDeckIds: 100,
+  idLength: 120,
+  titleLength: 200,
+  subtitleLength: 500,
+  descriptionLength: 1000,
+  termLength: 500,
+  definitionLength: 4000,
+  timestampLength: 100,
+});
 
-const isDeck = (value) =>
-  isRecord(value) &&
-  typeof value.id === "string" &&
-  typeof value.title === "string" &&
-  Array.isArray(value.cards) &&
-  value.cards.every(isFlashcard);
+const valid = { ok: true };
+const invalid = (message) => ({ ok: false, message });
 
-const isDeckSection = (value) =>
-  isRecord(value) &&
-  typeof value.id === "string" &&
-  typeof value.title === "string" &&
-  typeof value.description === "string" &&
-  Array.isArray(value.decks) &&
-  value.decks.every(isDeck);
-
-const isSharedDeckSection = (value) =>
-  isRecord(value) &&
-  typeof value.id === "string" &&
-  typeof value.title === "string" &&
-  typeof value.description === "string";
-
-const isDeckProgress = (value) =>
-  isRecord(value) &&
-  typeof value.currentCardId === "string" &&
-  Array.isArray(value.knownIds) &&
-  value.knownIds.every((item) => typeof item === "string") &&
-  typeof value.isFlipped === "boolean" &&
-  (value.studyMode === "all" || value.studyMode === "remaining");
-
-const isLibrarySnapshot = (value) => {
-  if (
-    !isRecord(value) ||
-    value.version !== 1 ||
-    typeof value.exportedAt !== "string" ||
-    !Array.isArray(value.librarySections) ||
-    !value.librarySections.every(isDeckSection) ||
-    !isRecord(value.deckProgress) ||
-    typeof value.selectedDeckId !== "string"
-  ) {
-    return false;
+const validateString = (value, path, maxLength) => {
+  if (typeof value !== "string") {
+    return invalid(`${path} must be a string.`);
   }
 
-  if (!Object.values(value.deckProgress).every(isDeckProgress)) {
-    return false;
+  if (value.length > maxLength) {
+    return invalid(`${path} must be ${maxLength} characters or fewer.`);
   }
 
-  if (
-    "recentDeckIds" in value &&
-    (!Array.isArray(value.recentDeckIds) ||
-      !value.recentDeckIds.every((item) => typeof item === "string"))
-  ) {
-    return false;
-  }
-
-  return true;
+  return valid;
 };
 
-const isSharedDeckRequest = (value) =>
-  isRecord(value) && isDeck(value.deck) && isSharedDeckSection(value.section);
+const validateStringArray = (value, path, maxItems, maxLength) => {
+  if (!Array.isArray(value)) {
+    return invalid(`${path} must be an array.`);
+  }
 
-const isSharedDeckSnapshot = (value) =>
-  isRecord(value) &&
-  value.version === 1 &&
-  typeof value.sharedAt === "string" &&
-  isDeck(value.deck) &&
-  isSharedDeckSection(value.section);
+  if (value.length > maxItems) {
+    return invalid(`${path} cannot contain more than ${maxItems} items.`);
+  }
+
+  for (let index = 0; index < value.length; index += 1) {
+    const result = validateString(value[index], `${path}[${index}]`, maxLength);
+    if (!result.ok) return result;
+  }
+
+  return valid;
+};
+
+const validateFlashcard = (value, path) => {
+  if (!isRecord(value)) {
+    return invalid(`${path} must be an object.`);
+  }
+
+  const fields = [
+    ["id", contentLimits.idLength],
+    ["term", contentLimits.termLength],
+    ["definition", contentLimits.definitionLength],
+  ];
+
+  for (const [field, maxLength] of fields) {
+    const result = validateString(value[field], `${path}.${field}`, maxLength);
+    if (!result.ok) return result;
+  }
+
+  return valid;
+};
+
+const validateDeck = (value, path) => {
+  if (!isRecord(value)) {
+    return invalid(`${path} must be an object.`);
+  }
+
+  const fields = [
+    ["id", contentLimits.idLength],
+    ["title", contentLimits.titleLength],
+    ["subtitle", contentLimits.subtitleLength],
+  ];
+
+  for (const [field, maxLength] of fields) {
+    const result = validateString(value[field], `${path}.${field}`, maxLength);
+    if (!result.ok) return result;
+  }
+
+  if (!Array.isArray(value.cards)) {
+    return invalid(`${path}.cards must be an array.`);
+  }
+
+  if (value.cards.length > contentLimits.cardsPerDeck) {
+    return invalid(`${path}.cards cannot contain more than ${contentLimits.cardsPerDeck} cards.`);
+  }
+
+  for (let index = 0; index < value.cards.length; index += 1) {
+    const result = validateFlashcard(value.cards[index], `${path}.cards[${index}]`);
+    if (!result.ok) return result;
+  }
+
+  return valid;
+};
+
+const validateDeckSection = (value, path) => {
+  if (!isRecord(value)) {
+    return invalid(`${path} must be an object.`);
+  }
+
+  const fields = [
+    ["id", contentLimits.idLength],
+    ["title", contentLimits.titleLength],
+    ["description", contentLimits.descriptionLength],
+  ];
+
+  for (const [field, maxLength] of fields) {
+    const result = validateString(value[field], `${path}.${field}`, maxLength);
+    if (!result.ok) return result;
+  }
+
+  if (!Array.isArray(value.decks)) {
+    return invalid(`${path}.decks must be an array.`);
+  }
+
+  if (value.decks.length > contentLimits.decksPerSection) {
+    return invalid(
+      `${path}.decks cannot contain more than ${contentLimits.decksPerSection} decks.`,
+    );
+  }
+
+  for (let index = 0; index < value.decks.length; index += 1) {
+    const result = validateDeck(value.decks[index], `${path}.decks[${index}]`);
+    if (!result.ok) return result;
+  }
+
+  return valid;
+};
+
+const validateSharedDeckSection = (value, path) => {
+  if (!isRecord(value)) {
+    return invalid(`${path} must be an object.`);
+  }
+
+  const fields = [
+    ["id", contentLimits.idLength],
+    ["title", contentLimits.titleLength],
+    ["description", contentLimits.descriptionLength],
+  ];
+
+  for (const [field, maxLength] of fields) {
+    const result = validateString(value[field], `${path}.${field}`, maxLength);
+    if (!result.ok) return result;
+  }
+
+  return valid;
+};
+
+const validateDeckProgress = (value, path) => {
+  if (!isRecord(value)) {
+    return invalid(`${path} must be an object.`);
+  }
+
+  const currentCardResult = validateString(
+    value.currentCardId,
+    `${path}.currentCardId`,
+    contentLimits.idLength,
+  );
+  if (!currentCardResult.ok) return currentCardResult;
+
+  const knownIdsResult = validateStringArray(
+    value.knownIds,
+    `${path}.knownIds`,
+    contentLimits.knownIdsPerDeck,
+    contentLimits.idLength,
+  );
+  if (!knownIdsResult.ok) return knownIdsResult;
+
+  if (typeof value.isFlipped !== "boolean") {
+    return invalid(`${path}.isFlipped must be a boolean.`);
+  }
+
+  if (value.studyMode !== "all" && value.studyMode !== "remaining") {
+    return invalid(`${path}.studyMode must be "all" or "remaining".`);
+  }
+
+  return valid;
+};
+
+const validateLibrarySnapshot = (value) => {
+  if (!isRecord(value)) {
+    return invalid("The uploaded library backup must be an object.");
+  }
+
+  if (value.version !== 1) {
+    return invalid("The uploaded library backup must use snapshot version 1.");
+  }
+
+  const exportedAtResult = validateString(
+    value.exportedAt,
+    "exportedAt",
+    contentLimits.timestampLength,
+  );
+  if (!exportedAtResult.ok) return exportedAtResult;
+
+  if (!Array.isArray(value.librarySections)) {
+    return invalid("librarySections must be an array.");
+  }
+
+  if (value.librarySections.length > contentLimits.sections) {
+    return invalid(`librarySections cannot contain more than ${contentLimits.sections} sections.`);
+  }
+
+  for (let index = 0; index < value.librarySections.length; index += 1) {
+    const result = validateDeckSection(value.librarySections[index], `librarySections[${index}]`);
+    if (!result.ok) return result;
+  }
+
+  if (!isRecord(value.deckProgress)) {
+    return invalid("deckProgress must be an object.");
+  }
+
+  const progressEntries = Object.entries(value.deckProgress);
+  if (progressEntries.length > contentLimits.progressEntries) {
+    return invalid(`deckProgress cannot contain more than ${contentLimits.progressEntries} decks.`);
+  }
+
+  for (const [deckId, progress] of progressEntries) {
+    const deckIdResult = validateString(deckId, "deckProgress deck id", contentLimits.idLength);
+    if (!deckIdResult.ok) return deckIdResult;
+    const result = validateDeckProgress(progress, `deckProgress.${deckId}`);
+    if (!result.ok) return result;
+  }
+
+  const selectedDeckResult = validateString(
+    value.selectedDeckId,
+    "selectedDeckId",
+    contentLimits.idLength,
+  );
+  if (!selectedDeckResult.ok) return selectedDeckResult;
+
+  if ("recentDeckIds" in value) {
+    const recentDeckIdsResult = validateStringArray(
+      value.recentDeckIds,
+      "recentDeckIds",
+      contentLimits.recentDeckIds,
+      contentLimits.idLength,
+    );
+    if (!recentDeckIdsResult.ok) return recentDeckIdsResult;
+  }
+
+  return valid;
+};
+
+const validateSharedDeckRequest = (value) => {
+  if (!isRecord(value)) {
+    return invalid("The shared deck request must be an object.");
+  }
+
+  const deckResult = validateDeck(value.deck, "deck");
+  if (!deckResult.ok) return deckResult;
+
+  return validateSharedDeckSection(value.section, "section");
+};
+
+const validateSharedDeckSnapshot = (value) => {
+  if (!isRecord(value)) {
+    return invalid("The shared deck snapshot must be an object.");
+  }
+
+  if (value.version !== 1) {
+    return invalid("The shared deck snapshot must use version 1.");
+  }
+
+  const sharedAtResult = validateString(value.sharedAt, "sharedAt", contentLimits.timestampLength);
+  if (!sharedAtResult.ok) return sharedAtResult;
+
+  const deckResult = validateDeck(value.deck, "deck");
+  if (!deckResult.ok) return deckResult;
+
+  return validateSharedDeckSection(value.section, "section");
+};
 
 const readJsonBody = async (request) =>
   new Promise((resolve, reject) => {
@@ -406,17 +609,19 @@ const handleApiRequest = async (request, response, pathname) => {
   if (dbInitFailed) {
     return sendJson(response, 503, {
       error: "database_unavailable",
-      message: "The database is currently unavailable. Please check DATABASE_URL or set ALLOW_MEMORY_STORAGE=true.",
+      message:
+        "The database is currently unavailable. Please check DATABASE_URL or set ALLOW_MEMORY_STORAGE=true.",
     });
   }
 
   if (pathname === "/api/shared-decks" && request.method === "POST") {
     const body = await readJsonBody(request);
+    const validation = validateSharedDeckRequest(body);
 
-    if (!isSharedDeckRequest(body)) {
+    if (!validation.ok) {
       return sendJson(response, 400, {
         error: "invalid_shared_deck",
-        message: "That deck could not be turned into a share link.",
+        message: validation.message,
       });
     }
 
@@ -459,7 +664,7 @@ const handleApiRequest = async (request, response, pathname) => {
 
     const record = await getSharedDeck(shareId);
 
-    if (!record || !isSharedDeckSnapshot(record.snapshot)) {
+    if (!record || !validateSharedDeckSnapshot(record.snapshot).ok) {
       return sendJson(response, 404, {
         error: "shared_deck_not_found",
         message: "That shared deck link could not be found.",
@@ -531,10 +736,12 @@ const handleApiRequest = async (request, response, pathname) => {
       throw readError;
     }
 
-    if (!isLibrarySnapshot(body)) {
+    const validation = validateLibrarySnapshot(body);
+
+    if (!validation.ok) {
       return sendJson(response, 400, {
         error: "invalid_snapshot",
-        message: "The uploaded library backup was not in the expected format.",
+        message: validation.message,
       });
     }
 

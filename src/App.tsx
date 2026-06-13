@@ -10,8 +10,17 @@ import {
 import {
   LibrarySnapshot,
   createLibrarySnapshot,
+  parseLibrarySections,
   parseLibrarySnapshot,
 } from "./data/librarySnapshot";
+import {
+  SYNC_KEY_STORAGE_KEY,
+  getBuildSyncKey,
+  isSyncKeyValid,
+  loadSyncKey,
+  normalizeSyncKey,
+  createSyncKey,
+} from "./syncKey";
 
 type StudyMode = "all" | "remaining";
 
@@ -55,7 +64,6 @@ type AiModal = {
 const LIBRARY_STORAGE_KEY = "flashcards.library.v2";
 const PROGRESS_STORAGE_KEY = "flashcards.progress.v2";
 const SELECTED_DECK_STORAGE_KEY = "flashcards.selectedDeck.v2";
-const SYNC_KEY_STORAGE_KEY = "flashcards.syncKey.v1";
 const PINNED_DECKS_STORAGE_KEY = "flashcards.pinnedDecks.v1";
 const RECENT_DECKS_STORAGE_KEY = "flashcards.recentDecks.v2";
 const THEME_STORAGE_KEY = "flashcards.theme.v1";
@@ -64,9 +72,7 @@ const MAX_RECENT_DECKS = 6;
 
 type Theme = "light" | "dark";
 type AccentColor = "blue" | "purple" | "green" | "red" | "amber";
-const DEFAULT_SYNC_KEY =
-  import.meta.env.VITE_FLASHCARDS_SYNC_KEY?.trim() || "jasons-flashcards-library";
-const syncKeyPattern = /^[A-Za-z0-9_-]{8,120}$/;
+const BUILD_SYNC_KEY = getBuildSyncKey(import.meta.env.VITE_FLASHCARDS_SYNC_KEY);
 
 const shuffleCards = (cards: { id: string; term: string; definition: string }[]) => {
   const copy = [...cards];
@@ -92,9 +98,7 @@ const mergeDeck = (cloudDeck: Deck, localDeck: Deck): Deck => {
     ...cloudDeck,
     cards: [
       ...cloudDeck.cards.map((card) => ({ ...card })),
-      ...localDeck.cards
-        .filter((card) => !cloudCardIds.has(card.id))
-        .map((card) => ({ ...card })),
+      ...localDeck.cards.filter((card) => !cloudCardIds.has(card.id)).map((card) => ({ ...card })),
     ],
   };
 };
@@ -187,8 +191,8 @@ const loadLibrarySections = () => {
   const saved = window.localStorage.getItem(LIBRARY_STORAGE_KEY);
   if (!saved) return cloneSections(starterSections);
   try {
-    const parsed = JSON.parse(saved) as DeckSection[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return cloneSections(starterSections);
+    const parsed = parseLibrarySections(JSON.parse(saved));
+    if (!parsed || parsed.length === 0) return cloneSections(starterSections);
     return parsed;
   } catch {
     return cloneSections(starterSections);
@@ -213,21 +217,8 @@ const loadSelectedDeckId = () => {
   return window.localStorage.getItem(SELECTED_DECK_STORAGE_KEY) ?? defaultDeckId;
 };
 
-const normalizeSyncKey = (value: string) => value.trim();
-const isSyncKeyValid = (value: string) => syncKeyPattern.test(value);
-
-const createSyncKey = () => {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID().replace(/-/g, "").slice(0, 24);
-  }
-  return Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
-};
-
-const loadSyncKey = () => {
-  if (typeof window === "undefined") return DEFAULT_SYNC_KEY;
-  const saved = window.localStorage.getItem(SYNC_KEY_STORAGE_KEY) ?? "";
-  return isSyncKeyValid(saved) ? saved : DEFAULT_SYNC_KEY;
-};
+const loadStoredSyncKey = () =>
+  loadSyncKey(typeof window === "undefined" ? null : window.localStorage, BUILD_SYNC_KEY);
 
 const loadPinnedDeckIds = (): string[] => {
   if (typeof window === "undefined") return [];
@@ -317,10 +308,7 @@ const mergeProgressState = (
     mergedProgress[deck.id] = {
       ...baseProgress,
       knownIds: Array.from(
-        new Set([
-          ...(cloudDeckProgress?.knownIds ?? []),
-          ...(localDeckProgress?.knownIds ?? []),
-        ]),
+        new Set([...(cloudDeckProgress?.knownIds ?? []), ...(localDeckProgress?.knownIds ?? [])]),
       ),
     };
   });
@@ -338,18 +326,20 @@ export default function App() {
   const [cardImportMessage, setCardImportMessage] = useState("");
   const [showCardEditor, setShowCardEditor] = useState(false);
   const [showCardList, setShowCardList] = useState(false);
-  const [cardEdits, setCardEdits] = useState<Record<string, { term: string; definition: string }>>({});
+  const [cardEdits, setCardEdits] = useState<Record<string, { term: string; definition: string }>>(
+    {},
+  );
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const [sectionComposer, setSectionComposer] = useState<SectionComposer | null>(null);
   const [sectionComposerMessage, setSectionComposerMessage] = useState("");
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
-  const [syncKey, setSyncKey] = useState(loadSyncKey);
-  const [syncKeyInput, setSyncKeyInput] = useState(loadSyncKey);
+  const [syncKey, setSyncKey] = useState(loadStoredSyncKey);
+  const [syncKeyInput, setSyncKeyInput] = useState(loadStoredSyncKey);
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [showThemesPanel, setShowThemesPanel] = useState(false);
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const [syncMessage, setSyncMessage] = useState(
-    "Cloud sync starts automatically for this shared library.",
+    "Cloud sync uses this private key. Anyone with the key can access or edit this cloud library.",
   );
   const [view, setView] = useState<ViewState>({ kind: "home" });
   const [toast, setToast] = useState(
@@ -392,15 +382,13 @@ export default function App() {
     () =>
       selectedDeck
         ? findSectionForDeck(librarySections, selectedDeck.id)
-        : librarySections[0] ?? null,
+        : (librarySections[0] ?? null),
     [selectedDeck, librarySections],
   );
 
   const activeProgress = useMemo(
     () =>
-      selectedDeck
-        ? deckProgress[selectedDeck.id] ?? createDeckProgress(selectedDeck)
-        : null,
+      selectedDeck ? (deckProgress[selectedDeck.id] ?? createDeckProgress(selectedDeck)) : null,
     [selectedDeck, deckProgress],
   );
 
@@ -422,8 +410,7 @@ export default function App() {
   );
 
   const cardPosition = useMemo(
-    () =>
-      currentCard ? visibleCards.findIndex((card) => card.id === currentCard.id) : -1,
+    () => (currentCard ? visibleCards.findIndex((card) => card.id === currentCard.id) : -1),
     [currentCard, visibleCards],
   );
 
@@ -433,8 +420,6 @@ export default function App() {
   const hasRemainingCards = remainingCount > 0;
   const currentCardIsKnown = currentCard ? knownSet.has(currentCard.id) : false;
   const isDeckEmpty = totalCards === 0;
-  const isUsingSharedSyncKey = normalizeSyncKey(syncKeyInput) === DEFAULT_SYNC_KEY;
-
   const deckImportPreview = useMemo(
     () =>
       deckComposer?.paste
@@ -565,7 +550,10 @@ export default function App() {
       setCardImportMessage("Paste at least one valid card line first.");
       return;
     }
-    const newCards = withCardIds(parsed.cards, selectedDeck.cards.map((card) => card.id));
+    const newCards = withCardIds(
+      parsed.cards,
+      selectedDeck.cards.map((card) => card.id),
+    );
     startTransition(() => {
       setLibrarySections((currentSections) =>
         updateDeckInSections(currentSections, selectedDeck.id, (deck) => ({
@@ -629,20 +617,18 @@ export default function App() {
   const openDeck = (deckId: string) => {
     setSelectedDeckId(deckId);
     setView({ kind: "study", deckId });
-    setRecentDeckIds((prev) => [{ id: deckId, viewedAt: Date.now() }, ...prev.filter((e) => e.id !== deckId)].slice(0, MAX_RECENT_DECKS));
+    setRecentDeckIds((prev) =>
+      [{ id: deckId, viewedAt: Date.now() }, ...prev.filter((e) => e.id !== deckId)].slice(
+        0,
+        MAX_RECENT_DECKS,
+      ),
+    );
   };
 
   const openRandomDeck = (decks: Deck[]) => {
     if (!decks.length) return;
     const deck = decks[Math.floor(Math.random() * decks.length)];
     openDeck(deck.id);
-  };
-
-  const openRandomTopicDeck = () => {
-    const sectionsWithDecks = librarySections.filter((s) => s.decks.length > 0);
-    if (!sectionsWithDecks.length) return;
-    const section = sectionsWithDecks[Math.floor(Math.random() * sectionsWithDecks.length)];
-    openRandomDeck(section.decks);
   };
 
   const togglePinDeck = (deckId: string) => {
@@ -702,7 +688,9 @@ export default function App() {
     const content = lines.join("\n");
     try {
       await navigator.clipboard.writeText(content);
-      setToast(`Copied ${selectedDeck.cards.length} card${selectedDeck.cards.length === 1 ? "" : "s"} from "${selectedDeck.title}" to clipboard.`);
+      setToast(
+        `Copied ${selectedDeck.cards.length} card${selectedDeck.cards.length === 1 ? "" : "s"} from "${selectedDeck.title}" to clipboard.`,
+      );
     } catch {
       setToast("Could not copy to clipboard.");
     }
@@ -729,9 +717,7 @@ export default function App() {
         setPinnedDeckIds((current) => current.filter((id) => id !== deckId));
         if (currentView.kind === "study" && currentView.deckId === deckId) {
           setView(
-            sectionForDeck
-              ? { kind: "section", sectionId: sectionForDeck.id }
-              : { kind: "home" },
+            sectionForDeck ? { kind: "section", sectionId: sectionForDeck.id } : { kind: "home" },
           );
         }
         setConfirmDialog(null);
@@ -745,9 +731,7 @@ export default function App() {
       `Delete the topic "${section?.title ?? sectionId}" and all its decks? This cannot be undone.`,
       () => {
         const deckIds = section?.decks.map((d) => d.id) ?? [];
-        setLibrarySections((currentSections) =>
-          currentSections.filter((s) => s.id !== sectionId),
-        );
+        setLibrarySections((currentSections) => currentSections.filter((s) => s.id !== sectionId));
         setDeckProgress((currentProgress) => {
           const next = { ...currentProgress };
           deckIds.forEach((id) => delete next[id]);
@@ -859,7 +843,11 @@ export default function App() {
 
   const applyRemoteSnapshotMerge = (remoteSnapshot: LibrarySnapshot) => {
     const mergedSections = mergeSections(librarySections, remoteSnapshot.librarySections);
-    const mergedProgress = mergeProgressState(deckProgress, remoteSnapshot.deckProgress, mergedSections);
+    const mergedProgress = mergeProgressState(
+      deckProgress,
+      remoteSnapshot.deckProgress,
+      mergedSections,
+    );
     const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
     const nextSelectedDeckId = mergedDeckIds.has(selectedDeckId)
       ? selectedDeckId
@@ -871,15 +859,8 @@ export default function App() {
     });
   };
 
-  const saveWithConflictResolution = async (
-    activeSyncKey: string,
-    snapshot: LibrarySnapshot,
-  ) => {
-    const outcome = await saveSnapshotToCloud(
-      activeSyncKey,
-      snapshot,
-      cloudRevisionRef.current,
-    );
+  const saveWithConflictResolution = async (activeSyncKey: string, snapshot: LibrarySnapshot) => {
+    const outcome = await saveSnapshotToCloud(activeSyncKey, snapshot, cloudRevisionRef.current);
     if (!outcome.conflict) {
       if (outcome.revision !== null) cloudRevisionRef.current = outcome.revision;
       return { resolved: true };
@@ -920,15 +901,6 @@ export default function App() {
     setSyncMessage("New sync key created. Save to cloud to publish this library to your devices.");
   };
 
-  const handleUseSharedLibrary = () => {
-    cloudSyncReadyRef.current = false;
-    cloudSyncLoadKeyRef.current = "";
-    setSyncKey(DEFAULT_SYNC_KEY);
-    setSyncKeyInput(DEFAULT_SYNC_KEY);
-    setSyncState("loading");
-    setSyncMessage("Switching this browser back to the shared cloud library...");
-  };
-
   const handleLoadFromCloud = async () => {
     const activeSyncKey = normalizeSyncKey(syncKeyInput || syncKey);
     if (!isSyncKeyValid(activeSyncKey)) {
@@ -953,7 +925,11 @@ export default function App() {
       if (!snapshot) throw new Error("The cloud library was not in the expected format.");
       cloudRevisionRef.current = typeof payload.revision === "number" ? payload.revision : null;
       const mergedSections = mergeSections(librarySections, snapshot.librarySections);
-      const mergedProgress = mergeProgressState(deckProgress, snapshot.deckProgress, mergedSections);
+      const mergedProgress = mergeProgressState(
+        deckProgress,
+        snapshot.deckProgress,
+        mergedSections,
+      );
       const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
       const nextSelectedDeckId = mergedDeckIds.has(snapshot.selectedDeckId)
         ? snapshot.selectedDeckId
@@ -1014,7 +990,7 @@ export default function App() {
         const knownIds = savedProgress.knownIds.filter((id) => validCardIds.has(id));
         const currentCardId = validCardIds.has(savedProgress.currentCardId)
           ? savedProgress.currentCardId
-          : deck.cards[0]?.id ?? "";
+          : (deck.cards[0]?.id ?? "");
         nextProgress[deck.id] = {
           ...savedProgress,
           currentCardId,
@@ -1142,8 +1118,7 @@ export default function App() {
         }
         const snapshot = parseLibrarySnapshot(payload.snapshot);
         if (!snapshot) throw new Error("The cloud library was not in the expected format.");
-        cloudRevisionRef.current =
-          typeof payload.revision === "number" ? payload.revision : null;
+        cloudRevisionRef.current = typeof payload.revision === "number" ? payload.revision : null;
         const mergedSections = mergeSections(librarySections, snapshot.librarySections);
         const mergedProgress = mergeProgressState(
           deckProgress,
@@ -1166,9 +1141,7 @@ export default function App() {
       .catch((error) => {
         cloudSyncLoadKeyRef.current = "";
         setSyncState("error");
-        setSyncMessage(
-          error instanceof Error ? error.message : "Could not connect to cloud sync.",
-        );
+        setSyncMessage(error instanceof Error ? error.message : "Could not connect to cloud sync.");
       });
   }, [syncKey]);
 
@@ -1218,10 +1191,22 @@ export default function App() {
         event.preventDefault();
         handleFlip();
       }
-      if (event.key === "ArrowRight") { event.preventDefault(); moveToCard(1); }
-      if (event.key === "ArrowLeft") { event.preventDefault(); moveToCard(-1); }
-      if (event.key.toLowerCase() === "k") { event.preventDefault(); toggleKnown(); }
-      if (event.key.toLowerCase() === "s") { event.preventDefault(); handleShuffle(); }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        moveToCard(1);
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        moveToCard(-1);
+      }
+      if (event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        toggleKnown();
+      }
+      if (event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        handleShuffle();
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -1238,7 +1223,6 @@ export default function App() {
     return () => clearTimeout(timer);
     // Only restart when autoplay is toggled, the card changes, or the flip state changes.
     // Omitting other deps intentionally so unrelated re-renders (e.g. cloud sync) don't cancel the timer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAutoPlaying, currentCard?.id, activeProgress?.isFlipped, view.kind]);
 
   // ── Shared overlays ─────────────────────────────────────────────────────────
@@ -1248,8 +1232,12 @@ export default function App() {
       <div className="confirm-box">
         <p>{confirmDialog.message}</p>
         <div className="confirm-actions">
-          <button className="mini-btn" onClick={() => setConfirmDialog(null)}>Cancel</button>
-          <button className="danger-btn" onClick={confirmDialog.onConfirm}>Yes, delete</button>
+          <button className="mini-btn" onClick={() => setConfirmDialog(null)}>
+            Cancel
+          </button>
+          <button className="danger-btn" onClick={confirmDialog.onConfirm}>
+            Yes, delete
+          </button>
         </div>
       </div>
     </div>
@@ -1260,49 +1248,67 @@ export default function App() {
       className="modal-overlay"
       role="dialog"
       aria-modal="true"
-      onClick={(e) => { if (e.target === e.currentTarget) setAiModal(null); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) setAiModal(null);
+      }}
     >
       <section className="modal">
         <h2>Ask AI about &ldquo;{aiModal.word}&rdquo;?</h2>
         <p>
-          This will copy a prompt asking how to use the word naturally in a sentence. Then
-          choose which AI app to open.
+          This will copy a prompt asking how to use the word naturally in a sentence. Then choose
+          which AI app to open.
         </p>
         <div className="prompt-preview">{aiModal.prompt}</div>
         <div className="modal-actions">
-          <button className="mini-btn" onClick={() => setAiModal(null)}>Cancel</button>
-          <button className="mini-btn" onClick={() => openAI("chatgpt")}>Open ChatGPT</button>
-          <button className="mini-btn" onClick={() => openAI("claude")}>Open Claude</button>
-          <button className="mini-btn" onClick={() => openAI("gemini")}>Open Gemini</button>
+          <button className="mini-btn" onClick={() => setAiModal(null)}>
+            Cancel
+          </button>
+          <button className="mini-btn" onClick={() => openAI("chatgpt")}>
+            Open ChatGPT
+          </button>
+          <button className="mini-btn" onClick={() => openAI("claude")}>
+            Open Claude
+          </button>
+          <button className="mini-btn" onClick={() => openAI("gemini")}>
+            Open Gemini
+          </button>
         </div>
       </section>
     </div>
   ) : null;
 
-  const CardListOverlay = showCardList && selectedDeck ? (
-    <div
-      className="modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      onClick={(e) => { if (e.target === e.currentTarget) setShowCardList(false); }}
-    >
-      <section className="modal card-list-modal">
-        <div className="panel-card-head">
-          <strong>{selectedDeck.title} &mdash; {selectedDeck.cards.length} card{selectedDeck.cards.length !== 1 ? "s" : ""}</strong>
-          <button className="link-btn" onClick={() => setShowCardList(false)}>Close</button>
-        </div>
-        <div className="card-list-scroll">
-          {selectedDeck.cards.map((card, i) => (
-            <div key={card.id} className="card-list-row">
-              <span className="card-list-index">{i + 1}</span>
-              <span className="card-list-term">{card.term}</span>
-              <span className="card-list-def">{card.definition}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
-  ) : null;
+  const CardListOverlay =
+    showCardList && selectedDeck ? (
+      <div
+        className="modal-overlay"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setShowCardList(false);
+        }}
+      >
+        <section className="modal card-list-modal">
+          <div className="panel-card-head">
+            <strong>
+              {selectedDeck.title} &mdash; {selectedDeck.cards.length} card
+              {selectedDeck.cards.length !== 1 ? "s" : ""}
+            </strong>
+            <button className="link-btn" onClick={() => setShowCardList(false)}>
+              Close
+            </button>
+          </div>
+          <div className="card-list-scroll">
+            {selectedDeck.cards.map((card, i) => (
+              <div key={card.id} className="card-list-row">
+                <span className="card-list-index">{i + 1}</span>
+                <span className="card-list-term">{card.term}</span>
+                <span className="card-list-def">{card.definition}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    ) : null;
 
   // ── HOME VIEW ───────────────────────────────────────────────────────────────
 
@@ -1324,21 +1330,30 @@ export default function App() {
                 <div className="home-actions-menu">
                   <button
                     className="home-actions-item"
-                    onClick={() => { setShowActionsMenu(false); setShowSyncPanel((v) => !v); }}
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      setShowSyncPanel((v) => !v);
+                    }}
                   >
                     {syncState === "loading" || syncState === "saving" ? "Syncing…" : "☁ Sync"}
                   </button>
                   {pinnedDeckIds.length > 0 && (
                     <button
                       className="home-actions-item"
-                      onClick={() => { setShowActionsMenu(false); setView({ kind: "pinned" }); }}
+                      onClick={() => {
+                        setShowActionsMenu(false);
+                        setView({ kind: "pinned" });
+                      }}
                     >
                       📌 Pinned ({pinnedDeckIds.length})
                     </button>
                   )}
                   <button
                     className="home-actions-item"
-                    onClick={() => { setShowActionsMenu(false); openRandomDeck(allDecks); }}
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      openRandomDeck(allDecks);
+                    }}
                     disabled={allDecks.length === 0}
                   >
                     Shuffle home
@@ -1355,7 +1370,10 @@ export default function App() {
                   </button>
                   <button
                     className="home-actions-item"
-                    onClick={() => { setShowActionsMenu(false); setShowThemesPanel((v) => !v); }}
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      setShowThemesPanel((v) => !v);
+                    }}
                     style={{ color: "var(--accent)", fontWeight: 500 }}
                   >
                     🎨 Themes
@@ -1369,7 +1387,9 @@ export default function App() {
             <div className="panel-card home-panel">
               <div className="panel-card-head">
                 <strong>Cloud sync</strong>
-                <button className="link-btn" onClick={() => setShowSyncPanel(false)}>Close</button>
+                <button className="link-btn" onClick={() => setShowSyncPanel(false)}>
+                  Close
+                </button>
               </div>
               <div className="field">
                 <label>Sync key</label>
@@ -1380,14 +1400,17 @@ export default function App() {
                     cloudSyncReadyRef.current = false;
                     setSyncKeyInput(e.target.value);
                   }}
-                  placeholder="Shared cloud library key"
+                  placeholder="Private cloud library key"
                 />
               </div>
-              {!isUsingSharedSyncKey && (
-                <p className="hint-text">Using a custom sync key.</p>
-              )}
+              <p className="hint-text">
+                Anyone with this key can access or edit this cloud library. There are no user
+                accounts.
+              </p>
               <div className="panel-card-actions">
-                <button className="mini-btn" onClick={handleApplySyncKey}>Use key</button>
+                <button className="mini-btn" onClick={handleApplySyncKey}>
+                  Use key
+                </button>
                 <button
                   className="mini-btn"
                   onClick={handleLoadFromCloud}
@@ -1402,14 +1425,9 @@ export default function App() {
                 >
                   Save to cloud
                 </button>
-                <button
-                  className="mini-btn"
-                  onClick={handleUseSharedLibrary}
-                  disabled={isUsingSharedSyncKey || syncState === "loading" || syncState === "saving"}
-                >
-                  Shared library
+                <button className="mini-btn" onClick={handleGenerateSyncKey}>
+                  New key
                 </button>
-                <button className="mini-btn" onClick={handleGenerateSyncKey}>New key</button>
               </div>
               <p
                 className={`message-line${syncState === "error" ? " error" : syncState === "saved" ? " success" : ""}`}
@@ -1423,11 +1441,23 @@ export default function App() {
             <div className="panel-card home-panel">
               <div className="panel-card-head">
                 <strong>Appearance</strong>
-                <button className="link-btn" onClick={() => setShowThemesPanel(false)}>Close</button>
+                <button className="link-btn" onClick={() => setShowThemesPanel(false)}>
+                  Close
+                </button>
               </div>
               <div style={{ display: "grid", gap: "12px" }}>
                 <div>
-                  <p style={{ margin: "0 0 8px 0", fontSize: "12px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>Theme</p>
+                  <p
+                    style={{
+                      margin: "0 0 8px 0",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "var(--muted)",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Theme
+                  </p>
                   <div style={{ display: "flex", gap: "6px" }}>
                     <button
                       className="mini-btn"
@@ -1454,8 +1484,24 @@ export default function App() {
                   </div>
                 </div>
                 <div>
-                  <p style={{ margin: "0 0 8px 0", fontSize: "12px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" }}>Accent color</p>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(60px, 1fr))", gap: "6px" }}>
+                  <p
+                    style={{
+                      margin: "0 0 8px 0",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "var(--muted)",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Accent color
+                  </p>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(60px, 1fr))",
+                      gap: "6px",
+                    }}
+                  >
                     {(["blue", "purple", "green", "red", "amber"] as const).map((color) => (
                       <button
                         key={color}
@@ -1473,8 +1519,7 @@ export default function App() {
                         {color === "purple" && "🟣"}
                         {color === "green" && "🟢"}
                         {color === "red" && "🔴"}
-                        {color === "amber" && "🟡"}
-                        {" "}{color}
+                        {color === "amber" && "🟡"} {color}
                       </button>
                     ))}
                   </div>
@@ -1489,7 +1534,10 @@ export default function App() {
                 <strong>New topic</strong>
                 <button
                   className="link-btn"
-                  onClick={() => { setSectionComposer(null); setSectionComposerMessage(""); }}
+                  onClick={() => {
+                    setSectionComposer(null);
+                    setSectionComposerMessage("");
+                  }}
                 >
                   Close
                 </button>
@@ -1521,16 +1569,16 @@ export default function App() {
                 <p className="message-line error">{sectionComposerMessage}</p>
               )}
               <div className="panel-card-actions">
-                <button className="mini-btn" onClick={handleCreateSection}>Create topic</button>
+                <button className="mini-btn" onClick={handleCreateSection}>
+                  Create topic
+                </button>
               </div>
             </div>
           )}
 
           <div className="home-main">
             {librarySections.length === 0 ? (
-              <div className="empty-state">
-                No topics yet. Create one above to get started.
-              </div>
+              <div className="empty-state">No topics yet. Create one above to get started.</div>
             ) : (
               <div className="sections-grid">
                 {librarySections.map((section) => {
@@ -1548,8 +1596,8 @@ export default function App() {
                         <div>
                           <div className="section-card-title">{section.title}</div>
                           <div className="section-card-meta">
-                            {section.decks.length} deck{section.decks.length !== 1 ? "s" : ""}{" "}
-                            · {cardCount} card{cardCount !== 1 ? "s" : ""}
+                            {section.decks.length} deck{section.decks.length !== 1 ? "s" : ""} ·{" "}
+                            {cardCount} card{cardCount !== 1 ? "s" : ""}
                             {sectionKnown > 0 ? ` · ${sectionKnown} known` : ""}
                           </div>
                           {section.description && (
@@ -1565,36 +1613,41 @@ export default function App() {
             )}
           </div>
 
-          {recentDeckIds.length > 0 && (() => {
-            const recentDecks = recentDeckIds
-              .map((entry) => {
-                const deck = findDeckById(librarySections, entry.id);
-                const section = deck ? findSectionForDeck(librarySections, deck.id) : null;
-                return deck && section ? { deck, section, viewedAt: entry.viewedAt } : null;
-              })
-              .filter((x): x is { deck: Deck; section: DeckSection; viewedAt: number } => x !== null);
-            if (recentDecks.length === 0) return null;
-            return (
-              <div className="home-recent">
-                <div className="home-recent-label">Recently viewed</div>
-                <div className="home-recent-list">
-                  {recentDecks.map(({ deck, section, viewedAt }) => (
-                    <button
-                      key={deck.id}
-                      className="home-recent-item"
-                      onClick={() => openDeck(deck.id)}
-                    >
-                      <div className="home-recent-item-info">
-                        <span className="home-recent-item-title">{deck.title}</span>
-                        <span className="home-recent-item-section">{section.title}</span>
-                      </div>
-                      <span className="home-recent-item-time">{formatRelativeTime(viewedAt)}</span>
-                    </button>
-                  ))}
+          {recentDeckIds.length > 0 &&
+            (() => {
+              const recentDecks = recentDeckIds
+                .map((entry) => {
+                  const deck = findDeckById(librarySections, entry.id);
+                  const section = deck ? findSectionForDeck(librarySections, deck.id) : null;
+                  return deck && section ? { deck, section, viewedAt: entry.viewedAt } : null;
+                })
+                .filter(
+                  (x): x is { deck: Deck; section: DeckSection; viewedAt: number } => x !== null,
+                );
+              if (recentDecks.length === 0) return null;
+              return (
+                <div className="home-recent">
+                  <div className="home-recent-label">Recently viewed</div>
+                  <div className="home-recent-list">
+                    {recentDecks.map(({ deck, section, viewedAt }) => (
+                      <button
+                        key={deck.id}
+                        className="home-recent-item"
+                        onClick={() => openDeck(deck.id)}
+                      >
+                        <div className="home-recent-item-info">
+                          <span className="home-recent-item-title">{deck.title}</span>
+                          <span className="home-recent-item-section">{section.title}</span>
+                        </div>
+                        <span className="home-recent-item-time">
+                          {formatRelativeTime(viewedAt)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            );
-          })()}
+              );
+            })()}
         </div>
         {ConfirmOverlay}
       </>
@@ -1646,10 +1699,7 @@ export default function App() {
                   const ratio = total ? known / total : 0;
                   return (
                     <div key={deck.id} className="deck-card-row">
-                      <button
-                        className="deck-card"
-                        onClick={() => openDeck(deck.id)}
-                      >
+                      <button className="deck-card" onClick={() => openDeck(deck.id)}>
                         <div className="deck-card-info">
                           <div className="deck-card-title">{deck.title}</div>
                           <div className="deck-card-subtitle">
@@ -1738,7 +1788,10 @@ export default function App() {
                   <strong>New deck in {section.title}</strong>
                   <button
                     className="link-btn"
-                    onClick={() => { setDeckComposer(null); setDeckComposerMessage(""); }}
+                    onClick={() => {
+                      setDeckComposer(null);
+                      setDeckComposerMessage("");
+                    }}
                   >
                     Close
                   </button>
@@ -1783,9 +1836,7 @@ export default function App() {
                   <span>{deckImportPreview.cards.length} cards ready</span>
                   <span>{deckImportPreview.invalidLines.length} skipped lines</span>
                 </div>
-                {deckComposerMessage && (
-                  <p className="message-line error">{deckComposerMessage}</p>
-                )}
+                {deckComposerMessage && <p className="message-line error">{deckComposerMessage}</p>}
                 <div className="panel-card-actions">
                   <button className="mini-btn" onClick={() => handleCreateDeck(section.id)}>
                     Create deck
@@ -1805,10 +1856,7 @@ export default function App() {
                   const ratio = total ? known / total : 0;
                   return (
                     <div key={deck.id} className="deck-card-row">
-                      <button
-                        className="deck-card"
-                        onClick={() => openDeck(deck.id)}
-                      >
+                      <button className="deck-card" onClick={() => openDeck(deck.id)}>
                         <div className="deck-card-info">
                           <div className="deck-card-title">{deck.title}</div>
                           <div className="deck-card-subtitle">{deck.subtitle}</div>
@@ -1899,9 +1947,7 @@ export default function App() {
             {currentCard ? (
               <>
                 <div className="deck-study-title">{selectedDeck.title}</div>
-                {selectedSection && (
-                  <div className="deck-study-topic">{selectedSection.title}</div>
-                )}
+                {selectedSection && <div className="deck-study-topic">{selectedSection.title}</div>}
                 <section className="card-shell-new" aria-live="polite">
                   <article
                     className={`card-3d${activeProgress.isFlipped ? " flipped" : ""}`}
@@ -1999,7 +2045,10 @@ export default function App() {
                 <strong>Edit cards ({selectedDeck.cards.length})</strong>
                 <button
                   className="link-btn"
-                  onClick={() => { setShowCardEditor(false); setCardEdits({}); }}
+                  onClick={() => {
+                    setShowCardEditor(false);
+                    setCardEdits({});
+                  }}
                 >
                   Close
                 </button>
@@ -2019,7 +2068,10 @@ export default function App() {
                         onChange={(e) =>
                           setCardEdits((prev) => ({
                             ...prev,
-                            [card.id]: { term: e.target.value, definition: prev[card.id]?.definition ?? card.definition },
+                            [card.id]: {
+                              term: e.target.value,
+                              definition: prev[card.id]?.definition ?? card.definition,
+                            },
                           }))
                         }
                       />
@@ -2030,10 +2082,15 @@ export default function App() {
                         onChange={(e) =>
                           setCardEdits((prev) => ({
                             ...prev,
-                            [card.id]: { term: prev[card.id]?.term ?? card.term, definition: e.target.value },
+                            [card.id]: {
+                              term: prev[card.id]?.term ?? card.term,
+                              definition: e.target.value,
+                            },
                           }))
                         }
-                        onKeyDown={(e) => { if (e.key === "Enter") handleUpdateCard(card.id); }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleUpdateCard(card.id);
+                        }}
                       />
                       <button
                         className={`mini-btn${isDirty ? " primary" : ""}`}
@@ -2063,7 +2120,10 @@ export default function App() {
                 <strong>Bulk import cards</strong>
                 <button
                   className="link-btn"
-                  onClick={() => { setShowCardImporter(false); setCardImportMessage(""); }}
+                  onClick={() => {
+                    setShowCardImporter(false);
+                    setCardImportMessage("");
+                  }}
                 >
                   Close
                 </button>
@@ -2094,38 +2154,57 @@ export default function App() {
             </div>
           )}
 
-          {showCardEditor && <div className="add-card-form">
-            <input
-              value={wordInput}
-              onChange={(e) => setWordInput(e.target.value)}
-              placeholder="Word..."
-              onKeyDown={(e) => {
-                if (e.key === "Enter") document.getElementById("study-def-input")?.focus();
-              }}
-            />
-            <input
-              id="study-def-input"
-              className="wide"
-              value={defInput}
-              onChange={(e) => setDefInput(e.target.value)}
-              placeholder="Definition..."
-              onKeyDown={(e) => { if (e.key === "Enter") handleAddSingleCard(); }}
-            />
-            <button className="mini-btn" onClick={handleAddSingleCard}>Add</button>
-          </div>}
+          {showCardEditor && (
+            <div className="add-card-form">
+              <input
+                value={wordInput}
+                onChange={(e) => setWordInput(e.target.value)}
+                placeholder="Word..."
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") document.getElementById("study-def-input")?.focus();
+                }}
+              />
+              <input
+                id="study-def-input"
+                className="wide"
+                value={defInput}
+                onChange={(e) => setDefInput(e.target.value)}
+                placeholder="Definition..."
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleAddSingleCard();
+                }}
+              />
+              <button className="mini-btn" onClick={handleAddSingleCard}>
+                Add
+              </button>
+            </div>
+          )}
           <button
             className="mini-btn"
-            onClick={() => { setShowCardImporter((v) => !v); setCardImportMessage(""); if (showCardEditor) setShowCardEditor(false); }}
+            onClick={() => {
+              setShowCardImporter((v) => !v);
+              setCardImportMessage("");
+              if (showCardEditor) setShowCardEditor(false);
+            }}
           >
             {showCardImporter ? "Hide import" : "Bulk import"}
           </button>
           <button
             className="mini-btn"
-            onClick={() => { setShowCardEditor((v) => !v); setCardEdits({}); if (showCardImporter) { setShowCardImporter(false); setCardImportMessage(""); } }}
+            onClick={() => {
+              setShowCardEditor((v) => !v);
+              setCardEdits({});
+              if (showCardImporter) {
+                setShowCardImporter(false);
+                setCardImportMessage("");
+              }
+            }}
           >
             {showCardEditor ? "Hide editor" : "Edit list"}
           </button>
-          <button className="mini-btn" onClick={resetProgress}>Reset</button>
+          <button className="mini-btn" onClick={resetProgress}>
+            Reset
+          </button>
           <button className="mini-btn" onClick={() => setShowCardList(true)} disabled={isDeckEmpty}>
             View all
           </button>
@@ -2133,10 +2212,7 @@ export default function App() {
             Copy cards
           </button>
           {currentCard && (
-            <button
-              className="mini-btn danger"
-              onClick={() => handleDeleteCard(currentCard.id)}
-            >
+            <button className="mini-btn danger" onClick={() => handleDeleteCard(currentCard.id)}>
               Delete card
             </button>
           )}
