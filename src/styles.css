@@ -170,6 +170,18 @@ button {
   background: #eef3f7;
 }
 
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.topbar-home-btn {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .danger-topbar-btn {
   color: var(--danger);
 }

@@ -33,8 +33,12 @@ export function PinnedView({
   return (
     <div className="app">
       <header className="topbar">
-        <button className="topbar-btn" onClick={() => setView({ kind: "home" })}>
-          ‹ Home
+        <button
+          className="topbar-btn topbar-home-btn"
+          onClick={() => setView({ kind: "home" })}
+          title="Go to home page"
+        >
+          Home
         </button>
         <div className="top-title">Pinned Decks</div>
         <div className="topbar-right">

@@ -119,12 +119,22 @@ export function StudyView({
   return (
     <div className="app">
       <header className="topbar">
-        <button
-          className="topbar-btn"
-          onClick={() => setView({ kind: "section", sectionId: selectedSection.id })}
-        >
-          ‹ Go back
-        </button>
+        <div className="topbar-left">
+          <button
+            className="topbar-btn topbar-home-btn"
+            onClick={() => setView({ kind: "home" })}
+            title="Go to home page"
+          >
+            Home
+          </button>
+          <button
+            className="topbar-btn"
+            onClick={() => setView({ kind: "section", sectionId: selectedSection.id })}
+            title={`Go back to ${selectedSection.title}`}
+          >
+            Decks
+          </button>
+        </div>
         <div className="top-title">
           {selectedDeck.title} · {selectedSection.title}
         </div>

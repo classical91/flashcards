@@ -47,8 +47,12 @@ export function SectionView({
   return (
     <div className="app">
       <header className="topbar">
-        <button className="topbar-btn" onClick={() => setView({ kind: "home" })}>
-          ‹ Home
+        <button
+          className="topbar-btn topbar-home-btn"
+          onClick={() => setView({ kind: "home" })}
+          title="Go to home page"
+        >
+          Home
         </button>
         <div className="top-title">{section.title}</div>
         <div className="topbar-right">
