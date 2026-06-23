@@ -271,7 +271,7 @@ export default function App() {
       ...currentProgress,
       [newDeck.id]: createDeckProgress(newDeck),
     }));
-    setSelectedDeckId(newDeck.id);
+    openDeck(newDeck.id);
     setDeckComposer(null);
     setDeckComposerMessage("");
   };
