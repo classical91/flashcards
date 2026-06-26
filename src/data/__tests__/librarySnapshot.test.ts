@@ -142,6 +142,74 @@ describe("parseLibrarySnapshot", () => {
     const result = parseLibrarySnapshot(snapshot);
     expect(result?.librarySections).toHaveLength(2);
   });
+
+  it("repairs an oversized deck id from a legacy cloud snapshot and remaps dependent state", () => {
+    const longDeckId = "deck-".repeat(40);
+    const snapshot = validSnapshot();
+    snapshot.librarySections[0].decks[0].id = longDeckId;
+    snapshot.librarySections[0].decks[0].cards[0].id = longDeckId;
+    snapshot.deckProgress = {
+      [longDeckId]: {
+        currentCardId: longDeckId,
+        knownIds: [longDeckId],
+        isFlipped: false,
+        studyMode: "all",
+      },
+    };
+    snapshot.selectedDeckId = longDeckId;
+    snapshot.recentDeckIds = [longDeckId];
+
+    const result = parseLibrarySnapshot(snapshot);
+    expect(result).not.toBeNull();
+    const repairedDeckId = result?.librarySections[0].decks[0].id ?? "";
+    expect(repairedDeckId.length).toBeLessThanOrEqual(120);
+    expect(repairedDeckId).not.toBe(longDeckId);
+    expect(result?.selectedDeckId).toBe(repairedDeckId);
+    expect(result?.recentDeckIds).toEqual([repairedDeckId]);
+    expect(Object.keys(result?.deckProgress ?? {})).toEqual([repairedDeckId]);
+    expect(result?.deckProgress[repairedDeckId].knownIds).toEqual([
+      result?.librarySections[0].decks[0].cards[0].id,
+    ]);
+  });
+});
+
+describe("createLibrarySnapshot", () => {
+  it("repairs oversized ids before they're sent to the server", () => {
+    const longDeckId = "deck-".repeat(40);
+    const snapshot = createLibrarySnapshot({
+      librarySections: [
+        {
+          id: "section",
+          title: "Section",
+          description: "",
+          decks: [
+            {
+              id: longDeckId,
+              title: "Deck",
+              subtitle: "",
+              cards: [{ id: "card-1", term: "term", definition: "def" }],
+            },
+          ],
+        },
+      ],
+      deckProgress: {
+        [longDeckId]: {
+          currentCardId: "card-1",
+          knownIds: [],
+          isFlipped: false,
+          studyMode: "all",
+        },
+      },
+      selectedDeckId: longDeckId,
+      recentDeckIds: [longDeckId],
+    });
+
+    const repairedDeckId = snapshot.librarySections[0].decks[0].id;
+    expect(repairedDeckId.length).toBeLessThanOrEqual(120);
+    expect(snapshot.selectedDeckId).toBe(repairedDeckId);
+    expect(snapshot.recentDeckIds).toEqual([repairedDeckId]);
+    expect(Object.keys(snapshot.deckProgress)).toEqual([repairedDeckId]);
+  });
 });
 
 describe("parseLibrarySections", () => {
