@@ -155,26 +155,6 @@ export function HomeView({
                 className="home-actions-item"
                 onClick={() => {
                   setShowActionsMenu(false);
-                  openRandomDeck(allDecks);
-                }}
-                disabled={allDecks.length === 0}
-              >
-                Shuffle home
-              </button>
-              <button
-                className="home-actions-item"
-                onClick={() => {
-                  setShowActionsMenu(false);
-                  setSectionComposerMessage("");
-                  setSectionComposer({ title: "", description: "" });
-                }}
-              >
-                + New topic
-              </button>
-              <button
-                className="home-actions-item"
-                onClick={() => {
-                  setShowActionsMenu(false);
                   setShowThemesPanel((v) => !v);
                 }}
                 style={{ color: "var(--accent)", fontWeight: 500 }}
@@ -184,6 +164,25 @@ export function HomeView({
             </div>
           )}
         </div>
+      </div>
+
+      <div className="home-quick-actions">
+        <button
+          className="home-quick-action-btn"
+          onClick={() => openRandomDeck(allDecks)}
+          disabled={allDecks.length === 0}
+        >
+          Shuffle home
+        </button>
+        <button
+          className="home-quick-action-btn"
+          onClick={() => {
+            setSectionComposerMessage("");
+            setSectionComposer({ title: "", description: "" });
+          }}
+        >
+          + New topic
+        </button>
       </div>
 
       <div className="home-search">
