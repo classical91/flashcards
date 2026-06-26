@@ -1,5 +1,5 @@
 import { defaultDeckId, starterSections } from "../data/decks";
-import { DeckSection } from "../data/deckBuilder";
+import { DeckSection, sanitizeDeckSections } from "../data/deckBuilder";
 import { DeckProgress, parseLibrarySections } from "../data/librarySnapshot";
 import {
   ACCENT_COLORS,
@@ -57,7 +57,12 @@ export const loadAccentColor = (): AccentColor => {
   return "blue";
 };
 
-export const loadLibrarySections = () => {
+// Cached for the current load cycle so the id repair from sanitizeDeckSections
+// (see loadLibrarySections) can also be applied to progress/pins/recents/
+// selection, which are loaded separately but key off the same deck/card ids.
+let cachedSanitizeResult: ReturnType<typeof sanitizeDeckSections> | null = null;
+
+const loadRawLibrarySections = (): DeckSection[] => {
   if (typeof window === "undefined") return cloneSections(starterSections);
   const saved = window.localStorage.getItem(LIBRARY_STORAGE_KEY);
   if (!saved) return cloneSections(starterSections);
@@ -70,14 +75,29 @@ export const loadLibrarySections = () => {
   }
 };
 
+export const loadLibrarySections = () => {
+  cachedSanitizeResult = sanitizeDeckSections(loadRawLibrarySections());
+  return cachedSanitizeResult.sections;
+};
+
 export const loadProgressState = (sections: DeckSection[]) => {
+  const { deckIdMap, cardIdMap } = cachedSanitizeResult ?? sanitizeDeckSections(sections);
   if (typeof window === "undefined") return buildProgressState(sections);
   const saved = window.localStorage.getItem(PROGRESS_STORAGE_KEY);
   if (!saved) return buildProgressState(sections);
   try {
     const parsed = JSON.parse(saved) as Record<string, DeckProgress>;
     if (!parsed || typeof parsed !== "object") return buildProgressState(sections);
-    return parsed;
+    return Object.fromEntries(
+      Object.entries(parsed).map(([deckId, progress]) => [
+        deckIdMap.get(deckId) ?? deckId,
+        {
+          ...progress,
+          currentCardId: cardIdMap.get(progress.currentCardId) ?? progress.currentCardId,
+          knownIds: progress.knownIds.map((id) => cardIdMap.get(id) ?? id),
+        },
+      ]),
+    );
   } catch {
     return buildProgressState(sections);
   }
@@ -85,7 +105,8 @@ export const loadProgressState = (sections: DeckSection[]) => {
 
 export const loadSelectedDeckId = () => {
   if (typeof window === "undefined") return defaultDeckId;
-  return window.localStorage.getItem(SELECTED_DECK_STORAGE_KEY) ?? defaultDeckId;
+  const saved = window.localStorage.getItem(SELECTED_DECK_STORAGE_KEY) ?? defaultDeckId;
+  return cachedSanitizeResult?.deckIdMap.get(saved) ?? saved;
 };
 
 export const loadSyncKey = (
@@ -115,7 +136,9 @@ export const loadPinnedDeckIds = (): string[] => {
     const saved = window.localStorage.getItem(PINNED_DECKS_STORAGE_KEY);
     if (!saved) return [];
     const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    const deckIdMap = cachedSanitizeResult?.deckIdMap;
+    return deckIdMap ? parsed.map((id) => deckIdMap.get(id) ?? id) : parsed;
   } catch {
     return [];
   }
@@ -127,7 +150,11 @@ export const loadRecentDeckIds = (): RecentDeckEntry[] => {
     const saved = window.localStorage.getItem(RECENT_DECKS_STORAGE_KEY);
     if (!saved) return [];
     const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    const deckIdMap = cachedSanitizeResult?.deckIdMap;
+    return deckIdMap
+      ? parsed.map((entry) => ({ ...entry, id: deckIdMap.get(entry.id) ?? entry.id }))
+      : parsed;
   } catch {
     return [];
   }
