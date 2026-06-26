@@ -1,4 +1,4 @@
-import { DeckSection } from "./deckBuilder";
+import { DeckSection, sanitizeDeckSections } from "./deckBuilder";
 
 export type StudyMode = "all" | "remaining";
 
@@ -138,19 +138,39 @@ export const parseLibrarySnapshot = (value: unknown): LibrarySnapshot | null => 
     return null;
   }
 
-  const recentDeckIds =
+  const rawRecentDeckIds =
     Array.isArray(value.recentDeckIds) &&
     value.recentDeckIds.every((item) => typeof item === "string")
       ? Array.from(new Set(value.recentDeckIds))
       : [];
 
+  // Cloud snapshots can predate the 120-char id limit (or come from a device
+  // that hasn't picked up the fix yet), so repair ids here too and remap the
+  // state that's keyed by them — otherwise a bad id just keeps bouncing
+  // between cloud and every connected device.
+  const { sections: sanitizedSections, deckIdMap, cardIdMap } = sanitizeDeckSections(
+    librarySections,
+  );
+
+  const rawDeckProgress = value.deckProgress as Record<string, DeckProgress>;
+  const deckProgress = Object.fromEntries(
+    Object.entries(rawDeckProgress).map(([deckId, progress]) => [
+      deckIdMap.get(deckId) ?? deckId,
+      {
+        ...progress,
+        currentCardId: cardIdMap.get(progress.currentCardId) ?? progress.currentCardId,
+        knownIds: progress.knownIds.map((id) => cardIdMap.get(id) ?? id),
+      },
+    ]),
+  );
+
   return {
     version: 1,
     exportedAt: value.exportedAt,
-    librarySections,
-    deckProgress: value.deckProgress as Record<string, DeckProgress>,
-    selectedDeckId: value.selectedDeckId,
-    recentDeckIds,
+    librarySections: sanitizedSections,
+    deckProgress,
+    selectedDeckId: deckIdMap.get(value.selectedDeckId) ?? value.selectedDeckId,
+    recentDeckIds: rawRecentDeckIds.map((id) => deckIdMap.get(id) ?? id),
   };
 };
 
@@ -159,11 +179,26 @@ export const createLibrarySnapshot = ({
   deckProgress,
   selectedDeckId,
   recentDeckIds,
-}: CreateLibrarySnapshotOptions): LibrarySnapshot => ({
-  version: 1,
-  exportedAt: new Date().toISOString(),
-  librarySections,
-  deckProgress,
-  selectedDeckId,
-  recentDeckIds,
-});
+}: CreateLibrarySnapshotOptions): LibrarySnapshot => {
+  const { sections, deckIdMap, cardIdMap } = sanitizeDeckSections(librarySections);
+
+  const sanitizedProgress = Object.fromEntries(
+    Object.entries(deckProgress).map(([deckId, progress]) => [
+      deckIdMap.get(deckId) ?? deckId,
+      {
+        ...progress,
+        currentCardId: cardIdMap.get(progress.currentCardId) ?? progress.currentCardId,
+        knownIds: progress.knownIds.map((id) => cardIdMap.get(id) ?? id),
+      },
+    ]),
+  );
+
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    librarySections: sections,
+    deckProgress: sanitizedProgress,
+    selectedDeckId: deckIdMap.get(selectedDeckId) ?? selectedDeckId,
+    recentDeckIds: recentDeckIds.map((id) => deckIdMap.get(id) ?? id),
+  };
+};
