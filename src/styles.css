@@ -403,6 +403,35 @@ button {
   margin: 0 20px 12px;
 }
 
+.home-quick-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 20px 12px;
+}
+
+.home-quick-action-btn {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: border-color 150ms ease, background 120ms ease;
+}
+
+.home-quick-action-btn:hover {
+  border-color: var(--accent);
+}
+
+.home-quick-action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .home-search {
   padding: 0 20px 12px;
 }
