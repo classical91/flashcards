@@ -106,8 +106,13 @@ export const createSlug = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
 
+// Server-side sync rejects ids over 120 chars, so leave headroom for a "-NNN" suffix.
+export const MAX_ID_LENGTH = 120;
+const MAX_BASE_ID_LENGTH = 110;
+
 export const createUniqueId = (value: string, existingIds: Set<string>) => {
-  const baseId = createSlug(value) || "deck";
+  const slug = createSlug(value) || "deck";
+  const baseId = slug.slice(0, MAX_BASE_ID_LENGTH).replace(/-$/, "") || "deck";
 
   if (!existingIds.has(baseId)) {
     return baseId;
@@ -120,6 +125,76 @@ export const createUniqueId = (value: string, existingIds: Set<string>) => {
   }
 
   return `${baseId}-${suffix}`;
+};
+
+const shortenId = (id: string, usedIds: Set<string>): string => {
+  if (id.length <= MAX_ID_LENGTH && !usedIds.has(id)) {
+    return id;
+  }
+
+  const base = id.slice(0, MAX_BASE_ID_LENGTH).replace(/-$/, "") || "deck";
+
+  if (base.length <= MAX_ID_LENGTH && !usedIds.has(base)) {
+    return base;
+  }
+
+  let suffix = 2;
+  while (usedIds.has(`${base}-${suffix}`)) {
+    suffix += 1;
+  }
+
+  return `${base}-${suffix}`;
+};
+
+/**
+ * Repairs ids created before the 120-char limit was enforced (e.g. decks/cards
+ * slugged from long titles) so the library can sync again. Returns the
+ * repaired sections plus maps of any ids that changed, so other state keyed
+ * by deck/card id (progress, pins, recents, selection) can be kept in sync.
+ */
+export const sanitizeDeckSections = (sections: DeckSection[]) => {
+  const deckIdMap = new Map<string, string>();
+  const cardIdMap = new Map<string, string>();
+  const usedSectionIds = new Set<string>();
+  const usedDeckIds = new Set<string>();
+  let changed = false;
+
+  const sanitizedSections = sections.map((section) => {
+    const sectionId = shortenId(section.id, usedSectionIds);
+    usedSectionIds.add(sectionId);
+
+    const usedCardIds = new Set<string>();
+    const decks = section.decks.map((deck) => {
+      const deckId = shortenId(deck.id, usedDeckIds);
+      usedDeckIds.add(deckId);
+      if (deckId !== deck.id) {
+        deckIdMap.set(deck.id, deckId);
+        changed = true;
+      }
+
+      const cards = deck.cards.map((card) => {
+        const cardId = shortenId(card.id, usedCardIds);
+        usedCardIds.add(cardId);
+        if (cardId !== card.id) {
+          cardIdMap.set(card.id, cardId);
+          changed = true;
+        }
+        return cardId === card.id ? card : { ...card, id: cardId };
+      });
+
+      return deckId === deck.id && cards.every((card, index) => card === deck.cards[index])
+        ? deck
+        : { ...deck, id: deckId, cards };
+    });
+
+    if (sectionId !== section.id) changed = true;
+
+    return sectionId === section.id && decks.every((deck, index) => deck === section.decks[index])
+      ? section
+      : { ...section, id: sectionId, decks };
+  });
+
+  return { sections: changed ? sanitizedSections : sections, deckIdMap, cardIdMap, changed };
 };
 
 const normalizeDefinition = (definition: string) =>

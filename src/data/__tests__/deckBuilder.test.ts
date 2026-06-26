@@ -4,6 +4,9 @@ import {
   createUniqueId,
   withCardIds,
   createDeckFromRaw,
+  sanitizeDeckSections,
+  MAX_ID_LENGTH,
+  DeckSection,
 } from "../deckBuilder";
 
 describe("parsePastedFlashcards", () => {
@@ -120,6 +123,51 @@ describe("createUniqueId", () => {
   it("does not add suffix when id is unique in the set", () => {
     const existing = new Set(["other-deck"]);
     expect(createUniqueId("My Deck", existing)).toBe("my-deck");
+  });
+
+  it("caps the generated id length so it stays syncable", () => {
+    const longTitle = "Word ".repeat(60);
+    const id = createUniqueId(longTitle, new Set());
+    expect(id.length).toBeLessThanOrEqual(MAX_ID_LENGTH);
+  });
+});
+
+describe("sanitizeDeckSections", () => {
+  const buildSection = (id: string, deckId: string, cardId: string): DeckSection[] => [
+    {
+      id,
+      title: "Section",
+      description: "",
+      decks: [
+        {
+          id: deckId,
+          title: "Deck",
+          subtitle: "",
+          cards: [{ id: cardId, term: "term", definition: "def" }],
+        },
+      ],
+    },
+  ];
+
+  it("leaves already-valid sections untouched", () => {
+    const sections = buildSection("section", "deck", "card");
+    const result = sanitizeDeckSections(sections);
+    expect(result.changed).toBe(false);
+    expect(result.sections).toBe(sections);
+  });
+
+  it("shortens deck and card ids that exceed the limit", () => {
+    const longDeckId = "deck-".repeat(40);
+    const longCardId = "card-".repeat(40);
+    const sections = buildSection("section", longDeckId, longCardId);
+    const result = sanitizeDeckSections(sections);
+
+    expect(result.changed).toBe(true);
+    const [deck] = result.sections[0].decks;
+    expect(deck.id.length).toBeLessThanOrEqual(MAX_ID_LENGTH);
+    expect(deck.cards[0].id.length).toBeLessThanOrEqual(MAX_ID_LENGTH);
+    expect(result.deckIdMap.get(longDeckId)).toBe(deck.id);
+    expect(result.cardIdMap.get(longCardId)).toBe(deck.cards[0].id);
   });
 });
 
