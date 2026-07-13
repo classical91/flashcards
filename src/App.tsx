@@ -548,22 +548,36 @@ export default function App() {
       setSelectedDeckId(nextDecks[0]?.id ?? "");
     }
     setDeckProgress((currentProgress) => {
+      // Keep existing progress objects (and the map itself) when nothing
+      // changed, so downstream persistence and cloud auto-save don't fire
+      // for no-op reconciliations.
+      let changed = Object.keys(currentProgress).length !== nextDecks.length;
       const nextProgress: Record<string, DeckProgress> = {};
       nextDecks.forEach((deck) => {
-        const savedProgress = currentProgress[deck.id] ?? createDeckProgress(deck);
+        const savedProgress = currentProgress[deck.id];
+        if (!savedProgress) {
+          changed = true;
+          nextProgress[deck.id] = createDeckProgress(deck);
+          return;
+        }
         const validCardIds = new Set(deck.cards.map((card) => card.id));
         const knownIds = savedProgress.knownIds.filter((id) => validCardIds.has(id));
         const currentCardId = validCardIds.has(savedProgress.currentCardId)
           ? savedProgress.currentCardId
           : (deck.cards[0]?.id ?? "");
-        nextProgress[deck.id] = {
-          ...savedProgress,
-          currentCardId,
-          isFlipped: deck.cards.length ? savedProgress.isFlipped : false,
-          knownIds,
-        };
+        const isFlipped = deck.cards.length ? savedProgress.isFlipped : false;
+        if (
+          currentCardId === savedProgress.currentCardId &&
+          isFlipped === savedProgress.isFlipped &&
+          knownIds.length === savedProgress.knownIds.length
+        ) {
+          nextProgress[deck.id] = savedProgress;
+          return;
+        }
+        changed = true;
+        nextProgress[deck.id] = { ...savedProgress, currentCardId, isFlipped, knownIds };
       });
-      return nextProgress;
+      return changed ? nextProgress : currentProgress;
     });
   }, [librarySections, selectedDeckId]);
 
@@ -594,16 +608,11 @@ export default function App() {
     }
   }, [activeProgress, selectedDeck, visibleCards]);
 
-  const serializedLibrary = useMemo(() => JSON.stringify(librarySections), [librarySections]);
-  const serializedProgress = useMemo(() => JSON.stringify(deckProgress), [deckProgress]);
-  const serializedPinned = useMemo(() => JSON.stringify(pinnedDeckIds), [pinnedDeckIds]);
-  const serializedRecent = useMemo(() => JSON.stringify(recentDeckIds), [recentDeckIds]);
-
-  useDebouncedPersist(LIBRARY_STORAGE_KEY, serializedLibrary);
-  useDebouncedPersist(PROGRESS_STORAGE_KEY, serializedProgress);
+  useDebouncedPersist(LIBRARY_STORAGE_KEY, librarySections);
+  useDebouncedPersist(PROGRESS_STORAGE_KEY, deckProgress);
   useDebouncedPersist(SELECTED_DECK_STORAGE_KEY, selectedDeckId);
-  useDebouncedPersist(PINNED_DECKS_STORAGE_KEY, serializedPinned);
-  useDebouncedPersist(RECENT_DECKS_STORAGE_KEY, serializedRecent);
+  useDebouncedPersist(PINNED_DECKS_STORAGE_KEY, pinnedDeckIds);
+  useDebouncedPersist(RECENT_DECKS_STORAGE_KEY, recentDeckIds);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
