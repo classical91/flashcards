@@ -94,6 +94,19 @@ For durable cross-device storage, configure `DATABASE_URL` for the Node server. 
 
 For real deployment, publish the generated `dist/` assets to any static hosting provider.
 
+### Viewing what is stored in the cloud
+
+- **Your own key:** on the home screen, open the `⋯` actions menu → **☁ Sync**. The active key is in the "Sync key" field. It is also in `localStorage` under `flashcards.syncKey.v1`.
+- **One library's cards:** `curl -s https://<host>/api/libraries/<syncKey>` returns the full snapshot (sections → decks → cards, plus progress).
+- **Every stored key:** set `ADMIN_TOKEN` on the server, then:
+
+  ```bash
+  curl -s https://<host>/api/admin/libraries \
+    -H "Authorization: Bearer $ADMIN_TOKEN"
+  ```
+
+  The response lists each sync key with `updatedAt`, `revision`, and section/deck/card counts, plus deck titles. It deliberately omits card terms and definitions — use the per-library route above to read actual card content. Supports `?limit=` (default 100, max 500). Without `ADMIN_TOKEN` set, the route returns 404.
+
 ## Environment Variables
 
 ### Server (Node API)
@@ -103,6 +116,7 @@ For real deployment, publish the generated `dist/` assets to any static hosting 
 | `DATABASE_URL`         | Yes in production | PostgreSQL connection string. Without it the server uses in-memory storage (data lost on restart).                           |
 | `PORT`                 | No                | HTTP port for the Node server (default: `3000`).                                                                             |
 | `ALLOW_MEMORY_STORAGE` | No                | Set to `true` to allow in-memory fallback even when `NODE_ENV=production`. Useful for local staging runs without a database. |
+| `ADMIN_TOKEN`          | No                | Bearer token that enables the read-only admin listing at `GET /api/admin/libraries`. When unset, that route returns 404.     |
 
 ### Client (Vite build-time)
 

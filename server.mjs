@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,8 @@ const libraryIdPattern = /^[A-Za-z0-9_-]{8,120}$/;
 const shareIdPattern = /^[A-Za-z0-9_-]{10,120}$/;
 const memoryStore = new Map();
 const memorySharedDeckStore = new Map();
+const adminToken = process.env.ADMIN_TOKEN?.trim() || "";
+const adminListLimits = Object.freeze({ default: 100, max: 500 });
 
 let pool = process.env.DATABASE_URL
   ? new Pool({
@@ -597,7 +599,112 @@ const saveSharedDeck = async (shareId, snapshot) => {
   };
 };
 
-const handleApiRequest = async (request, response, pathname) => {
+/**
+ * Constant-time bearer-token check. Returns false whenever ADMIN_TOKEN is unset
+ * so admin routes stay closed unless an operator opts in.
+ */
+const isAdminRequestAuthorized = (request) => {
+  if (!adminToken) {
+    return false;
+  }
+
+  const header = request.headers.authorization;
+  const presented =
+    typeof header === "string" && /^Bearer /i.test(header)
+      ? header.slice(7).trim()
+      : typeof request.headers["x-admin-token"] === "string"
+        ? request.headers["x-admin-token"].trim()
+        : "";
+
+  if (!presented) {
+    return false;
+  }
+
+  const expectedBuffer = Buffer.from(adminToken, "utf8");
+  const presentedBuffer = Buffer.from(presented, "utf8");
+
+  if (expectedBuffer.length !== presentedBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(expectedBuffer, presentedBuffer);
+};
+
+/**
+ * Reduces a snapshot to counts and deck titles only — never card terms or
+ * definitions, so the admin listing stays a directory rather than a data dump.
+ */
+const summarizeSnapshot = (snapshot) => {
+  const sections = Array.isArray(snapshot?.librarySections) ? snapshot.librarySections : [];
+  const decks = [];
+  let cardCount = 0;
+
+  for (const section of sections) {
+    const sectionDecks = Array.isArray(section?.decks) ? section.decks : [];
+
+    for (const deck of sectionDecks) {
+      const deckCardCount = Array.isArray(deck?.cards) ? deck.cards.length : 0;
+      cardCount += deckCardCount;
+      decks.push({
+        sectionTitle: typeof section?.title === "string" ? section.title : "",
+        deckId: typeof deck?.id === "string" ? deck.id : "",
+        deckTitle: typeof deck?.title === "string" ? deck.title : "",
+        cardCount: deckCardCount,
+      });
+    }
+  }
+
+  return {
+    sectionCount: sections.length,
+    deckCount: decks.length,
+    cardCount,
+    decks,
+  };
+};
+
+const listLibrarySummaries = async (limit) => {
+  if (!pool) {
+    return [...memoryStore.entries()]
+      .sort((a, b) => String(b[1].updatedAt).localeCompare(String(a[1].updatedAt)))
+      .slice(0, limit)
+      .map(([libraryId, record]) => ({
+        libraryId,
+        updatedAt: record.updatedAt,
+        revision: record.revision,
+        ...summarizeSnapshot(record.snapshot),
+      }));
+  }
+
+  await databaseReady;
+
+  if (!pool) {
+    return listLibrarySummaries(limit);
+  }
+
+  const result = await pool.query(
+    `
+      SELECT library_id, data, updated_at, revision
+      FROM library_snapshots
+      ORDER BY updated_at DESC
+      LIMIT $1
+    `,
+    [limit],
+  );
+
+  return result.rows.map((row) => ({
+    libraryId: row.library_id,
+    updatedAt: row.updated_at,
+    revision: row.revision,
+    ...summarizeSnapshot(row.data),
+  }));
+};
+
+const handleApiRequest = async (
+  request,
+  response,
+  pathname,
+  searchParams = new URLSearchParams(),
+) => {
   if (pathname === "/api/health" && request.method === "GET") {
     const ok = !dbInitFailed;
     return sendJson(response, ok ? 200 : 503, {
@@ -611,6 +718,55 @@ const handleApiRequest = async (request, response, pathname) => {
       error: "database_unavailable",
       message:
         "The database is currently unavailable. Please check DATABASE_URL or set ALLOW_MEMORY_STORAGE=true.",
+    });
+  }
+
+  if (pathname === "/api/admin/libraries") {
+    if (!adminToken) {
+      return sendJson(response, 404, {
+        error: "not_found",
+        message: "That API route does not exist.",
+      });
+    }
+
+    if (!isAdminRequestAuthorized(request)) {
+      response.setHeader("WWW-Authenticate", 'Bearer realm="flashcards-admin"');
+      return sendJson(response, 401, {
+        error: "unauthorized",
+        message: "Send the admin token as an Authorization: Bearer header.",
+      });
+    }
+
+    if (request.method !== "GET") {
+      return sendJson(response, 405, {
+        error: "method_not_allowed",
+        message: "Only GET is supported for the admin library listing.",
+      });
+    }
+
+    const rawLimit = searchParams.get("limit");
+    let limit = adminListLimits.default;
+
+    if (rawLimit !== null) {
+      const parsed = Number.parseInt(rawLimit, 10);
+
+      if (!Number.isFinite(parsed) || parsed < 1 || parsed > adminListLimits.max) {
+        return sendJson(response, 400, {
+          error: "invalid_limit",
+          message: `limit must be an integer between 1 and ${adminListLimits.max}.`,
+        });
+      }
+
+      limit = parsed;
+    }
+
+    const libraries = await listLibrarySummaries(limit);
+
+    return sendJson(response, 200, {
+      count: libraries.length,
+      limit,
+      storage: storageKind,
+      libraries,
     });
   }
 
@@ -789,7 +945,7 @@ const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
     if (url.pathname.startsWith("/api/")) {
-      const apiPromise = handleApiRequest(request, response, url.pathname);
+      const apiPromise = handleApiRequest(request, response, url.pathname, url.searchParams);
       apiPromise.catch(() => {});
       const apiTimeout = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("API request timed out")), 15000),
