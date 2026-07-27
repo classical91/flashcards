@@ -5,6 +5,7 @@ import {
   ACCENT_COLORS,
   ACCENT_STORAGE_KEY,
   BUILD_SYNC_KEY,
+  DAILY_CARD_STORAGE_KEY,
   LIBRARY_STORAGE_KEY,
   PINNED_DECKS_STORAGE_KEY,
   PROGRESS_STORAGE_KEY,
@@ -14,6 +15,7 @@ import {
   THEME_STORAGE_KEY,
 } from "./constants";
 import { buildProgressState, cloneSections } from "./deckUtils";
+import { DailyCardRef, parseDailyCard } from "./dailyCard";
 import { createSyncKey, getBuildSyncKey, isSyncKeyValid } from "./sync";
 import { AccentColor, RecentDeckEntry, Theme } from "./types";
 
@@ -157,5 +159,24 @@ export const loadRecentDeckIds = (): RecentDeckEntry[] => {
       : parsed;
   } catch {
     return [];
+  }
+};
+
+export const loadDailyCard = (): DailyCardRef | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const saved = window.localStorage.getItem(DAILY_CARD_STORAGE_KEY);
+    if (!saved) return null;
+    const parsed = parseDailyCard(JSON.parse(saved));
+    if (!parsed) return null;
+    // Same id repair as the other loaders, so a saved pick survives the
+    // sanitize pass instead of silently pointing at a card that moved.
+    return {
+      ...parsed,
+      deckId: cachedSanitizeResult?.deckIdMap.get(parsed.deckId) ?? parsed.deckId,
+      cardId: cachedSanitizeResult?.cardIdMap.get(parsed.cardId) ?? parsed.cardId,
+    };
+  } catch {
+    return null;
   }
 };

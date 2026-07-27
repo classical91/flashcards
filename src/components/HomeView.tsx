@@ -1,5 +1,5 @@
 import { Dispatch, MutableRefObject, SetStateAction, useState } from "react";
-import { Deck, DeckSection } from "../data/deckBuilder";
+import { Deck, DeckSection, Flashcard } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
 import { ACCENT_COLORS } from "../lib/constants";
 import { findDeckById, findSectionForDeck } from "../lib/deckUtils";
@@ -49,6 +49,8 @@ type HomeViewProps = {
   sectionComposerMessage: string;
   setSectionComposerMessage: (message: string) => void;
   onCreateSection: () => void;
+  // Card of the day
+  dailyCard: { deck: Deck; card: Flashcard; section: DeckSection | null } | null;
 };
 
 const ACCENT_EMOJI: Record<AccentColor, string> = {
@@ -92,8 +94,12 @@ export function HomeView({
   sectionComposerMessage,
   setSectionComposerMessage,
   onCreateSection,
+  dailyCard,
 }: HomeViewProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  // Keyed by card id so tomorrow's card starts face down again.
+  const [revealedDailyCardId, setRevealedDailyCardId] = useState<string | null>(null);
+  const isDailyCardRevealed = !!dailyCard && revealedDailyCardId === dailyCard.card.id;
 
   const recentDecks = recentDeckIds
     .map((entry) => {
@@ -374,6 +380,39 @@ export function HomeView({
             </button>
           </div>
         </div>
+      )}
+
+      {dailyCard && !trimmedQuery && (
+        <section className="home-daily" aria-label="Card of the day">
+          <div className="daily-card">
+            <div className="daily-card-head">
+              <span className="daily-card-label">Card of the day</span>
+              <span className="daily-card-source">
+                {dailyCard.section ? `${dailyCard.section.title} · ` : ""}
+                {dailyCard.deck.title}
+              </span>
+            </div>
+            <button
+              className="daily-card-face"
+              onClick={() =>
+                setRevealedDailyCardId(isDailyCardRevealed ? null : dailyCard.card.id)
+              }
+              title={isDailyCardRevealed ? "Hide the definition" : "Reveal the definition"}
+            >
+              <span className="daily-card-term">{dailyCard.card.term}</span>
+              {isDailyCardRevealed ? (
+                <span className="daily-card-definition">{dailyCard.card.definition}</span>
+              ) : (
+                <span className="daily-card-hint">Tap to reveal the definition</span>
+              )}
+            </button>
+            <div className="daily-card-actions">
+              <button className="mini-btn" onClick={() => openDeck(dailyCard.deck.id)}>
+                Study this deck
+              </button>
+            </div>
+          </div>
+        </section>
       )}
 
       <div className="home-main">
