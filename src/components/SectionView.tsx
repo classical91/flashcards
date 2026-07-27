@@ -2,7 +2,7 @@ import { Dispatch, SetStateAction } from "react";
 import { Deck, DeckSection } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
 import { createDeckProgress } from "../lib/deckUtils";
-import { DeckComposer, ViewState } from "../lib/types";
+import { DeckComposer, SectionEditor, ViewState } from "../lib/types";
 
 type ImportPreview = {
   cards: { term: string; definition: string }[];
@@ -18,12 +18,17 @@ type SectionViewProps = {
   deckComposerMessage: string;
   setDeckComposerMessage: (message: string) => void;
   deckImportPreview: ImportPreview;
+  sectionEditor: SectionEditor | null;
+  setSectionEditor: Dispatch<SetStateAction<SectionEditor | null>>;
+  sectionEditorMessage: string;
+  setSectionEditorMessage: (message: string) => void;
   setView: (view: ViewState) => void;
   openDeck: (deckId: string) => void;
   openRandomDeck: (decks: Deck[]) => void;
   togglePinDeck: (deckId: string) => void;
   onCreateDeck: (sectionId: string) => void;
   onDeleteDeck: (deckId: string) => void;
+  onUpdateSection: () => void;
   onDeleteSection: (sectionId: string) => void;
 };
 
@@ -36,14 +41,21 @@ export function SectionView({
   deckComposerMessage,
   setDeckComposerMessage,
   deckImportPreview,
+  sectionEditor,
+  setSectionEditor,
+  sectionEditorMessage,
+  setSectionEditorMessage,
   setView,
   openDeck,
   openRandomDeck,
   togglePinDeck,
   onCreateDeck,
   onDeleteDeck,
+  onUpdateSection,
   onDeleteSection,
 }: SectionViewProps) {
+  const isEditingSection = sectionEditor?.sectionId === section.id;
+
   return (
     <div className="app">
       <header className="topbar">
@@ -74,6 +86,24 @@ export function SectionView({
             New deck
           </button>
           <button
+            className="topbar-btn"
+            onClick={() => {
+              setSectionEditorMessage("");
+              setSectionEditor(
+                isEditingSection
+                  ? null
+                  : {
+                      sectionId: section.id,
+                      title: section.title,
+                      description: section.description,
+                    },
+              );
+            }}
+            title="Rename this topic or change its description"
+          >
+            {isEditingSection ? "Close edit" : "Edit topic"}
+          </button>
+          <button
             className="topbar-btn danger-topbar-btn"
             onClick={() => onDeleteSection(section.id)}
           >
@@ -83,6 +113,61 @@ export function SectionView({
       </header>
 
       <div className="section-view-main">
+        {isEditingSection && sectionEditor && (
+          <div className="panel-card" style={{ marginBottom: 12 }}>
+            <div className="panel-card-head">
+              <strong>Edit topic</strong>
+              <button
+                className="link-btn"
+                onClick={() => { setSectionEditor(null); setSectionEditorMessage(""); }}
+              >
+                Close
+              </button>
+            </div>
+            <div className="field">
+              <label>Topic name</label>
+              <input
+                type="text"
+                value={sectionEditor.title}
+                onChange={(e) =>
+                  setSectionEditor((c) => (c ? { ...c, title: e.target.value } : c))
+                }
+                placeholder="e.g. Greek Mythology"
+                autoFocus
+              />
+            </div>
+            <div className="field">
+              <label>Description (optional)</label>
+              <textarea
+                value={sectionEditor.description}
+                onChange={(e) =>
+                  setSectionEditor((c) => (c ? { ...c, description: e.target.value } : c))
+                }
+                placeholder="Short note about this topic, or a link to where the cards came from"
+              />
+            </div>
+            <p className="hint-text">
+              Renaming a topic keeps its decks, progress and pins.
+            </p>
+            {sectionEditorMessage && (
+              <p className="message-line error">{sectionEditorMessage}</p>
+            )}
+            <div className="panel-card-actions">
+              <button
+                className="mini-btn"
+                onClick={onUpdateSection}
+                disabled={
+                  !sectionEditor.title.trim() ||
+                  (sectionEditor.title.trim() === section.title &&
+                    sectionEditor.description.trim() === section.description)
+                }
+              >
+                Save topic
+              </button>
+            </div>
+          </div>
+        )}
+
         {deckComposer?.sectionId === section.id && (
           <div className="panel-card" style={{ marginBottom: 12 }}>
             <div className="panel-card-head">

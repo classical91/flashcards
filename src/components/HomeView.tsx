@@ -414,10 +414,11 @@ export function HomeView({
                 <button
                   key={section.id}
                   className="section-card"
+                  title={section.description || section.title}
                   onClick={() => setView({ kind: "section", sectionId: section.id })}
                 >
                   <div className="section-card-inner">
-                    <div>
+                    <div className="section-card-text">
                       <div className="section-card-title">{section.title}</div>
                       <div className="section-card-meta">
                         {section.decks.length} deck{section.decks.length !== 1 ? "s" : ""} ·{" "}

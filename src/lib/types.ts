@@ -15,6 +15,12 @@ export type SectionComposer = {
   description: string;
 };
 
+export type SectionEditor = {
+  sectionId: string;
+  title: string;
+  description: string;
+};
+
 export type ConfirmDialog = {
   message: string;
   onConfirm: () => void;

@@ -614,11 +614,19 @@ button {
   gap: 12px;
 }
 
+/* Without min-width:0 this flex item refuses to shrink past its longest
+   word, so a pasted URL pushes the arrow out and overruns the card. */
+.section-card-text {
+  flex: 1;
+  min-width: 0;
+}
+
 .section-card-title {
   font-size: 15px;
   font-weight: 600;
   color: var(--ink);
   margin-bottom: 4px;
+  overflow-wrap: anywhere;
 }
 
 .section-card-meta {
@@ -626,11 +634,20 @@ button {
   color: var(--muted);
 }
 
+/* Descriptions are free text — often a pasted link. Break anywhere so they
+   stay inside the card, then clamp so one long note can't stretch the row.
+   The full text stays reachable via the card's title attribute. */
 .section-card-desc {
   font-size: 11px;
   color: var(--muted);
   margin-top: 4px;
   opacity: 0.8;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
 }
 
 .section-card-arrow {
