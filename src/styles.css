@@ -572,6 +572,92 @@ button {
   text-overflow: ellipsis;
 }
 
+/* ── Card of the day ──────────────────────────────────────────────────────── */
+
+.home-daily {
+  display: block;
+  padding: 0 20px 12px;
+}
+
+.daily-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--accent-subtle);
+  box-shadow: var(--shadow-sm);
+}
+
+.daily-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.daily-card-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.daily-card-source {
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.daily-card-face {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease;
+}
+
+.daily-card-face:hover {
+  border-color: var(--accent);
+}
+
+.daily-card-term {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.daily-card-definition {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.daily-card-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.daily-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .home-main {
   padding: 0 20px 24px;
 }

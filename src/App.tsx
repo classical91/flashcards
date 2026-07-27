@@ -8,6 +8,7 @@ import {
 } from "./data/deckBuilder";
 import {
   ACCENT_STORAGE_KEY,
+  DAILY_CARD_STORAGE_KEY,
   LIBRARY_STORAGE_KEY,
   MAX_RECENT_DECKS,
   PINNED_DECKS_STORAGE_KEY,
@@ -24,8 +25,10 @@ import {
   shuffleCards,
   updateDeckInSections,
 } from "./lib/deckUtils";
+import { DailyCardRef, pickDailyCard, toDateKey } from "./lib/dailyCard";
 import {
   loadAccentColor,
+  loadDailyCard,
   loadLibrarySections,
   loadPinnedDeckIds,
   loadProgressState,
@@ -90,6 +93,8 @@ export default function App() {
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [accentColor, setAccentColor] = useState<AccentColor>(loadAccentColor);
+  const [dailyCardRef, setDailyCardRef] = useState<DailyCardRef | null>(loadDailyCard);
+  const [todayKey, setTodayKey] = useState(() => toDateKey(new Date()));
 
   const actionsMenuRef = useRef<HTMLDivElement>(null);
 
@@ -155,6 +160,35 @@ export default function App() {
   const hasRemainingCards = remainingCount > 0;
   const currentCardIsKnown = currentCard ? knownSet.has(currentCard.id) : false;
   const isDeckEmpty = totalCards === 0;
+
+  // The picked card is stored by id, so resolve it against the live library —
+  // that way a deck deleted mid-day just retires the pick instead of dangling.
+  const dailyCard = useMemo(() => {
+    if (!dailyCardRef || dailyCardRef.dateKey !== todayKey) return null;
+    const deck = findDeckById(librarySections, dailyCardRef.deckId);
+    const card = deck?.cards.find((c) => c.id === dailyCardRef.cardId);
+    if (!deck || !card) return null;
+    return { deck, card, section: findSectionForDeck(librarySections, deck.id) };
+  }, [dailyCardRef, todayKey, librarySections]);
+
+  // Keeps a tab left open overnight honest about which day it is.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setTodayKey((current) => {
+        const next = toDateKey(new Date());
+        return next === current ? current : next;
+      });
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // Picks once per day and then leaves it alone: the effect exits early as
+  // soon as the stored pick resolves, so marking it known won't reroll it.
+  useEffect(() => {
+    if (dailyCard) return;
+    const next = pickDailyCard(librarySections, deckProgress, todayKey);
+    if (next) setDailyCardRef(next);
+  }, [dailyCard, librarySections, deckProgress, todayKey]);
 
   const deckImportPreview = useMemo(
     () =>
@@ -637,6 +671,7 @@ export default function App() {
   useDebouncedPersist(SELECTED_DECK_STORAGE_KEY, selectedDeckId);
   useDebouncedPersist(PINNED_DECKS_STORAGE_KEY, pinnedDeckIds);
   useDebouncedPersist(RECENT_DECKS_STORAGE_KEY, recentDeckIds);
+  useDebouncedPersist(DAILY_CARD_STORAGE_KEY, dailyCardRef);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -735,6 +770,7 @@ export default function App() {
           setTheme={setTheme}
           accentColor={accentColor}
           setAccentColor={setAccentColor}
+          dailyCard={dailyCard}
           sectionComposer={sectionComposer}
           setSectionComposer={setSectionComposer}
           sectionComposerMessage={sectionComposerMessage}

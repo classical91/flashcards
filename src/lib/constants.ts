@@ -6,6 +6,7 @@ export const PINNED_DECKS_STORAGE_KEY = "flashcards.pinnedDecks.v1";
 export const RECENT_DECKS_STORAGE_KEY = "flashcards.recentDecks.v2";
 export const THEME_STORAGE_KEY = "flashcards.theme.v1";
 export const ACCENT_STORAGE_KEY = "flashcards.accent.v1";
+export const DAILY_CARD_STORAGE_KEY = "flashcards.dailyCard.v1";
 export const MAX_RECENT_DECKS = 6;
 
 export const syncKeyPattern = /^[A-Za-z0-9_-]{8,120}$/;
