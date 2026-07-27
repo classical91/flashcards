@@ -42,6 +42,7 @@ import {
   DeckProgress,
   RecentDeckEntry,
   SectionComposer,
+  SectionEditor,
   StudyMode,
   Theme,
   ViewState,
@@ -72,6 +73,8 @@ export default function App() {
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const [sectionComposer, setSectionComposer] = useState<SectionComposer | null>(null);
   const [sectionComposerMessage, setSectionComposerMessage] = useState("");
+  const [sectionEditor, setSectionEditor] = useState<SectionEditor | null>(null);
+  const [sectionEditorMessage, setSectionEditorMessage] = useState("");
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [showThemesPanel, setShowThemesPanel] = useState(false);
@@ -488,6 +491,27 @@ export default function App() {
     );
   };
 
+  const handleUpdateSection = () => {
+    if (!sectionEditor) return;
+    const title = sectionEditor.title.trim();
+    if (!title) {
+      setSectionEditorMessage("Give the topic a name first.");
+      return;
+    }
+    // The id is left alone so decks, progress and pins stay attached.
+    const { sectionId, description } = sectionEditor;
+    setLibrarySections((current) =>
+      current.map((section) =>
+        section.id === sectionId
+          ? { ...section, title, description: description.trim() }
+          : section,
+      ),
+    );
+    setSectionEditor(null);
+    setSectionEditorMessage("");
+    setToast("Topic updated.");
+  };
+
   const handleCreateSection = () => {
     const title = sectionComposer?.title.trim() ?? "";
     if (!title) {
@@ -761,12 +785,17 @@ export default function App() {
           deckComposerMessage={deckComposerMessage}
           setDeckComposerMessage={setDeckComposerMessage}
           deckImportPreview={deckImportPreview}
+          sectionEditor={sectionEditor}
+          setSectionEditor={setSectionEditor}
+          sectionEditorMessage={sectionEditorMessage}
+          setSectionEditorMessage={setSectionEditorMessage}
           setView={setView}
           openDeck={openDeck}
           openRandomDeck={openRandomDeck}
           togglePinDeck={togglePinDeck}
           onCreateDeck={handleCreateDeck}
           onDeleteDeck={handleDeleteDeck}
+          onUpdateSection={handleUpdateSection}
           onDeleteSection={handleDeleteSection}
         />
         {confirmOverlay}
