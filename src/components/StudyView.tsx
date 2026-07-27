@@ -195,7 +195,7 @@ export function StudyView({
                   className="icon-btn"
                   onClick={onToggleKnown}
                   title={currentCardIsKnown ? "Unmark known" : "Mark as known"}
-                  style={{ color: currentCardIsKnown ? "#2a7d4f" : undefined }}
+                  style={{ color: currentCardIsKnown ? "var(--success)" : undefined }}
                 >
                   {currentCardIsKnown ? "✓" : "×"}
                 </button>

@@ -272,7 +272,7 @@ export function HomeView({
                   onClick={() => setTheme("light")}
                   style={{
                     background: theme === "light" ? "var(--accent)" : "var(--surface)",
-                    color: theme === "light" ? "#fff" : "var(--ink)",
+                    color: theme === "light" ? "var(--on-accent)" : "var(--ink)",
                     borderColor: theme === "light" ? "var(--accent)" : "var(--line)",
                   }}
                 >
@@ -283,7 +283,7 @@ export function HomeView({
                   onClick={() => setTheme("dark")}
                   style={{
                     background: theme === "dark" ? "var(--accent)" : "var(--surface)",
-                    color: theme === "dark" ? "#fff" : "var(--ink)",
+                    color: theme === "dark" ? "var(--on-accent)" : "var(--ink)",
                     borderColor: theme === "dark" ? "var(--accent)" : "var(--line)",
                   }}
                 >
@@ -317,7 +317,7 @@ export function HomeView({
                     onClick={() => setAccentColor(color)}
                     style={{
                       background: accentColor === color ? `var(--accent)` : "var(--surface)",
-                      color: accentColor === color ? "#fff" : "var(--ink)",
+                      color: accentColor === color ? "var(--on-accent)" : "var(--ink)",
                       borderColor: accentColor === color ? "var(--accent)" : "var(--line)",
                       fontSize: "11px",
                       textTransform: "capitalize",

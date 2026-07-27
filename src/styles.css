@@ -1,17 +1,59 @@
+/* ── Theme tokens ───────────────────────────────────────────────────────────
+   Each theme only declares an accent plus a set of untinted neutral bases.
+   Every surface below is mixed from the accent, so picking a new accent
+   retints the whole app (page, cards, borders, text) instead of recoloring
+   a handful of highlights on top of a fixed blue-grey shell. */
+
 :root {
   color-scheme: light;
-  --bg: #f4f6f8;
-  --surface: #ffffff;
-  --ink: #2f2f2f;
-  --muted: #7b8592;
-  --line: #dfe5eb;
-  --dark: #253142;
+
+  /* Accent — the only hue in the palette */
   --accent: #2563eb;
-  --accent-subtle: rgba(37, 99, 235, 0.08);
+  --accent-rgb: 37, 99, 235;
   --accent-hover: #1d4ed8;
+  --on-accent: #ffffff;
+
+  /* Untinted neutrals the accent gets mixed into */
+  --bg-base: #f5f6f7;
+  --surface-base: #ffffff;
+  --line-base: #e3e5e8;
+  --ink-base: #2f2f2f;
+  --muted-base: #7c828c;
+
+  /* How much accent bleeds into each neutral */
+  --tint-bg: 9%;
+  --tint-glow: 22%;
+  --tint-surface: 5%;
+  --tint-line: 24%;
+  --tint-ink: 6%;
+  --tint-muted: 18%;
+
+  /* Tinted surfaces */
+  --bg: color-mix(in srgb, var(--accent) var(--tint-bg), var(--bg-base));
+  --bg-glow: color-mix(in srgb, var(--accent) var(--tint-glow), var(--bg-base));
+  --surface: color-mix(in srgb, var(--accent) var(--tint-surface), var(--surface-base));
+  --surface-translucent: color-mix(in srgb, var(--surface) 85%, transparent);
+  --line: color-mix(in srgb, var(--accent) var(--tint-line), var(--line-base));
+  --line-strong: color-mix(in srgb, var(--accent) 55%, var(--line));
+  --ink: color-mix(in srgb, var(--accent) var(--tint-ink), var(--ink-base));
+  --ink-soft: color-mix(in srgb, var(--ink) 68%, var(--bg));
+  --muted: color-mix(in srgb, var(--accent) var(--tint-muted), var(--muted-base));
+  --dark: color-mix(in srgb, var(--accent) 12%, #253142);
+  --accent-subtle: rgba(var(--accent-rgb), 0.08);
+
+  /* Semantic colors that stay off the accent scale */
   --danger: #d64545;
+  --danger-rgb: 214, 69, 69;
+  --success: #2a7d4f;
+  --success-rgb: 42, 125, 79;
+  --pin-bg: #fffbea;
+  --pin-line: #f0d060;
+  --pin-ink: #7a5800;
+
+  --overlay: rgba(24, 31, 40, 0.42);
   --shadow: 0 12px 28px rgba(22, 34, 51, 0.08);
   --shadow-sm: 0 4px 12px rgba(22, 34, 51, 0.06);
+  --shadow-lg: 0 22px 60px rgba(16, 24, 38, 0.24);
 
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -21,69 +63,92 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Dark theme */
+/* Dark theme — same derivations, deeper bases and a stronger tint */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0f1419;
-  --surface: #1a1f2e;
-  --ink: #e4e8f0;
-  --muted: #8b95a5;
-  --line: #2d3748;
-  --dark: #e4e8f0;
-  --accent: #3b82f6;
-  --accent-subtle: rgba(59, 130, 246, 0.12);
-  --accent-hover: #60a5fa;
+
+  --accent: #6ea8fe;
+  --accent-rgb: 110, 168, 254;
+  --accent-hover: #9cc4ff;
+  --on-accent: #0b0f17;
+
+  --bg-base: #0c0e12;
+  --surface-base: #171a20;
+  --line-base: #2b3038;
+  --ink-base: #e9ecf1;
+  --muted-base: #949aa5;
+
+  --tint-bg: 14%;
+  --tint-glow: 30%;
+  --tint-surface: 16%;
+  --tint-line: 34%;
+  --tint-ink: 5%;
+  --tint-muted: 20%;
+
+  --accent-subtle: rgba(var(--accent-rgb), 0.14);
+  --dark: color-mix(in srgb, var(--accent) 12%, #e4e8f0);
+
+  --danger: #f87171;
+  --danger-rgb: 248, 113, 113;
+  --success: #4ade80;
+  --success-rgb: 74, 222, 128;
+  --pin-bg: rgba(240, 184, 108, 0.16);
+  --pin-line: rgba(240, 184, 108, 0.45);
+  --pin-ink: #f0b86c;
+
+  --overlay: rgba(4, 7, 14, 0.62);
   --shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
   --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 22px 60px rgba(0, 0, 0, 0.55);
 }
 
-/* Accent color themes */
+/* Accent themes — hues shared with the main site's theme switcher */
 :root[data-accent="purple"] {
   --accent: #9333ea;
+  --accent-rgb: 147, 51, 234;
   --accent-hover: #7e22ce;
-  --accent-subtle: rgba(147, 51, 234, 0.08);
 }
 
 :root[data-theme="dark"][data-accent="purple"] {
-  --accent: #a855f7;
+  --accent: #c084fc;
+  --accent-rgb: 192, 132, 252;
   --accent-hover: #d8b4fe;
-  --accent-subtle: rgba(168, 85, 247, 0.12);
 }
 
 :root[data-accent="green"] {
   --accent: #059669;
+  --accent-rgb: 5, 150, 105;
   --accent-hover: #047857;
-  --accent-subtle: rgba(5, 150, 105, 0.08);
 }
 
 :root[data-theme="dark"][data-accent="green"] {
-  --accent: #10b981;
-  --accent-hover: #6ee7b7;
-  --accent-subtle: rgba(16, 185, 129, 0.12);
+  --accent: #4ade80;
+  --accent-rgb: 74, 222, 128;
+  --accent-hover: #86efac;
 }
 
 :root[data-accent="red"] {
   --accent: #dc2626;
+  --accent-rgb: 220, 38, 38;
   --accent-hover: #b91c1c;
-  --accent-subtle: rgba(220, 38, 38, 0.08);
 }
 
 :root[data-theme="dark"][data-accent="red"] {
   --accent: #f87171;
+  --accent-rgb: 248, 113, 113;
   --accent-hover: #fca5a5;
-  --accent-subtle: rgba(248, 113, 113, 0.12);
 }
 
 :root[data-accent="amber"] {
   --accent: #d97706;
+  --accent-rgb: 217, 119, 6;
   --accent-hover: #b45309;
-  --accent-subtle: rgba(217, 119, 6, 0.08);
 }
 
 :root[data-theme="dark"][data-accent="amber"] {
   --accent: #fbbf24;
+  --accent-rgb: 251, 191, 36;
   --accent-hover: #fcd34d;
-  --accent-subtle: rgba(251, 191, 36, 0.12);
 }
 
 * {
@@ -118,7 +183,10 @@ body,
 body {
   margin: 0;
   min-height: 100svh;
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image: radial-gradient(1200px 760px at 50% -12%, var(--bg-glow) 0%, transparent 64%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
   color: var(--ink);
 }
 
@@ -142,9 +210,9 @@ button {
   align-items: center;
   justify-content: space-between;
   padding: 0 12px;
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--surface-translucent);
   border-bottom: 1px solid var(--line);
-  color: #4d5967;
+  color: var(--ink-soft);
   font-size: 11px;
   position: sticky;
   top: 0;
@@ -156,7 +224,7 @@ button {
 .topbar-btn {
   border: 0;
   background: transparent;
-  color: #4d5967;
+  color: var(--ink-soft);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
@@ -167,7 +235,7 @@ button {
 }
 
 .topbar-btn:hover {
-  background: #eef3f7;
+  background: var(--accent-subtle);
 }
 
 .topbar-left {
@@ -190,7 +258,7 @@ button {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  color: #6b7480;
+  color: var(--muted);
   font-size: 11px;
   white-space: nowrap;
   overflow: hidden;
@@ -233,7 +301,7 @@ button {
 
 .study-mode-btn.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .study-mode-btn:disabled {
@@ -245,7 +313,7 @@ button {
 
 .home-view {
   min-height: 100svh;
-  background: var(--bg);
+  background: transparent;
 }
 
 .home-header {
@@ -272,7 +340,7 @@ button {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
-  color: #52606f;
+  color: var(--ink-soft);
   padding: 5px 14px;
   cursor: pointer;
   font-size: 18px;
@@ -283,7 +351,7 @@ button {
 }
 
 .home-actions-trigger:hover {
-  border-color: #cbd5df;
+  border-color: var(--line-strong);
 }
 
 .home-actions-menu {
@@ -293,7 +361,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow);
   min-width: 160px;
   z-index: 100;
   overflow: hidden;
@@ -666,8 +734,8 @@ button {
 
 .deck-card-pin.pinned {
   opacity: 1;
-  background: #fffbea;
-  border-color: #f0d060;
+  background: var(--pin-bg);
+  border-color: var(--pin-line);
 }
 
 .deck-card-delete {
@@ -699,13 +767,13 @@ button {
 
 .topbar-pin-btn.pinned {
   opacity: 1;
-  color: #b57a00;
+  color: var(--pin-ink);
 }
 
 .pinned-nav-btn {
-  background: #fffbea;
-  border: 1px solid #f0d060;
-  color: #7a5800;
+  background: var(--pin-bg);
+  border: 1px solid var(--pin-line);
+  color: var(--pin-ink);
 }
 
 /* Progress bar */
@@ -738,7 +806,7 @@ button {
 .deck-study-title {
   font-size: 1.1rem;
   font-weight: 600;
-  color: var(--text-secondary, #555);
+  color: var(--ink-soft);
   text-align: center;
   margin-bottom: 0.2rem;
 }
@@ -779,7 +847,7 @@ button {
   display: grid;
   place-items: center;
   background: var(--surface);
-  border: 1px solid #edf1f5;
+  border: 1px solid var(--line);
   border-radius: 4px;
   box-shadow: var(--shadow);
   backface-visibility: hidden;
@@ -828,7 +896,7 @@ button {
   place-items: center;
   border: 0;
   background: transparent;
-  color: #5d6976;
+  color: var(--ink-soft);
   border-radius: 999px;
   cursor: pointer;
   font-size: 15px;
@@ -836,7 +904,7 @@ button {
 }
 
 .icon-btn:hover {
-  background: #dde5ed;
+  background: var(--accent-subtle);
 }
 
 .circle-btn {
@@ -846,22 +914,22 @@ button {
   place-items: center;
   border: 1px solid var(--line);
   background: var(--surface);
-  color: #6a7480;
+  color: var(--ink-soft);
   border-radius: 999px;
-  box-shadow: 0 4px 12px rgba(22, 34, 51, 0.08);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
   font-size: 18px;
   transition: border-color 150ms ease;
 }
 
 .circle-btn:hover {
-  border-color: #cbd5df;
+  border-color: var(--line-strong);
 }
 
 .counter {
   min-width: 48px;
   text-align: center;
-  color: #66717e;
+  color: var(--ink-soft);
   font-size: 12px;
 }
 
@@ -873,7 +941,7 @@ button {
 }
 
 .deep-title {
-  color: #87919d;
+  color: var(--muted);
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -890,8 +958,8 @@ button {
 .lookup-chip {
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.85);
-  color: #52606f;
+  background: var(--surface-translucent);
+  color: var(--ink-soft);
   cursor: pointer;
   padding: 6px 12px;
   font-size: 11px;
@@ -903,13 +971,13 @@ button {
 
 .lookup-chip:hover {
   background: var(--surface);
-  border-color: #cbd5df;
+  border-color: var(--line-strong);
 }
 
 .lookup-chip.ai {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .lookup-chip.ai:hover {
@@ -967,7 +1035,7 @@ button {
 }
 
 .add-card-form input::placeholder {
-  color: #9aa4af;
+  color: var(--muted);
 }
 
 /* ── Shared button: mini-btn ──────────────────────────────────────────────── */
@@ -976,7 +1044,7 @@ button {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
-  color: #52606f;
+  color: var(--ink-soft);
   padding: 7px 14px;
   cursor: pointer;
   font-size: 11px;
@@ -986,7 +1054,7 @@ button {
 }
 
 .mini-btn:hover {
-  border-color: #cbd5df;
+  border-color: var(--line-strong);
 }
 
 .mini-btn:disabled {
@@ -1004,7 +1072,7 @@ button {
   width: 100%;
   min-height: 18px;
   text-align: center;
-  color: #87919d;
+  color: var(--muted);
   font-size: 11px;
   padding-top: 2px;
 }
@@ -1100,7 +1168,7 @@ button {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--bg);
   color: var(--ink);
   padding: 8px 12px;
   font: inherit;
@@ -1114,7 +1182,7 @@ button {
 
 .field input:focus-visible,
 .field textarea:focus-visible {
-  outline: 2px solid #a8c5da;
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -1140,13 +1208,13 @@ button {
 }
 
 .message-line.error {
-  background: rgba(214, 69, 69, 0.08);
+  background: rgba(var(--danger-rgb), 0.12);
   color: var(--danger);
 }
 
 .message-line.success {
-  background: rgba(42, 125, 79, 0.08);
-  color: #2a7d4f;
+  background: rgba(var(--success-rgb), 0.12);
+  color: var(--success);
 }
 
 /* ── Bulk import (study view) ─────────────────────────────────────────────── */
@@ -1257,7 +1325,7 @@ button {
 
 .mini-btn.primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--accent);
 }
 
@@ -1284,7 +1352,7 @@ button {
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(24, 31, 40, 0.42);
+  background: var(--overlay);
   padding: 18px;
   z-index: 20;
 }
@@ -1294,7 +1362,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 14px;
-  box-shadow: 0 22px 60px rgba(16, 24, 38, 0.24);
+  box-shadow: var(--shadow-lg);
   padding: 20px;
 }
 
@@ -1306,7 +1374,7 @@ button {
 
 .modal p {
   margin: 0 0 12px;
-  color: #66717e;
+  color: var(--ink-soft);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -1314,8 +1382,8 @@ button {
 .prompt-preview {
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #f8fafc;
-  color: #35404d;
+  background: var(--bg);
+  color: var(--ink);
   padding: 12px;
   font: 12px/1.45 inherit;
   margin-bottom: 14px;
@@ -1337,7 +1405,7 @@ button {
   z-index: 30;
   display: grid;
   place-items: center;
-  background: rgba(24, 31, 40, 0.42);
+  background: var(--overlay);
   padding: 18px;
 }
 
@@ -1346,7 +1414,7 @@ button {
   background: var(--surface);
   border-radius: 14px;
   padding: 20px;
-  box-shadow: 0 22px 60px rgba(16, 24, 38, 0.24);
+  box-shadow: var(--shadow-lg);
 }
 
 .confirm-box p {
@@ -1376,7 +1444,7 @@ button {
 }
 
 .danger-btn:hover {
-  background: rgba(214, 69, 69, 0.06);
+  background: rgba(var(--danger-rgb), 0.1);
 }
 
 /* ── Responsive ───────────────────────────────────────────────────────────── */
