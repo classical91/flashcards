@@ -107,12 +107,17 @@ const sendJson = (response, statusCode, payload) => {
 
 const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 
+// Ceilings are abuse guards, not editorial limits: real libraries have decks
+// well past a thousand cards, and rejecting one deck rejects the whole
+// snapshot, so a too-tight cap silently strands every device on that key.
+// The 10 MB body cap in readJsonBody() remains the real backstop.
 const contentLimits = Object.freeze({
   sections: 50,
-  decksPerSection: 100,
-  cardsPerDeck: 1000,
+  decksPerSection: 250,
+  cardsPerDeck: 5000,
   progressEntries: 5000,
-  knownIdsPerDeck: 1000,
+  // Every card in a deck can be marked known, so this must track cardsPerDeck.
+  knownIdsPerDeck: 5000,
   recentDeckIds: 100,
   idLength: 120,
   titleLength: 200,
@@ -195,7 +200,12 @@ const validateDeck = (value, path) => {
   }
 
   if (value.cards.length > contentLimits.cardsPerDeck) {
-    return invalid(`${path}.cards cannot contain more than ${contentLimits.cardsPerDeck} cards.`);
+    // Name the deck: an index path alone leaves no way to find the offender in
+    // a library with hundreds of decks.
+    const deckLabel = typeof value.title === "string" && value.title ? ` ("${value.title}")` : "";
+    return invalid(
+      `${path}${deckLabel}.cards has ${value.cards.length} cards, more than the ${contentLimits.cardsPerDeck} allowed per deck.`,
+    );
   }
 
   for (let index = 0; index < value.cards.length; index += 1) {
@@ -227,8 +237,10 @@ const validateDeckSection = (value, path) => {
   }
 
   if (value.decks.length > contentLimits.decksPerSection) {
+    const sectionLabel =
+      typeof value.title === "string" && value.title ? ` ("${value.title}")` : "";
     return invalid(
-      `${path}.decks cannot contain more than ${contentLimits.decksPerSection} decks.`,
+      `${path}${sectionLabel}.decks has ${value.decks.length} decks, more than the ${contentLimits.decksPerSection} allowed per section.`,
     );
   }
 
