@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +21,9 @@ const shareIdPattern = /^[A-Za-z0-9_-]{10,120}$/;
 const memoryStore = new Map();
 const memorySharedDeckStore = new Map();
 const adminToken = process.env.ADMIN_TOKEN?.trim() || "";
+const adminUsername = process.env.ADMIN_USERNAME?.trim() || "admin";
+const adminSessionCookie = "flashcards_admin_session";
+const adminSessionLifetimeSeconds = 8 * 60 * 60;
 const adminListLimits = Object.freeze({ default: 100, max: 500 });
 
 let pool = process.env.DATABASE_URL
@@ -102,10 +105,26 @@ const databaseReady = Promise.race([initDbPromise, initTimeoutPromise]).catch((e
 const sendJson = (response, statusCode, payload) => {
   response.statusCode = statusCode;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
+  response.setHeader("Cache-Control", "no-store");
   response.end(JSON.stringify(payload));
 };
 
 const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+
+const constantTimeStringEqual = (expected, presented) => {
+  if (typeof expected !== "string" || typeof presented !== "string") {
+    return false;
+  }
+
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const presentedBuffer = Buffer.from(presented, "utf8");
+
+  if (expectedBuffer.length !== presentedBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(expectedBuffer, presentedBuffer);
+};
 
 // Ceilings are abuse guards, not editorial limits: real libraries have decks
 // well past a thousand cards, and rejecting one deck rejects the whole
@@ -611,14 +630,82 @@ const saveSharedDeck = async (shareId, snapshot) => {
   };
 };
 
-/**
- * Constant-time bearer-token check. Returns false whenever ADMIN_TOKEN is unset
- * so admin routes stay closed unless an operator opts in.
- */
-const isAdminRequestAuthorized = (request) => {
-  if (!adminToken) {
+const parseCookies = (request) => {
+  const cookieHeader = request.headers.cookie;
+  if (typeof cookieHeader !== "string") return {};
+
+  return Object.fromEntries(
+    cookieHeader.split(";").flatMap((part) => {
+      const separator = part.indexOf("=");
+      if (separator < 1) return [];
+      const name = part.slice(0, separator).trim();
+      const value = part.slice(separator + 1).trim();
+      return [[name, value]];
+    }),
+  );
+};
+
+const signAdminSession = (payload) =>
+  createHmac("sha256", adminToken).update(payload).digest("base64url");
+
+const createAdminSession = () => {
+  const payload = Buffer.from(
+    JSON.stringify({
+      username: adminUsername,
+      expiresAt: Date.now() + adminSessionLifetimeSeconds * 1000,
+    }),
+    "utf8",
+  ).toString("base64url");
+
+  return `${payload}.${signAdminSession(payload)}`;
+};
+
+const verifyAdminSession = (session) => {
+  if (!adminToken || typeof session !== "string") return false;
+
+  const separator = session.lastIndexOf(".");
+  if (separator < 1) return false;
+
+  const payload = session.slice(0, separator);
+  const signature = session.slice(separator + 1);
+  if (!constantTimeStringEqual(signAdminSession(payload), signature)) return false;
+
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    return (
+      decoded?.username === adminUsername &&
+      Number.isFinite(decoded?.expiresAt) &&
+      decoded.expiresAt > Date.now()
+    );
+  } catch {
     return false;
   }
+};
+
+const isSecureRequest = (request) =>
+  process.env.NODE_ENV === "production" ||
+  String(request.headers["x-forwarded-proto"] ?? "")
+    .split(",")[0]
+    .trim() === "https";
+
+const adminCookieHeader = (request, value, maxAge) =>
+  [
+    `${adminSessionCookie}=${value}`,
+    "HttpOnly",
+    "SameSite=Strict",
+    "Path=/api/admin",
+    `Max-Age=${maxAge}`,
+    isSecureRequest(request) ? "Secure" : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
+
+/**
+ * Supports the existing bearer token for scripts and an HttpOnly signed session
+ * for the browser dashboard. Returns false whenever ADMIN_TOKEN is unset.
+ */
+const isAdminRequestAuthorized = (request) => {
+  if (!adminToken) return false;
 
   const header = request.headers.authorization;
   const presented =
@@ -628,18 +715,23 @@ const isAdminRequestAuthorized = (request) => {
         ? request.headers["x-admin-token"].trim()
         : "";
 
-  if (!presented) {
-    return false;
+  if (presented && constantTimeStringEqual(adminToken, presented)) {
+    return true;
   }
 
-  const expectedBuffer = Buffer.from(adminToken, "utf8");
-  const presentedBuffer = Buffer.from(presented, "utf8");
+  return verifyAdminSession(parseCookies(request)[adminSessionCookie]);
+};
 
-  if (expectedBuffer.length !== presentedBuffer.length) {
+const isSameOriginRequest = (request) => {
+  const origin = request.headers.origin;
+  if (!origin) return true;
+
+  try {
+    const originUrl = new URL(origin);
+    return originUrl.host === request.headers.host;
+  } catch {
     return false;
   }
-
-  return timingSafeEqual(expectedBuffer, presentedBuffer);
 };
 
 /**
@@ -711,6 +803,29 @@ const listLibrarySummaries = async (limit) => {
   }));
 };
 
+const deleteLibrarySnapshot = async (libraryId) => {
+  if (!pool) {
+    return memoryStore.delete(libraryId);
+  }
+
+  await databaseReady;
+
+  if (!pool) {
+    return memoryStore.delete(libraryId);
+  }
+
+  const result = await pool.query(
+    `
+      DELETE FROM library_snapshots
+      WHERE library_id = $1
+      RETURNING library_id
+    `,
+    [libraryId],
+  );
+
+  return result.rowCount > 0;
+};
+
 const handleApiRequest = async (
   request,
   response,
@@ -730,6 +845,89 @@ const handleApiRequest = async (
       error: "database_unavailable",
       message:
         "The database is currently unavailable. Please check DATABASE_URL or set ALLOW_MEMORY_STORAGE=true.",
+    });
+  }
+
+  if (pathname === "/api/admin/session") {
+    if (!adminToken) {
+      return sendJson(response, 404, {
+        error: "not_found",
+        message: "That API route does not exist.",
+      });
+    }
+
+    if (request.method === "POST") {
+      if (!isSameOriginRequest(request)) {
+        return sendJson(response, 403, {
+          error: "invalid_origin",
+          message: "The admin login must come from this site.",
+        });
+      }
+
+      let credentials;
+      try {
+        credentials = await readJsonBody(request);
+      } catch {
+        return sendJson(response, 400, {
+          error: "invalid_credentials",
+          message: "Enter a valid username and password.",
+        });
+      }
+
+      const validUsername = constantTimeStringEqual(
+        adminUsername,
+        typeof credentials?.username === "string" ? credentials.username.trim() : "",
+      );
+      const validPassword = constantTimeStringEqual(
+        adminToken,
+        typeof credentials?.password === "string" ? credentials.password : "",
+      );
+
+      if (!validUsername || !validPassword) {
+        return sendJson(response, 401, {
+          error: "invalid_credentials",
+          message: "The username or password is incorrect.",
+        });
+      }
+
+      response.setHeader(
+        "Set-Cookie",
+        adminCookieHeader(request, createAdminSession(), adminSessionLifetimeSeconds),
+      );
+      return sendJson(response, 200, {
+        authenticated: true,
+        username: adminUsername,
+      });
+    }
+
+    if (request.method === "DELETE") {
+      if (!isSameOriginRequest(request)) {
+        return sendJson(response, 403, {
+          error: "invalid_origin",
+          message: "The admin sign-out must come from this site.",
+        });
+      }
+
+      response.setHeader("Set-Cookie", adminCookieHeader(request, "", 0));
+      return sendJson(response, 200, { authenticated: false });
+    }
+
+    if (request.method === "GET") {
+      if (!isAdminRequestAuthorized(request)) {
+        return sendJson(response, 200, {
+          authenticated: false,
+        });
+      }
+
+      return sendJson(response, 200, {
+        authenticated: true,
+        username: adminUsername,
+      });
+    }
+
+    return sendJson(response, 405, {
+      error: "method_not_allowed",
+      message: "Only GET, POST, and DELETE are supported for admin sessions.",
     });
   }
 
@@ -779,6 +977,69 @@ const handleApiRequest = async (
       limit,
       storage: storageKind,
       libraries,
+    });
+  }
+
+  const adminLibraryMatch = pathname.match(
+    /^\/api\/admin\/libraries\/([A-Za-z0-9_-]{1,200})$/,
+  );
+
+  if (adminLibraryMatch) {
+    if (!adminToken) {
+      return sendJson(response, 404, {
+        error: "not_found",
+        message: "That API route does not exist.",
+      });
+    }
+
+    if (!isAdminRequestAuthorized(request)) {
+      return sendJson(response, 401, {
+        error: "unauthorized",
+        message: "Sign in to the administration account.",
+      });
+    }
+
+    if (request.method !== "DELETE") {
+      return sendJson(response, 405, {
+        error: "method_not_allowed",
+        message: "Only DELETE is supported for an individual admin library record.",
+      });
+    }
+
+    if (!isSameOriginRequest(request)) {
+      return sendJson(response, 403, {
+        error: "invalid_origin",
+        message: "Library deletion must come from this site.",
+      });
+    }
+
+    const libraryId = adminLibraryMatch[1];
+    if (!libraryIdPattern.test(libraryId)) {
+      return sendJson(response, 400, {
+        error: "invalid_library_id",
+        message:
+          "Library IDs must be 8-120 characters long and use only letters, numbers, hyphens, or underscores.",
+      });
+    }
+
+    if (request.headers["x-confirm-library-id"] !== libraryId) {
+      return sendJson(response, 400, {
+        error: "confirmation_required",
+        message: "Confirm the exact library ID before deleting it.",
+      });
+    }
+
+    const deleted = await deleteLibrarySnapshot(libraryId);
+    if (!deleted) {
+      return sendJson(response, 404, {
+        error: "library_not_found",
+        message: "That cloud library no longer exists.",
+      });
+    }
+
+    return sendJson(response, 200, {
+      deleted: true,
+      libraryId,
     });
   }
 
