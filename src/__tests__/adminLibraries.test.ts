@@ -84,6 +84,14 @@ afterAll(() => {
 });
 
 describe("GET /api/admin/libraries", () => {
+  it("reports a signed-out browser session without logging a failed request", async () => {
+    const response = await fetch(`${baseUrl}/api/admin/session`);
+    const payload = (await response.json()) as { authenticated: boolean };
+
+    expect(response.status).toBe(200);
+    expect(payload.authenticated).toBe(false);
+  });
+
   it("rejects requests without a token", async () => {
     const response = await fetch(`${baseUrl}/api/admin/libraries`);
 
@@ -168,6 +176,78 @@ describe("GET /api/admin/libraries", () => {
     });
 
     expect(response.status).toBe(405);
+  });
+
+  it("creates an HttpOnly browser session for the administration account", async () => {
+    const login = await fetch(`${baseUrl}/api/admin/session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: baseUrl,
+      },
+      body: JSON.stringify({
+        username: "admin",
+        password: adminToken,
+      }),
+    });
+
+    expect(login.status).toBe(200);
+    const cookie = login.headers.get("set-cookie");
+    expect(cookie).toContain("flashcards_admin_session=");
+    expect(cookie).toContain("HttpOnly");
+    expect(cookie).toContain("SameSite=Strict");
+
+    const sessionCookie = cookie?.split(";")[0] ?? "";
+    const listing = await fetch(`${baseUrl}/api/admin/libraries`, {
+      headers: { Cookie: sessionCookie },
+    });
+    expect(listing.status).toBe(200);
+  });
+
+  it("rejects an incorrect administration account password", async () => {
+    const response = await fetch(`${baseUrl}/api/admin/session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: baseUrl,
+      },
+      body: JSON.stringify({
+        username: "admin",
+        password: "wrong-password",
+      }),
+    });
+
+    expect(response.status).toBe(401);
+  });
+
+  it("deletes only the explicitly confirmed cloud library", async () => {
+    await putLibrary("library-delete-me", [{ title: "Temporary", cardCount: 1 }]);
+
+    const missingConfirmation = await fetch(
+      `${baseUrl}/api/admin/libraries/library-delete-me`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+          Origin: baseUrl,
+        },
+      },
+    );
+    expect(missingConfirmation.status).toBe(400);
+
+    const deleted = await fetch(`${baseUrl}/api/admin/libraries/library-delete-me`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        Origin: baseUrl,
+        "X-Confirm-Library-Id": "library-delete-me",
+      },
+    });
+    expect(deleted.status).toBe(200);
+
+    const lookup = await fetch(`${baseUrl}/api/libraries/library-delete-me`);
+    const lookupPayload = (await lookup.json()) as { exists: boolean };
+    expect(lookupPayload.exists).toBe(false);
   });
 });
 

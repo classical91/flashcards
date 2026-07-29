@@ -107,6 +107,12 @@ For real deployment, publish the generated `dist/` assets to any static hosting 
 
   The response lists each sync key with `updatedAt`, `revision`, and section/deck/card counts, plus deck titles. It deliberately omits card terms and definitions — use the per-library route above to read actual card content. Supports `?limit=` (default 100, max 500). Without `ADMIN_TOKEN` set, the route returns 404.
 
+- **Administration account:** open `/admin` on the deployed app. Sign in with
+  `ADMIN_USERNAME` (defaults to `admin`) and `ADMIN_TOKEN` as the password. The
+  dashboard shows all stored cloud libraries and supports confirmed permanent
+  deletion. Browser sessions use a signed, HttpOnly, SameSite cookie and expire
+  after eight hours.
+
 ## Environment Variables
 
 ### Server (Node API)
@@ -116,7 +122,8 @@ For real deployment, publish the generated `dist/` assets to any static hosting 
 | `DATABASE_URL`         | Yes in production | PostgreSQL connection string. Without it the server uses in-memory storage (data lost on restart).                           |
 | `PORT`                 | No                | HTTP port for the Node server (default: `3000`).                                                                             |
 | `ALLOW_MEMORY_STORAGE` | No                | Set to `true` to allow in-memory fallback even when `NODE_ENV=production`. Useful for local staging runs without a database. |
-| `ADMIN_TOKEN`          | No                | Bearer token that enables the read-only admin listing at `GET /api/admin/libraries`. When unset, that route returns 404.     |
+| `ADMIN_TOKEN`          | No                | Strong admin password and bearer token. Enables `/admin`, the library directory API, and confirmed deletion. When unset, all admin API routes return 404. |
+| `ADMIN_USERNAME`       | No                | Username for `/admin`. Defaults to `admin`.                                                                                  |
 
 ### Client (Vite build-time)
 
