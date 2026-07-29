@@ -379,6 +379,7 @@ button {
   font-size: 13px;
   font-family: inherit;
   color: var(--ink);
+  text-decoration: none;
   white-space: nowrap;
   transition: background 120ms ease;
 }

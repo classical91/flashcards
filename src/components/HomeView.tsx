@@ -167,6 +167,13 @@ export function HomeView({
               >
                 🎨 Themes
               </button>
+              <a
+                className="home-actions-item"
+                href="/admin"
+                onClick={() => setShowActionsMenu(false)}
+              >
+                Admin login
+              </a>
             </div>
           )}
         </div>
