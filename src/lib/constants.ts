@@ -4,6 +4,7 @@ export const SELECTED_DECK_STORAGE_KEY = "flashcards.selectedDeck.v2";
 export const SYNC_KEY_STORAGE_KEY = "flashcards.syncKey.v1";
 export const PINNED_DECKS_STORAGE_KEY = "flashcards.pinnedDecks.v1";
 export const RECENT_DECKS_STORAGE_KEY = "flashcards.recentDecks.v2";
+export const DECK_LAST_VIEWED_STORAGE_KEY = "flashcards.deckLastViewed.v1";
 export const THEME_STORAGE_KEY = "flashcards.theme.v1";
 export const ACCENT_STORAGE_KEY = "flashcards.accent.v1";
 export const DAILY_CARD_STORAGE_KEY = "flashcards.dailyCard.v1";

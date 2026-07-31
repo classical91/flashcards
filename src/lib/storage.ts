@@ -6,6 +6,7 @@ import {
   ACCENT_STORAGE_KEY,
   BUILD_SYNC_KEY,
   DAILY_CARD_STORAGE_KEY,
+  DECK_LAST_VIEWED_STORAGE_KEY,
   LIBRARY_STORAGE_KEY,
   PINNED_DECKS_STORAGE_KEY,
   PROGRESS_STORAGE_KEY,
@@ -17,7 +18,7 @@ import {
 import { buildProgressState, cloneSections } from "./deckUtils";
 import { DailyCardRef, parseDailyCard } from "./dailyCard";
 import { createSyncKey, getBuildSyncKey, isSyncKeyValid } from "./sync";
-import { AccentColor, RecentDeckEntry, Theme } from "./types";
+import { AccentColor, DeckLastViewed, RecentDeckEntry, Theme } from "./types";
 
 /**
  * Writes to localStorage while swallowing quota/security errors so the app
@@ -159,6 +160,26 @@ export const loadRecentDeckIds = (): RecentDeckEntry[] => {
       : parsed;
   } catch {
     return [];
+  }
+};
+
+export const loadDeckLastViewed = (): DeckLastViewed => {
+  if (typeof window === "undefined") return {};
+  try {
+    const saved = window.localStorage.getItem(DECK_LAST_VIEWED_STORAGE_KEY);
+    if (!saved) return {};
+    const parsed = JSON.parse(saved);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const deckIdMap = cachedSanitizeResult?.deckIdMap;
+    const entries = Object.entries(parsed as Record<string, unknown>).filter(
+      (entry): entry is [string, number] =>
+        typeof entry[1] === "number" && Number.isFinite(entry[1]),
+    );
+    return Object.fromEntries(
+      entries.map(([deckId, viewedAt]) => [deckIdMap?.get(deckId) ?? deckId, viewedAt]),
+    );
+  } catch {
+    return {};
   }
 };
 

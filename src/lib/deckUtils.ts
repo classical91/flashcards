@@ -1,5 +1,6 @@
 import { Deck, DeckSection } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
+import { DeckLastViewed } from "./types";
 
 export const shuffleCards = (cards: { id: string; term: string; definition: string }[]) => {
   const copy = [...cards];
@@ -76,6 +77,26 @@ export const mergeSections = (localSections: DeckSection[], cloudSections: DeckS
 };
 
 export const flattenDecks = (sections: DeckSection[]) => sections.flatMap((s) => s.decks);
+
+/**
+ * Orders decks most-recently-opened first so a deck you just studied jumps to
+ * the top of its topic. Decks that have never been opened keep their original
+ * order and stay below the ones that have.
+ */
+export const sortDecksByLastViewed = <T extends { id: string }>(
+  decks: T[],
+  lastViewed: DeckLastViewed,
+): T[] =>
+  decks
+    .map((deck, index) => ({ deck, index, viewedAt: lastViewed[deck.id] }))
+    .sort((a, b) => {
+      if (a.viewedAt === undefined && b.viewedAt === undefined) return a.index - b.index;
+      if (a.viewedAt === undefined) return 1;
+      if (b.viewedAt === undefined) return -1;
+      if (a.viewedAt === b.viewedAt) return a.index - b.index;
+      return b.viewedAt - a.viewedAt;
+    })
+    .map((entry) => entry.deck);
 
 export const findDeckById = (sections: DeckSection[], deckId: string) =>
   flattenDecks(sections).find((deck) => deck.id === deckId) ?? null;

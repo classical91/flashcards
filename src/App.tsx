@@ -9,6 +9,7 @@ import {
 import {
   ACCENT_STORAGE_KEY,
   DAILY_CARD_STORAGE_KEY,
+  DECK_LAST_VIEWED_STORAGE_KEY,
   LIBRARY_STORAGE_KEY,
   MAX_RECENT_DECKS,
   PINNED_DECKS_STORAGE_KEY,
@@ -29,6 +30,7 @@ import { DailyCardRef, pickDailyCard, toDateKey } from "./lib/dailyCard";
 import {
   loadAccentColor,
   loadDailyCard,
+  loadDeckLastViewed,
   loadLibrarySections,
   loadPinnedDeckIds,
   loadProgressState,
@@ -42,6 +44,7 @@ import {
   AiModal,
   ConfirmDialog,
   DeckComposer,
+  DeckLastViewed,
   DeckProgress,
   RecentDeckEntry,
   SectionComposer,
@@ -90,6 +93,7 @@ export default function App() {
   const [defInput, setDefInput] = useState("");
   const [pinnedDeckIds, setPinnedDeckIds] = useState<string[]>(loadPinnedDeckIds);
   const [recentDeckIds, setRecentDeckIds] = useState<RecentDeckEntry[]>(loadRecentDeckIds);
+  const [deckLastViewed, setDeckLastViewed] = useState<DeckLastViewed>(loadDeckLastViewed);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [accentColor, setAccentColor] = useState<AccentColor>(loadAccentColor);
@@ -385,14 +389,16 @@ export default function App() {
   };
 
   const openDeck = (deckId: string) => {
+    const viewedAt = Date.now();
     setSelectedDeckId(deckId);
     setView({ kind: "study", deckId });
     setRecentDeckIds((prev) =>
-      [{ id: deckId, viewedAt: Date.now() }, ...prev.filter((e) => e.id !== deckId)].slice(
+      [{ id: deckId, viewedAt }, ...prev.filter((e) => e.id !== deckId)].slice(
         0,
         MAX_RECENT_DECKS,
       ),
     );
+    setDeckLastViewed((prev) => ({ ...prev, [deckId]: viewedAt }));
   };
 
   const openRandomDeck = (decks: Deck[]) => {
@@ -496,6 +502,12 @@ export default function App() {
           return next;
         });
         setPinnedDeckIds((current) => current.filter((id) => id !== deckId));
+        setRecentDeckIds((current) => current.filter((entry) => entry.id !== deckId));
+        setDeckLastViewed((current) => {
+          const next = { ...current };
+          delete next[deckId];
+          return next;
+        });
         if (currentView.kind === "study" && currentView.deckId === deckId) {
           setView(
             sectionForDeck ? { kind: "section", sectionId: sectionForDeck.id } : { kind: "home" },
@@ -519,6 +531,12 @@ export default function App() {
           return next;
         });
         setPinnedDeckIds((current) => current.filter((id) => !deckIds.includes(id)));
+        setRecentDeckIds((current) => current.filter((entry) => !deckIds.includes(entry.id)));
+        setDeckLastViewed((current) => {
+          const next = { ...current };
+          deckIds.forEach((id) => delete next[id]);
+          return next;
+        });
         setView({ kind: "home" });
         setConfirmDialog(null);
       },
@@ -671,6 +689,7 @@ export default function App() {
   useDebouncedPersist(SELECTED_DECK_STORAGE_KEY, selectedDeckId);
   useDebouncedPersist(PINNED_DECKS_STORAGE_KEY, pinnedDeckIds);
   useDebouncedPersist(RECENT_DECKS_STORAGE_KEY, recentDeckIds);
+  useDebouncedPersist(DECK_LAST_VIEWED_STORAGE_KEY, deckLastViewed);
   useDebouncedPersist(DAILY_CARD_STORAGE_KEY, dailyCardRef);
 
   useEffect(() => {
@@ -816,6 +835,7 @@ export default function App() {
           section={section}
           deckProgress={deckProgress}
           pinnedDeckIds={pinnedDeckIds}
+          deckLastViewed={deckLastViewed}
           deckComposer={deckComposer}
           setDeckComposer={setDeckComposer}
           deckComposerMessage={deckComposerMessage}

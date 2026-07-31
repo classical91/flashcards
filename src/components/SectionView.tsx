@@ -1,8 +1,9 @@
-import { Dispatch, SetStateAction } from "react";
+import { Dispatch, SetStateAction, useMemo } from "react";
 import { Deck, DeckSection } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
-import { createDeckProgress } from "../lib/deckUtils";
-import { DeckComposer, SectionEditor, ViewState } from "../lib/types";
+import { createDeckProgress, sortDecksByLastViewed } from "../lib/deckUtils";
+import { formatRelativeTime } from "../lib/format";
+import { DeckComposer, DeckLastViewed, SectionEditor, ViewState } from "../lib/types";
 
 type ImportPreview = {
   cards: { term: string; definition: string }[];
@@ -13,6 +14,7 @@ type SectionViewProps = {
   section: DeckSection;
   deckProgress: Record<string, DeckProgress>;
   pinnedDeckIds: string[];
+  deckLastViewed: DeckLastViewed;
   deckComposer: DeckComposer | null;
   setDeckComposer: Dispatch<SetStateAction<DeckComposer | null>>;
   deckComposerMessage: string;
@@ -36,6 +38,7 @@ export function SectionView({
   section,
   deckProgress,
   pinnedDeckIds,
+  deckLastViewed,
   deckComposer,
   setDeckComposer,
   deckComposerMessage,
@@ -55,6 +58,13 @@ export function SectionView({
   onDeleteSection,
 }: SectionViewProps) {
   const isEditingSection = sectionEditor?.sectionId === section.id;
+
+  // Opening a deck stamps it in deckLastViewed, so studying a deck floats it to
+  // the top of this list. Never-opened decks keep their original order below.
+  const orderedDecks = useMemo(
+    () => sortDecksByLastViewed(section.decks, deckLastViewed),
+    [section.decks, deckLastViewed],
+  );
 
   return (
     <div className="app">
@@ -234,11 +244,12 @@ export function SectionView({
           <div className="empty-state">No decks yet. Use New deck to add one.</div>
         ) : (
           <div className="decks-list">
-            {section.decks.map((deck) => {
+            {orderedDecks.map((deck) => {
               const progress = deckProgress[deck.id] ?? createDeckProgress(deck);
               const known = progress.knownIds.length;
               const total = deck.cards.length;
               const ratio = total ? known / total : 0;
+              const lastViewedAt = deckLastViewed[deck.id];
               return (
                 <div key={deck.id} className="deck-card-row">
                   <button
@@ -246,7 +257,14 @@ export function SectionView({
                     onClick={() => openDeck(deck.id)}
                   >
                     <div className="deck-card-info">
-                      <div className="deck-card-title">{deck.title}</div>
+                      <div className="deck-card-title">
+                        <span className="deck-card-title-text">{deck.title}</span>
+                        {lastViewedAt !== undefined && (
+                          <span className="deck-card-viewed">
+                            {formatRelativeTime(lastViewedAt)}
+                          </span>
+                        )}
+                      </div>
                       <div className="deck-card-subtitle">{deck.subtitle}</div>
                       <div className="progress-bar-track">
                         <div
