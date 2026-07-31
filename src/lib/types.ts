@@ -43,3 +43,11 @@ export type Theme = "light" | "dark";
 export type AccentColor = "blue" | "purple" | "green" | "red" | "amber";
 
 export type RecentDeckEntry = { id: string; viewedAt: number };
+
+/**
+ * Deck id -> timestamp of the last time the deck was opened. Unlike
+ * recentDeckIds (capped at MAX_RECENT_DECKS for the home page list) this keeps
+ * an entry for every deck ever opened, so a topic's deck list can stay ordered
+ * most-recently-viewed first no matter how many decks are in it.
+ */
+export type DeckLastViewed = Record<string, number>;

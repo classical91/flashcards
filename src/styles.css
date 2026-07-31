@@ -792,12 +792,27 @@ button {
 }
 
 .deck-card-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 14px;
   font-weight: 600;
   margin-bottom: 2px;
+}
+
+.deck-card-title-text {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.deck-card-viewed {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .deck-card-subtitle {
