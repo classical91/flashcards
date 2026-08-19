@@ -65,6 +65,12 @@ beforeAll(async () => {
       PORT: String(port),
       ADMIN_TOKEN: adminToken,
       ALLOW_MEMORY_STORAGE: "true",
+      // These fixtures use readable ids like "library-alpha". Creating a
+      // library now requires a generator-shaped key by default (see
+      // generatedLibraryIdPattern in server.mjs); this suite is about admin
+      // listing and payload limits, not key policy, so it runs in the
+      // supported custom-id mode instead of renaming every fixture.
+      ALLOW_CUSTOM_LIBRARY_IDS: "true",
       DATABASE_URL: "",
       NODE_ENV: "test",
     },
@@ -264,6 +270,7 @@ describe("GET /api/admin/libraries without ADMIN_TOKEN", () => {
         PORT: String(disabledPort),
         ADMIN_TOKEN: "",
         ALLOW_MEMORY_STORAGE: "true",
+        ALLOW_CUSTOM_LIBRARY_IDS: "true",
         DATABASE_URL: "",
         NODE_ENV: "test",
       },

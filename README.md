@@ -93,6 +93,18 @@ New installs generate a private sync key on first use and store it in the browse
 
 There are no user accounts or per-user permissions. Anyone with a sync key can access or edit that cloud library, so keep private keys private and rotate to a new key if one is shared accidentally.
 
+### Why new libraries need a generated key
+
+Generated keys are `fc_` followed by 24 random hex characters — 96 bits, which is not guessable. A hand-typed key like `flashcards` or `password` is, and because a write is an in-place upsert with no history, guessing a key means being able to **overwrite a library unrecoverably**, not merely read it.
+
+So creating a library requires a key that came from the generator (the `fc_` prefix plus at least 16 more characters). This gates creation only:
+
+- Reading any well-formed key still works.
+- A library that already exists keeps saving under whatever key it has, including keys predating this rule. Nobody is stranded.
+- Typing a key that has no library yet is refused with a message pointing at **New key**.
+
+Set `ALLOW_CUSTOM_LIBRARY_IDS=true` on the server if you deliberately want new libraries under hand-picked ids — for example when seeding installs onto a shared `VITE_FLASHCARDS_SYNC_KEY`.
+
 For durable cross-device storage, configure `DATABASE_URL` for the Node server. Without it, the API uses process memory, which works across browsers while the server is running but is lost when the server restarts.
 
 For real deployment, publish the generated `dist/` assets to any static hosting provider.
@@ -148,6 +160,7 @@ included.
 | `ALLOW_MEMORY_STORAGE` | No                | Set to `true` to allow in-memory fallback even when `NODE_ENV=production`. Useful for local staging runs without a database.                              |
 | `ADMIN_TOKEN`          | No                | Strong admin password and bearer token. Enables `/admin`, the library directory API, and confirmed deletion. When unset, all admin API routes return 404. |
 | `ADMIN_USERNAME`       | No                | Username for `/admin`. Defaults to `admin`.                                                                                                               |
+| `ALLOW_CUSTOM_LIBRARY_IDS` | No            | Set to `true` to let a **new** cloud library be created under any well-formed id instead of only a generated `fc_…` key. Needed when seeding installs onto a hand-picked `VITE_FLASHCARDS_SYNC_KEY`. Leave unset otherwise — it re-opens the guessable-key problem described under Cloud Sync. |
 
 ### Client (Vite build-time)
 
@@ -229,6 +242,8 @@ included.
 ## Known Limitations / TODO Signals
 
 - No user accounts are implemented; anyone with the same sync key can access or edit that cloud library.
+- Library writes overwrite in place; there is no snapshot history, so a bad or hostile write cannot be rolled back.
+- `/api/libraries/:id` is unauthenticated and unthrottled, so keys predating the generated-key rule remain guessable at speed if they are short or memorable.
 - Share links cannot be revoked or listed, and shared deck snapshots are never garbage-collected.
 - Large starter content is embedded directly in TypeScript source files.
 - `index.html` title/description currently emphasize “Positive Adjectives,” while the app now supports a broader multi-section library.
