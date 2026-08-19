@@ -1,5 +1,5 @@
 import { Deck } from "../data/deckBuilder";
-import { AiModal, ConfirmDialog } from "../lib/types";
+import { AiModal, ConfirmDialog, SharedDeckLink } from "../lib/types";
 
 type ConfirmOverlayProps = {
   confirmDialog: ConfirmDialog | null;
@@ -82,6 +82,97 @@ export function CardListOverlay({ show, selectedDeck, onClose }: CardListOverlay
               <span className="card-list-def">{card.definition}</span>
             </div>
           ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+type SharedDeckOverlayProps = {
+  sharedDeckLink: SharedDeckLink | null;
+  onImport: () => void;
+  onDismiss: () => void;
+};
+
+/**
+ * Prompt shown after following a `/d/<shareId>` link. The deck is previewed
+ * before anything is written, so a link from a stranger cannot quietly grow
+ * the reader's library.
+ */
+export function SharedDeckOverlay({ sharedDeckLink, onImport, onDismiss }: SharedDeckOverlayProps) {
+  if (!sharedDeckLink) return null;
+
+  if (sharedDeckLink.status !== "ready") {
+    const isError = sharedDeckLink.status === "error";
+    return (
+      <div
+        className="modal-overlay"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onDismiss();
+        }}
+      >
+        <section className="modal">
+          <h2>{isError ? "That shared deck could not be opened" : "Opening shared deck…"}</h2>
+          <p>{isError ? sharedDeckLink.message : "Fetching the deck someone shared with you."}</p>
+          {isError && (
+            <div className="modal-actions">
+              <button className="mini-btn" onClick={onDismiss}>
+                Close
+              </button>
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  }
+
+  const { deck, section } = sharedDeckLink.snapshot;
+  const preview = deck.cards.slice(0, 5);
+  const remaining = deck.cards.length - preview.length;
+
+  return (
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onDismiss();
+      }}
+    >
+      <section className="modal">
+        <h2>Add &ldquo;{deck.title}&rdquo; to your library?</h2>
+        <p>
+          Someone shared this deck with you &mdash; {deck.cards.length} card
+          {deck.cards.length === 1 ? "" : "s"}, filed under {section.title}. It will be added as
+          your own copy, so your edits and progress stay yours.
+        </p>
+        {preview.length > 0 && (
+          <div className="card-list-scroll shared-deck-preview">
+            {preview.map((card, i) => (
+              <div key={card.id} className="card-list-row">
+                <span className="card-list-index">{i + 1}</span>
+                <span className="card-list-term">{card.term}</span>
+                <span className="card-list-def">{card.definition}</span>
+              </div>
+            ))}
+            {remaining > 0 && (
+              <div className="card-list-row shared-deck-more">
+                <span className="card-list-def">
+                  and {remaining} more card{remaining === 1 ? "" : "s"}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="modal-actions">
+          <button className="mini-btn" onClick={onDismiss}>
+            Not now
+          </button>
+          <button className="mini-btn" onClick={onImport}>
+            Add to my library
+          </button>
         </div>
       </section>
     </div>

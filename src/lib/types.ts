@@ -1,5 +1,6 @@
 import { Deck, DeckSection } from "../data/deckBuilder";
 import { DeckProgress, StudyMode } from "../data/librarySnapshot";
+import { SharedDeckSnapshot } from "../data/sharedDeck";
 
 export type { Deck, DeckSection, DeckProgress, StudyMode };
 
@@ -25,6 +26,19 @@ export type ConfirmDialog = {
   message: string;
   onConfirm: () => void;
 };
+
+/**
+ * The state of a `/d/<shareId>` link the reader followed.
+ *
+ * The link lands on whichever view the app opens with, and only the study view
+ * renders the toast — so progress and failure are reported through the import
+ * overlay itself rather than through `toast`, which would be invisible here.
+ * Nothing is written to the library until the reader accepts.
+ */
+export type SharedDeckLink =
+  | { status: "loading"; shareId: string }
+  | { status: "ready"; shareId: string; snapshot: SharedDeckSnapshot }
+  | { status: "error"; shareId: string; message: string };
 
 export type SyncState = "idle" | "loading" | "saving" | "saved" | "error";
 

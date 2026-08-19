@@ -29,6 +29,9 @@ This repository is a Vite React app with a small Node API server for cloud libra
   - `term - definition` (supports spaced hyphen/en dash/em dash)
   - `term: definition`
   - `term-definition`
+- Share a single deck with a link: **Share deck** in the study view publishes a
+  copy and copies a `/d/<shareId>` URL to the clipboard. Opening that link
+  previews the deck and offers to add it to your own library.
 - Persist state in cloud sync storage:
   - library/deck content
   - per-deck study progress
@@ -113,17 +116,38 @@ For real deployment, publish the generated `dist/` assets to any static hosting 
   deletion. Browser sessions use a signed, HttpOnly, SameSite cookie and expire
   after eight hours.
 
+## Sharing a deck
+
+Cloud sync moves a whole library between your own devices. Deck sharing is the
+other direction: one deck, handed to someone else.
+
+- **Publish:** open a deck and choose **Share deck**. The deck and its topic's
+  name are POSTed to `/api/shared-decks`, which stores a snapshot and returns a
+  random `shareId`. The link is copied to your clipboard.
+- **Open:** visiting `/d/<shareId>` loads the app and prompts with a preview of
+  the deck before anything is written. Declining leaves the library untouched.
+- **Accepting** adds the deck as an independent copy. Deck and card ids are
+  re-minted against your library, so an incoming deck can never overwrite or
+  shadow one you already have — importing the same link twice gives you two
+  decks, not a silent merge.
+
+A share is a snapshot, not a subscription: later edits to your copy of the deck
+do not change what someone opening an older link sees. Share links carry no
+authentication — anyone with the id can read that deck — and there is currently
+no way to revoke one, so treat a share link as public. Study progress is never
+included.
+
 ## Environment Variables
 
 ### Server (Node API)
 
-| Variable               | Required          | Description                                                                                                                  |
-| ---------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`         | Yes in production | PostgreSQL connection string. Without it the server uses in-memory storage (data lost on restart).                           |
-| `PORT`                 | No                | HTTP port for the Node server (default: `3000`).                                                                             |
-| `ALLOW_MEMORY_STORAGE` | No                | Set to `true` to allow in-memory fallback even when `NODE_ENV=production`. Useful for local staging runs without a database. |
+| Variable               | Required          | Description                                                                                                                                               |
+| ---------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`         | Yes in production | PostgreSQL connection string. Without it the server uses in-memory storage (data lost on restart).                                                        |
+| `PORT`                 | No                | HTTP port for the Node server (default: `3000`).                                                                                                          |
+| `ALLOW_MEMORY_STORAGE` | No                | Set to `true` to allow in-memory fallback even when `NODE_ENV=production`. Useful for local staging runs without a database.                              |
 | `ADMIN_TOKEN`          | No                | Strong admin password and bearer token. Enables `/admin`, the library directory API, and confirmed deletion. When unset, all admin API routes return 404. |
-| `ADMIN_USERNAME`       | No                | Username for `/admin`. Defaults to `admin`.                                                                                  |
+| `ADMIN_USERNAME`       | No                | Username for `/admin`. Defaults to `admin`.                                                                                                               |
 
 ### Client (Vite build-time)
 
@@ -166,6 +190,7 @@ For real deployment, publish the generated `dist/` assets to any static hosting 
    │  ├─ constants.ts
    │  ├─ deckUtils.ts
    │  ├─ format.ts
+   │  ├─ share.ts
    │  ├─ storage.ts
    │  ├─ sync.ts
    │  └─ types.ts
@@ -204,5 +229,6 @@ For real deployment, publish the generated `dist/` assets to any static hosting 
 ## Known Limitations / TODO Signals
 
 - No user accounts are implemented; anyone with the same sync key can access or edit that cloud library.
+- Share links cannot be revoked or listed, and shared deck snapshots are never garbage-collected.
 - Large starter content is embedded directly in TypeScript source files.
 - `index.html` title/description currently emphasize “Positive Adjectives,” while the app now supports a broader multi-section library.

@@ -11,6 +11,9 @@ export const DAILY_CARD_STORAGE_KEY = "flashcards.dailyCard.v1";
 export const MAX_RECENT_DECKS = 6;
 
 export const syncKeyPattern = /^[A-Za-z0-9_-]{8,120}$/;
+// Mirrors the server's shareIdPattern so a malformed link fails in the UI
+// rather than as a 400 from the API.
+export const shareIdPattern = /^[A-Za-z0-9_-]{10,120}$/;
 export const BUILD_SYNC_KEY = import.meta.env.VITE_FLASHCARDS_SYNC_KEY?.trim() || "";
 
 export const ACCENT_COLORS = ["blue", "purple", "green", "red", "amber"] as const;
