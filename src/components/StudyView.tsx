@@ -58,6 +58,8 @@ type StudyViewProps = {
   onUpdateCard: (cardId: string) => void;
   onUpdateDeckInfo: (info: { title: string; subtitle: string }) => void;
   onExportDeck: () => void;
+  onShareDeck: () => void;
+  isSharingDeck: boolean;
 };
 
 export function StudyView({
@@ -106,6 +108,8 @@ export function StudyView({
   onUpdateCard,
   onUpdateDeckInfo,
   onExportDeck,
+  onShareDeck,
+  isSharingDeck,
 }: StudyViewProps) {
   const isPinned = pinnedDeckIds.includes(selectedDeck.id);
 
@@ -313,6 +317,9 @@ export function StudyView({
               <button className="mini-btn" onClick={onExportDeck} disabled={isDeckEmpty}>
                 Copy cards
               </button>
+              <button className="mini-btn" onClick={onShareDeck} disabled={isDeckEmpty || isSharingDeck}>
+                {isSharingDeck ? "Sharing…" : "Share deck"}
+              </button>
               {currentCard && (
                 <button className="mini-btn danger" onClick={() => onDeleteCard(currentCard.id)}>
                   Delete card
@@ -443,6 +450,9 @@ export function StudyView({
               </button>
               <button className="mini-btn" onClick={onExportDeck} disabled={isDeckEmpty}>
                 Copy cards
+              </button>
+              <button className="mini-btn" onClick={onShareDeck} disabled={isDeckEmpty || isSharingDeck}>
+                {isSharingDeck ? "Sharing…" : "Share deck"}
               </button>
               {currentCard && (
                 <button className="mini-btn danger" onClick={() => onDeleteCard(currentCard.id)}>

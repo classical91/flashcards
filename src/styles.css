@@ -1647,3 +1647,16 @@ button {
 .card-list-def {
   color: var(--muted);
 }
+
+/* ── Shared deck import ───────────────────────────────────────────────────── */
+
+.shared-deck-preview {
+  /* Cap the preview so a 500-card deck cannot push the actions off screen. */
+  max-height: 40svh;
+  margin-bottom: 4px;
+}
+
+.shared-deck-more {
+  grid-template-columns: 1fr;
+  font-style: italic;
+}

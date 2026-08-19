@@ -49,14 +49,27 @@ import {
   RecentDeckEntry,
   SectionComposer,
   SectionEditor,
+  SharedDeckLink,
   StudyMode,
   Theme,
   ViewState,
 } from "./lib/types";
+import {
+  buildShareUrl,
+  createSharedDeck,
+  fetchSharedDeck,
+  getShareIdFromPath,
+  importSharedDeck,
+} from "./lib/share";
 import { useCloudSync } from "./hooks/useCloudSync";
 import { useDebouncedPersist } from "./hooks/useDebouncedPersist";
 import { useStudyKeyboard } from "./hooks/useStudyKeyboard";
-import { AiOverlay, CardListOverlay, ConfirmOverlay } from "./components/Overlays";
+import {
+  AiOverlay,
+  CardListOverlay,
+  ConfirmOverlay,
+  SharedDeckOverlay,
+} from "./components/Overlays";
 import { HomeView } from "./components/HomeView";
 import { PinnedView } from "./components/PinnedView";
 import { SectionView } from "./components/SectionView";
@@ -82,6 +95,8 @@ export default function App() {
   const [sectionEditor, setSectionEditor] = useState<SectionEditor | null>(null);
   const [sectionEditorMessage, setSectionEditorMessage] = useState("");
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
+  const [sharedDeckLink, setSharedDeckLink] = useState<SharedDeckLink | null>(null);
+  const [isSharingDeck, setIsSharingDeck] = useState(false);
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [showThemesPanel, setShowThemesPanel] = useState(false);
   const [view, setView] = useState<ViewState>({ kind: "home" });
@@ -483,6 +498,39 @@ export default function App() {
     }
   };
 
+  const handleShareDeck = async () => {
+    if (!selectedDeck || !selectedSection || isSharingDeck) return;
+    setIsSharingDeck(true);
+    setToast("Creating a share link…");
+    try {
+      const shareId = await createSharedDeck(selectedDeck, selectedSection);
+      const shareUrl = buildShareUrl(shareId, window.location.origin);
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setToast(`Share link copied — anyone with it can add "${selectedDeck.title}".`);
+      } catch {
+        // Clipboard permission can be denied. The link is already saved, so
+        // show it rather than losing it to a failed copy.
+        setToast(`Share link: ${shareUrl}`);
+      }
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Could not create a share link.");
+    } finally {
+      setIsSharingDeck(false);
+    }
+  };
+
+  const handleImportSharedDeck = () => {
+    if (sharedDeckLink?.status !== "ready") return;
+    const { sections, deck } = importSharedDeck(librarySections, sharedDeckLink.snapshot);
+
+    setLibrarySections(sections);
+    setDeckProgress((current) => ({ ...current, [deck.id]: createDeckProgress(deck) }));
+    setSharedDeckLink(null);
+    openDeck(deck.id);
+    setToast(`Added "${deck.title}" to your library.`);
+  };
+
   const handleDeleteDeck = (deckId: string) => {
     const deck = flattenDecks(librarySections).find((d) => d.id === deckId);
     const sectionForDeck = findSectionForDeck(librarySections, deckId);
@@ -752,8 +800,47 @@ export default function App() {
     // Omitting other deps intentionally so unrelated re-renders (e.g. cloud sync) don't cancel the timer.
   }, [isAutoPlaying, currentCard?.id, activeProgress?.isFlipped, view.kind]);
 
-  const confirmOverlay = (
-    <ConfirmOverlay confirmDialog={confirmDialog} onCancel={() => setConfirmDialog(null)} />
+  // A `/d/<shareId>` link boots the normal app (the server rewrites unknown
+  // paths to index.html), so the import prompt is picked up here on mount
+  // rather than through a separate route.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const shareId = getShareIdFromPath(window.location.pathname);
+    if (!shareId) return;
+
+    // Drop the share path straight away: the prompt is a one-off, and leaving
+    // it in the address bar would re-open it on every reload.
+    window.history.replaceState(null, "", "/");
+
+    let cancelled = false;
+    setSharedDeckLink({ status: "loading", shareId });
+    fetchSharedDeck(shareId)
+      .then((snapshot) => {
+        if (!cancelled) setSharedDeckLink({ status: "ready", shareId, snapshot });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setSharedDeckLink({
+          status: "error",
+          shareId,
+          message: error instanceof Error ? error.message : "That shared deck could not be opened.",
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const globalOverlays = (
+    <>
+      <ConfirmOverlay confirmDialog={confirmDialog} onCancel={() => setConfirmDialog(null)} />
+      <SharedDeckOverlay
+        sharedDeckLink={sharedDeckLink}
+        onImport={handleImportSharedDeck}
+        onDismiss={() => setSharedDeckLink(null)}
+      />
+    </>
   );
 
   // ── HOME VIEW ───────────────────────────────────────────────────────────────
@@ -796,7 +883,7 @@ export default function App() {
           setSectionComposerMessage={setSectionComposerMessage}
           onCreateSection={handleCreateSection}
         />
-        {confirmOverlay}
+        {globalOverlays}
       </>
     );
   }
@@ -815,7 +902,7 @@ export default function App() {
           openRandomDeck={openRandomDeck}
           togglePinDeck={togglePinDeck}
         />
-        {confirmOverlay}
+        {globalOverlays}
       </>
     );
   }
@@ -854,7 +941,7 @@ export default function App() {
           onUpdateSection={handleUpdateSection}
           onDeleteSection={handleDeleteSection}
         />
-        {confirmOverlay}
+        {globalOverlays}
       </>
     );
   }
@@ -911,9 +998,11 @@ export default function App() {
         onUpdateCard={handleUpdateCard}
         onUpdateDeckInfo={handleUpdateDeckInfo}
         onExportDeck={handleExportDeck}
+        onShareDeck={handleShareDeck}
+        isSharingDeck={isSharingDeck}
       />
       <AiOverlay aiModal={aiModal} onClose={() => setAiModal(null)} onOpenAI={openAI} />
-      {confirmOverlay}
+      {globalOverlays}
       <CardListOverlay
         show={showCardList}
         selectedDeck={selectedDeck}

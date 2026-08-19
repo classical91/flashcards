@@ -26,6 +26,7 @@ const isDeck = (value: unknown): value is Deck =>
   isRecord(value) &&
   typeof value.id === "string" &&
   typeof value.title === "string" &&
+  typeof value.subtitle === "string" &&
   Array.isArray(value.cards) &&
   value.cards.every(isFlashcard);
 
