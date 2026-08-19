@@ -57,6 +57,12 @@ beforeAll(async () => {
       ...process.env,
       PORT: String(port),
       ALLOW_MEMORY_STORAGE: "true",
+      // These fixtures use readable ids like "library-alpha". Creating a
+      // library now requires a generator-shaped key by default (see
+      // generatedLibraryIdPattern in server.mjs); this suite is about admin
+      // listing and payload limits, not key policy, so it runs in the
+      // supported custom-id mode instead of renaming every fixture.
+      ALLOW_CUSTOM_LIBRARY_IDS: "true",
       DATABASE_URL: "",
       NODE_ENV: "test",
     },

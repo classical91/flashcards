@@ -8,11 +8,37 @@ export const getBuildSyncKey = (value: string | undefined) => {
   return isSyncKeyValid(normalized) ? normalized : null;
 };
 
+/**
+ * Mints a sync key.
+ *
+ * The key is the only thing protecting a cloud library — anyone holding it can
+ * read or overwrite that library — so every branch here has to be
+ * cryptographically random. `randomUUID` is unavailable outside secure contexts
+ * and on older Safari, hence the `getRandomValues` step before the last resort.
+ *
+ * The `fc_` prefix is load-bearing: the server requires it to CREATE a library,
+ * which is what stops a hand-typed key like "flashcards" from opening a
+ * guessable one.
+ */
 export const createSyncKey = () => {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `fc_${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
+  // Typed as possibly-undefined rather than probed with `in`: the DOM lib types
+  // both methods as always present, so `in` narrows the later branches to never.
+  const webCrypto: Crypto | undefined = typeof crypto === "undefined" ? undefined : crypto;
+
+  if (typeof webCrypto?.randomUUID === "function") {
+    return `fc_${webCrypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
   }
-  return `fc_${Math.random().toString(36).slice(2, 14)}${Date.now().toString(36)}`;
+
+  if (typeof webCrypto?.getRandomValues === "function") {
+    const bytes = webCrypto.getRandomValues(new Uint8Array(12));
+    return `fc_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  }
+
+  // Last resort only. Math.random is not cryptographically random and Date.now
+  // is outright predictable, so this sits strictly behind both branches above
+  // rather than being a general fallback.
+  const random = () => Math.random().toString(36).slice(2).padStart(11, "0");
+  return `fc_${`${random()}${random()}`.slice(0, 24)}`;
 };
 
 export const getFetchErrorMessage = async (response: Response) => {
