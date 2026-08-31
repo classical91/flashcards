@@ -108,7 +108,30 @@ export const touchSection = (section: DeckSection, now = Date.now()): DeckSectio
   updatedAt: now,
 });
 
-export const touchProgress = (progress: DeckProgress, now = Date.now()): DeckProgress => ({
+/**
+ * Stamps a progress change.
+ *
+ * `updatedAt` covers the whole object and is only still written for clients
+ * that predate per-field merging and settle progress by comparing it. This
+ * codebase merges known marks and review schedules per card instead, and
+ * `positionUpdatedAt` covers just where you are in the deck — set it when the
+ * user actually moved or changed study mode, not when they flipped a card.
+ */
+export const touchProgress = (
+  progress: DeckProgress,
+  { position = false, now = Date.now() }: { position?: boolean; now?: number } = {},
+): DeckProgress => ({
   ...progress,
   updatedAt: now,
+  ...(position ? { positionUpdatedAt: now } : {}),
+});
+
+/** Records that a card's known state changed now, so the change can be merged. */
+export const touchKnownCard = (
+  progress: DeckProgress,
+  cardId: string,
+  now = Date.now(),
+): DeckProgress => ({
+  ...progress,
+  knownUpdatedAt: { ...(progress.knownUpdatedAt ?? {}), [cardId]: now },
 });

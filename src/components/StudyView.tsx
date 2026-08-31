@@ -61,6 +61,8 @@ type StudyViewProps = {
   isReviewing: boolean;
   dueCount: number;
   newCount: number;
+  /** How long until the next not-yet-ready card returns, e.g. "in 9 min". */
+  nextReviewLabel: string | null;
   gradePreview: Record<ReviewGrade, string>;
   onStartReview: () => void;
   onExitReview: () => void;
@@ -120,6 +122,7 @@ export function StudyView({
   isReviewing,
   dueCount,
   newCount,
+  nextReviewLabel,
   gradePreview,
   onStartReview,
   onExitReview,
@@ -311,10 +314,12 @@ export function StudyView({
             </div>
           ) : (
             <div className="state-card">
-              <h3>All done!</h3>
+              <h3>{isReviewing && nextReviewLabel ? "Nothing ready yet" : "All done!"}</h3>
               <p>
                 {isReviewing
-                  ? "Nothing left to review in this deck today."
+                  ? nextReviewLabel
+                    ? `The next card comes back ${nextReviewLabel}.`
+                    : "Nothing left to review in this deck today."
                   : "You've worked through every remaining card."}
               </p>
               <div className="state-card-actions">

@@ -199,14 +199,110 @@ describe("mergeLibraryState — progress", () => {
   it("does not resurrect a card the user unmarked on the newer device", () => {
     const local = state({
       librarySections: [section("topic", [deck("d1", ["a", "b"])])],
-      deckProgress: { d1: progress({ knownIds: ["a"], updatedAt: NOW }) },
+      deckProgress: {
+        d1: progress({ knownIds: ["a"], knownUpdatedAt: { b: NOW } }),
+      },
     });
     const remote = state({
       librarySections: [section("topic", [deck("d1", ["a", "b"])])],
-      deckProgress: { d1: progress({ knownIds: ["a", "b"], updatedAt: NOW - 1 }) },
+      deckProgress: {
+        d1: progress({ knownIds: ["a", "b"], knownUpdatedAt: { b: NOW - 1 } }),
+      },
     });
 
     expect(mergeLibraryState(local, remote, NOW).deckProgress.d1.knownIds).toEqual(["a"]);
+  });
+
+  it("keeps marks made on two devices for different cards", () => {
+    const local = state({
+      librarySections: [section("topic", [deck("d1", ["a", "b", "c"])])],
+      deckProgress: {
+        d1: progress({ knownIds: ["a"], knownUpdatedAt: { a: NOW }, positionUpdatedAt: NOW }),
+      },
+    });
+    const remote = state({
+      librarySections: [section("topic", [deck("d1", ["a", "b", "c"])])],
+      deckProgress: {
+        d1: progress({
+          knownIds: ["b"],
+          knownUpdatedAt: { b: NOW - 1000 },
+          positionUpdatedAt: NOW - 1000,
+        }),
+      },
+    });
+
+    expect(mergeLibraryState(local, remote, NOW).deckProgress.d1.knownIds.sort()).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("keeps an unmark on one device and a mark on another", () => {
+    const local = state({
+      librarySections: [section("topic", [deck("d1", ["a", "b"])])],
+      deckProgress: {
+        d1: progress({ knownIds: [], knownUpdatedAt: { a: NOW } }),
+      },
+    });
+    const remote = state({
+      librarySections: [section("topic", [deck("d1", ["a", "b"])])],
+      deckProgress: {
+        d1: progress({ knownIds: ["a", "b"], knownUpdatedAt: { a: NOW - 100, b: NOW - 50 } }),
+      },
+    });
+
+    expect(mergeLibraryState(local, remote, NOW).deckProgress.d1.knownIds).toEqual(["b"]);
+  });
+
+  it("lets an explicit unmark beat a mark from a client too old to stamp it", () => {
+    const local = state({
+      librarySections: [section("topic", [deck("d1", ["a"])])],
+      deckProgress: { d1: progress({ knownIds: [], knownUpdatedAt: { a: NOW } }) },
+    });
+    const remote = state({
+      librarySections: [section("topic", [deck("d1", ["a"])])],
+      deckProgress: { d1: progress({ knownIds: ["a"] }) },
+    });
+
+    expect(mergeLibraryState(local, remote, NOW).deckProgress.d1.knownIds).toEqual([]);
+  });
+
+  it("does not let navigating on one device discard a mark from another", () => {
+    const local = state({
+      librarySections: [section("topic", [deck("d1", ["a", "b"])])],
+      // This device only moved to another card — much later, but it changed
+      // nothing about what is known.
+      deckProgress: {
+        d1: progress({
+          currentCardId: "b",
+          positionUpdatedAt: NOW + 60_000,
+          updatedAt: NOW + 60_000,
+        }),
+      },
+    });
+    const remote = state({
+      librarySections: [section("topic", [deck("d1", ["a", "b"])])],
+      deckProgress: {
+        d1: progress({ knownIds: ["a"], knownUpdatedAt: { a: NOW }, updatedAt: NOW }),
+      },
+    });
+
+    const merged = mergeLibraryState(local, remote, NOW).deckProgress.d1;
+    expect(merged.knownIds).toEqual(["a"]);
+    expect(merged.currentCardId).toBe("b");
+  });
+
+  it("never takes the other device's flipped state", () => {
+    const local = state({
+      librarySections: [section("topic", [deck("d1", ["a"])])],
+      deckProgress: { d1: progress({ isFlipped: false }) },
+    });
+    const remote = state({
+      librarySections: [section("topic", [deck("d1", ["a"])])],
+      deckProgress: { d1: progress({ isFlipped: true, positionUpdatedAt: NOW }) },
+    });
+
+    expect(mergeLibraryState(local, remote, NOW).deckProgress.d1.isFlipped).toBe(false);
   });
 
   it("still unions progress that predates timestamps, so the upgrade loses nothing", () => {
@@ -240,7 +336,9 @@ describe("mergeLibraryState — progress", () => {
   it("gives a deck with no progress on either side a fresh entry", () => {
     const local = state({ librarySections: [section("topic", [deck("d1", ["a"])])] });
     const merged = mergeLibraryState(local, state(), NOW);
-    expect(merged.deckProgress.d1).toEqual(progress({ currentCardId: "a" }));
+    expect(merged.deckProgress.d1).toEqual(
+      progress({ currentCardId: "a", knownUpdatedAt: {}, positionUpdatedAt: 0 }),
+    );
   });
 });
 
@@ -325,25 +423,46 @@ describe("tombstone keys", () => {
 });
 
 describe("mergeLibraryState — review schedules", () => {
-  const schedule = (due: number) => ({
+  const schedule = (lastReviewedAt: number, due = lastReviewedAt + 86_400_000) => ({
     due,
     interval: 1,
     ease: 2.5,
     reps: 1,
     lapses: 0,
-    lastReviewedAt: due,
+    lastReviewedAt,
   });
 
-  it("keeps the schedules from the device that reviewed most recently", () => {
+  const twoCardDeck = () => [section("topic", [deck("d1", ["a", "b"])])];
+
+  it("keeps grades made on two devices for different cards", () => {
     const local = state({
-      librarySections: [section("topic", [deck("d1", ["a"])])],
-      deckProgress: { d1: progress({ reviews: { a: schedule(NOW) }, updatedAt: NOW }) },
+      librarySections: twoCardDeck(),
+      deckProgress: { d1: progress({ reviews: { a: schedule(NOW) } }) },
     });
     const remote = state({
-      librarySections: [section("topic", [deck("d1", ["a"])])],
+      librarySections: twoCardDeck(),
+      deckProgress: { d1: progress({ reviews: { b: schedule(NOW - 5000) } }) },
+    });
+
+    const merged = mergeLibraryState(local, remote, NOW).deckProgress.d1.reviews ?? {};
+    expect(Object.keys(merged).sort()).toEqual(["a", "b"]);
+  });
+
+  it("does not let navigating on one device discard a grade from another", () => {
+    const local = state({
+      librarySections: twoCardDeck(),
+      // Nothing graded here — the user only moved to the next card, later.
       deckProgress: {
-        d1: progress({ reviews: { a: schedule(NOW - 5000) }, updatedAt: NOW - 1 }),
+        d1: progress({
+          currentCardId: "b",
+          positionUpdatedAt: NOW + 60_000,
+          updatedAt: NOW + 60_000,
+        }),
       },
+    });
+    const remote = state({
+      librarySections: twoCardDeck(),
+      deckProgress: { d1: progress({ reviews: { a: schedule(NOW) }, updatedAt: NOW }) },
     });
 
     expect(mergeLibraryState(local, remote, NOW).deckProgress.d1.reviews).toEqual({
@@ -351,16 +470,122 @@ describe("mergeLibraryState — review schedules", () => {
     });
   });
 
+  it("keeps the later review when both devices graded the same card", () => {
+    const local = state({
+      librarySections: twoCardDeck(),
+      deckProgress: { d1: progress({ reviews: { a: schedule(NOW) } }) },
+    });
+    const remote = state({
+      librarySections: twoCardDeck(),
+      deckProgress: { d1: progress({ reviews: { a: schedule(NOW - 5000) } }) },
+    });
+
+    expect(mergeLibraryState(local, remote, NOW).deckProgress.d1.reviews).toEqual({
+      a: schedule(NOW),
+    });
+  });
+
+  it("lets Reset progress clear schedules the other device still holds", () => {
+    const local = state({
+      librarySections: twoCardDeck(),
+      deckProgress: { d1: progress({ resetAt: NOW }) },
+    });
+    const remote = state({
+      librarySections: twoCardDeck(),
+      deckProgress: { d1: progress({ reviews: { a: schedule(NOW - 5000) } }) },
+    });
+
+    expect(mergeLibraryState(local, remote, NOW).deckProgress.d1.reviews).toEqual({});
+  });
+
+  it("keeps a review made after the reset", () => {
+    const local = state({
+      librarySections: twoCardDeck(),
+      deckProgress: { d1: progress({ resetAt: NOW }) },
+    });
+    const remote = state({
+      librarySections: twoCardDeck(),
+      deckProgress: { d1: progress({ reviews: { a: schedule(NOW + 1000) } }) },
+    });
+
+    expect(
+      Object.keys(mergeLibraryState(local, remote, NOW).deckProgress.d1.reviews ?? {}),
+    ).toEqual(["a"]);
+  });
+
   it("drops the schedule of a card that no longer exists", () => {
     const local = state({
       librarySections: [section("topic", [deck("d1", ["a"])])],
       deckProgress: {
-        d1: progress({ reviews: { a: schedule(NOW), gone: schedule(NOW) }, updatedAt: NOW }),
+        d1: progress({ reviews: { a: schedule(NOW), gone: schedule(NOW) } }),
       },
     });
 
     expect(
       Object.keys(mergeLibraryState(local, state(), NOW).deckProgress.d1.reviews ?? {}),
     ).toEqual(["a"]);
+  });
+});
+
+describe("mergeLibraryState — a re-created deck id", () => {
+  // Ids are slug-derived, so deleting "Biology" and making a new deck by the
+  // same name reuses the id.
+  const deleted = NOW;
+  const recreated = NOW + 1000;
+
+  const localAfterRecreating = () =>
+    state({
+      librarySections: [
+        section("topic", [
+          {
+            ...deck("biology", [], recreated),
+            cards: [{ ...card("mitosis", recreated) }],
+          },
+        ]),
+      ],
+      tombstones: recordDeckDeletion(emptyTombstones(), "biology", deleted),
+    });
+
+  const staleDeviceWithOldDeck = () =>
+    state({
+      librarySections: [
+        section("topic", [
+          { ...deck("biology", [], deleted - 5000), cards: [{ ...card("photosynthesis") }] },
+        ]),
+      ],
+    });
+
+  it("keeps the new deck", () => {
+    const merged = mergeLibraryState(localAfterRecreating(), staleDeviceWithOldDeck(), NOW);
+    expect(deckIds(merged.librarySections)).toEqual(["biology"]);
+  });
+
+  it("does not let the old deck's cards come back into it", () => {
+    const merged = mergeLibraryState(localAfterRecreating(), staleDeviceWithOldDeck(), NOW);
+    expect(cardIds(merged.librarySections, "biology")).toEqual(["mitosis"]);
+  });
+
+  it("applies the same rule to a re-created topic", () => {
+    const local = state({
+      librarySections: [section("biology", [deck("cells", ["a"], recreated)], recreated)],
+      tombstones: recordSectionDeletion(emptyTombstones(), "biology", deleted),
+    });
+    const stale = state({
+      librarySections: [
+        section("biology", [deck("old-deck", ["x"], deleted - 5000)], deleted - 5000),
+      ],
+    });
+
+    expect(deckIds(mergeLibraryState(local, stale, NOW).librarySections)).toEqual(["cells"]);
+  });
+
+  it("still merges normally when the deck was never deleted", () => {
+    const local = state({ librarySections: [section("topic", [deck("d1", ["a"])])] });
+    const remote = state({ librarySections: [section("topic", [deck("d1", ["b"])])] });
+
+    expect(cardIds(mergeLibraryState(local, remote, NOW).librarySections, "d1")).toEqual([
+      "a",
+      "b",
+    ]);
   });
 });

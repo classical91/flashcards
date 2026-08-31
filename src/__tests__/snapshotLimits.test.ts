@@ -226,6 +226,53 @@ describe("review schedules", () => {
     expect(result.status).toBe(200);
   });
 
+  it("accepts the per-card progress stamps the merge needs", async () => {
+    const snapshot = buildSnapshot([{ title: "Words", cardCount: 2 }]);
+    const result = await put("progress-stamps-key", {
+      ...snapshot,
+      deckProgress: {
+        "deck-0": {
+          ...snapshot.deckProgress["deck-0"],
+          knownUpdatedAt: { "card-0-0": 1700000000000 },
+          positionUpdatedAt: 1700000000000,
+          resetAt: 1699000000000,
+          updatedAt: 1700000000000,
+        },
+      },
+    });
+
+    expect(result.status).toBe(200);
+  });
+
+  it("rejects a non-numeric known-state stamp", async () => {
+    const snapshot = buildSnapshot([{ title: "Words", cardCount: 2 }]);
+    const result = await put("progress-stamps-bad-key", {
+      ...snapshot,
+      deckProgress: {
+        "deck-0": {
+          ...snapshot.deckProgress["deck-0"],
+          knownUpdatedAt: { "card-0-0": "earlier" },
+        },
+      },
+    });
+
+    expect(result.status).toBe(400);
+    expect(result.body.message).toContain("knownUpdatedAt");
+  });
+
+  it("rejects a non-numeric resetAt", async () => {
+    const snapshot = buildSnapshot([{ title: "Words", cardCount: 2 }]);
+    const result = await put("progress-reset-bad-key", {
+      ...snapshot,
+      deckProgress: {
+        "deck-0": { ...snapshot.deckProgress["deck-0"], resetAt: "yesterday" },
+      },
+    });
+
+    expect(result.status).toBe(400);
+    expect(result.body.message).toContain("resetAt");
+  });
+
   it("rejects a schedule with a missing field", async () => {
     const result = await put(
       "reviews-bad-key",

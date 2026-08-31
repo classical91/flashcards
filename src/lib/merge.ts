@@ -5,8 +5,9 @@ import {
   SyncedPreferences,
   defaultPreferences,
 } from "../data/librarySnapshot";
+import { ReviewState } from "./srs";
 import { MAX_RECENT_DECKS } from "./constants";
-import { createDeckProgress, flattenDecks } from "./deckUtils";
+import { flattenDecks } from "./deckUtils";
 import {
   Tombstones,
   cardTombstoneKey,
@@ -53,7 +54,29 @@ const orderedIds = <T extends { id: string }>(local: T[], remote: T[]) => {
 const byId = <T extends { id: string }>(items: T[]) =>
   new Map(items.map((item) => [item.id, item]));
 
+/**
+ * When the container an entity lives in was deleted, or -1 if it wasn't.
+ *
+ * Deleting a deck records one tombstone for the deck, not one per card — a
+ * 5,000-card deck would otherwise blow past the snapshot's tombstone budget.
+ * Cards are checked against it instead, which covers the case that matters:
+ * an id is slug-derived, so deleting "Biology" and later creating another deck
+ * by that name reuses the id. The new deck outlives its own tombstone because
+ * it is stamped later, and its cards do too — but the old incarnation's cards,
+ * still sitting on a device that hasn't synced, are older than the delete and
+ * are dropped instead of being unioned back in.
+ */
+const containerDeletedAt = (tombstones: Tombstones, sectionId: string, deckId?: string) =>
+  Math.max(
+    tombstones.sections[sectionId] ?? -1,
+    deckId === undefined ? -1 : (tombstones.decks[deckId] ?? -1),
+  );
+
+const outlivesContainer = (entity: { updatedAt?: number }, deletedAt: number) =>
+  stamp(entity) > deletedAt;
+
 const mergeCards = (
+  sectionId: string,
   deckId: string,
   localCards: Flashcard[],
   remoteCards: Flashcard[],
@@ -61,16 +84,21 @@ const mergeCards = (
 ): Flashcard[] => {
   const local = byId(localCards);
   const remote = byId(remoteCards);
+  const deletedAt = containerDeletedAt(tombstones, sectionId, deckId);
   return orderedIds(localCards, remoteCards)
     .map((cardId) => newerOf(local.get(cardId), remote.get(cardId)))
     .filter((card): card is Flashcard => {
       if (!card) return false;
-      return !isDeleted(tombstones.cards, cardTombstoneKey(deckId, card.id), card.updatedAt);
+      if (isDeleted(tombstones.cards, cardTombstoneKey(deckId, card.id), card.updatedAt)) {
+        return false;
+      }
+      return outlivesContainer(card, deletedAt);
     })
     .map((card) => ({ ...card }));
 };
 
 const mergeDecks = (
+  sectionId: string,
   localDecks: Deck[],
   remoteDecks: Deck[],
   tombstones: Tombstones,
@@ -78,6 +106,7 @@ const mergeDecks = (
 ): Deck[] => {
   const local = byId(localDecks);
   const remote = byId(remoteDecks);
+  const sectionDeletedAt = containerDeletedAt(tombstones, sectionId);
   const merged: Deck[] = [];
 
   orderedIds(localDecks, remoteDecks).forEach((deckId) => {
@@ -89,10 +118,19 @@ const mergeDecks = (
     const winner = newerOf(localDeck, remoteDeck);
     if (!winner) return;
     if (isDeleted(tombstones.decks, deckId, Math.max(stamp(localDeck), stamp(remoteDeck)))) return;
+    // Same rule one level up: a topic deleted and re-created under the same id
+    // must not pull its old decks back off a stale device.
+    if (!outlivesContainer(winner, sectionDeletedAt)) return;
     claimedDeckIds.add(deckId);
     merged.push({
       ...winner,
-      cards: mergeCards(deckId, localDeck?.cards ?? [], remoteDeck?.cards ?? [], tombstones),
+      cards: mergeCards(
+        sectionId,
+        deckId,
+        localDeck?.cards ?? [],
+        remoteDeck?.cards ?? [],
+        tombstones,
+      ),
     });
   });
 
@@ -122,6 +160,7 @@ const mergeSectionLists = (
     merged.push({
       ...winner,
       decks: mergeDecks(
+        sectionId,
         localSection?.decks ?? [],
         remoteSection?.decks ?? [],
         tombstones,
@@ -133,6 +172,144 @@ const mergeSectionLists = (
   return merged;
 };
 
+/** Per-card union keeping the later timestamp for ids both sides recorded. */
+const mergeStampsByCard = (
+  local: Record<string, number> | undefined,
+  remote: Record<string, number> | undefined,
+  validCardIds: Set<string>,
+) => {
+  const merged: Record<string, number> = {};
+  [local ?? {}, remote ?? {}].forEach((source) => {
+    Object.entries(source).forEach(([cardId, at]) => {
+      if (!validCardIds.has(cardId)) return;
+      if (merged[cardId] === undefined || at > merged[cardId]) merged[cardId] = at;
+    });
+  });
+  return merged;
+};
+
+/**
+ * Merges review schedules one card at a time, newest review winning.
+ *
+ * Taking whole progress objects would mean a card graded on the phone is
+ * erased the moment the laptop so much as navigates — the two devices were
+ * never really in conflict, they touched different cards.
+ *
+ * `resetAt` is the exception: a schedule from before a reset is discarded, so
+ * "Reset progress" reaches other devices instead of being refilled by whoever
+ * still holds the old schedules.
+ */
+const mergeReviews = (
+  local: DeckProgress | undefined,
+  remote: DeckProgress | undefined,
+  validCardIds: Set<string>,
+  resetAt: number,
+) => {
+  const merged: Record<string, ReviewState> = {};
+  const cardIds = new Set([
+    ...Object.keys(local?.reviews ?? {}),
+    ...Object.keys(remote?.reviews ?? {}),
+  ]);
+
+  cardIds.forEach((cardId) => {
+    if (!validCardIds.has(cardId)) return;
+    const localReview = local?.reviews?.[cardId];
+    const remoteReview = remote?.reviews?.[cardId];
+    const winner =
+      localReview && remoteReview
+        ? remoteReview.lastReviewedAt > localReview.lastReviewedAt
+          ? remoteReview
+          : localReview
+        : (localReview ?? remoteReview);
+    if (!winner || winner.lastReviewedAt <= resetAt) return;
+    merged[cardId] = winner;
+  });
+
+  return merged;
+};
+
+/**
+ * Merges known marks one card at a time.
+ *
+ * A card's membership is decided by whichever side last changed it. A side
+ * that has a stamp for the card beats one that doesn't, so an explicit unmark
+ * wins over a mark carried along by a client too old to stamp anything. When
+ * neither side has ever stamped the card the marks are unioned, which is how
+ * this worked before stamps existed — an upgrade shouldn't drop progress.
+ */
+const mergeKnownIds = (
+  local: DeckProgress | undefined,
+  remote: DeckProgress | undefined,
+  validCardIds: Set<string>,
+  knownUpdatedAt: Record<string, number>,
+) => {
+  const localKnown = new Set(local?.knownIds ?? []);
+  const remoteKnown = new Set(remote?.knownIds ?? []);
+  const candidates = new Set([...localKnown, ...remoteKnown, ...Object.keys(knownUpdatedAt)]);
+  const known: string[] = [];
+
+  candidates.forEach((cardId) => {
+    if (!validCardIds.has(cardId)) return;
+    const localStamp = local?.knownUpdatedAt?.[cardId];
+    const remoteStamp = remote?.knownUpdatedAt?.[cardId];
+    const isKnown =
+      localStamp === undefined && remoteStamp === undefined
+        ? localKnown.has(cardId) || remoteKnown.has(cardId)
+        : remoteStamp === undefined
+          ? localKnown.has(cardId)
+          : localStamp === undefined
+            ? remoteKnown.has(cardId)
+            : remoteStamp > localStamp
+              ? remoteKnown.has(cardId)
+              : localKnown.has(cardId);
+    if (isKnown) known.push(cardId);
+  });
+
+  return known;
+};
+
+/** Where the user was in the deck. Flipping deliberately doesn't count. */
+const positionStamp = (progress: DeckProgress | undefined) =>
+  progress?.positionUpdatedAt ?? progress?.updatedAt ?? 0;
+
+const mergeOneDeckProgress = (
+  local: DeckProgress | undefined,
+  remote: DeckProgress | undefined,
+  deck: Deck,
+): DeckProgress => {
+  const validCardIds = new Set(deck.cards.map((card) => card.id));
+  const resetAt = Math.max(local?.resetAt ?? 0, remote?.resetAt ?? 0);
+  const knownUpdatedAt = mergeStampsByCard(
+    local?.knownUpdatedAt,
+    remote?.knownUpdatedAt,
+    validCardIds,
+  );
+  const knownIds = mergeKnownIds(local, remote, validCardIds, knownUpdatedAt);
+  const position =
+    local && remote
+      ? positionStamp(remote) > positionStamp(local)
+        ? remote
+        : local
+      : (local ?? remote);
+
+  const currentCardId = position?.currentCardId ?? "";
+  const updatedAt = Math.max(local?.updatedAt ?? 0, remote?.updatedAt ?? 0);
+
+  return {
+    currentCardId: validCardIds.has(currentCardId) ? currentCardId : (deck.cards[0]?.id ?? ""),
+    knownIds,
+    // Whether the card in front of you is face up is about this screen right
+    // now, not about the library, so it is never taken from the other device.
+    isFlipped: local?.isFlipped ?? false,
+    studyMode: position?.studyMode ?? "all",
+    reviews: mergeReviews(local, remote, validCardIds, resetAt),
+    knownUpdatedAt,
+    positionUpdatedAt: Math.max(positionStamp(local), positionStamp(remote)),
+    ...(resetAt > 0 ? { resetAt } : {}),
+    ...(updatedAt > 0 ? { updatedAt } : {}),
+  };
+};
+
 const mergeDeckProgress = (
   localProgress: Record<string, DeckProgress>,
   remoteProgress: Record<string, DeckProgress>,
@@ -141,38 +318,10 @@ const mergeDeckProgress = (
   const merged: Record<string, DeckProgress> = {};
 
   flattenDecks(sections).forEach((deck) => {
-    const local = localProgress[deck.id];
-    const remote = remoteProgress[deck.id];
-    const validCardIds = new Set(deck.cards.map((card) => card.id));
-
-    let base: DeckProgress;
-    if (local && remote) {
-      // Libraries saved before progress carried a stamp have nothing to
-      // compare, so they keep the old additive behaviour rather than letting
-      // an arbitrary side erase the other's marks. Once either device has
-      // written stamped progress, last-writer-wins takes over and an unmark
-      // stops bouncing back.
-      if (local.updatedAt === undefined && remote.updatedAt === undefined) {
-        base = { ...local, knownIds: Array.from(new Set([...remote.knownIds, ...local.knownIds])) };
-      } else {
-        base = newerOf(local, remote) as DeckProgress;
-      }
-    } else {
-      base = local ?? remote ?? createDeckProgress(deck);
-    }
-
-    const knownIds = base.knownIds.filter((id) => validCardIds.has(id));
-    const reviews = Object.fromEntries(
-      Object.entries(base.reviews ?? {}).filter(([cardId]) => validCardIds.has(cardId)),
-    );
-    merged[deck.id] = {
-      ...base,
-      knownIds,
-      reviews,
-      currentCardId: validCardIds.has(base.currentCardId)
-        ? base.currentCardId
-        : (deck.cards[0]?.id ?? ""),
-    };
+    // Run even when neither side has progress for the deck: the result is the
+    // same fresh entry createDeckProgress would give, and going through one
+    // path keeps merging idempotent in shape as well as in meaning.
+    merged[deck.id] = mergeOneDeckProgress(localProgress[deck.id], remoteProgress[deck.id], deck);
   });
 
   return merged;
