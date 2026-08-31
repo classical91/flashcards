@@ -6,6 +6,7 @@ import {
   parsePastedFlashcards,
   withCardIds,
 } from "./data/deckBuilder";
+import { createLibrarySnapshot } from "./data/librarySnapshot";
 import {
   ACCENT_STORAGE_KEY,
   DAILY_CARD_STORAGE_KEY,
@@ -33,12 +34,21 @@ import {
   touchSection,
   updateDeckInSections,
 } from "./lib/deckUtils";
-import { LibraryState } from "./lib/merge";
+import { LibraryState, mergeLibraryState } from "./lib/merge";
 import {
+  collectEntityIds,
+  forgetDeletions,
   recordCardDeletion,
   recordDeckDeletion,
   recordSectionDeletion,
 } from "./lib/tombstones";
+import {
+  buildBackupFileName,
+  countBackupCards,
+  downloadTextFile,
+  readBackup,
+  serializeBackup,
+} from "./lib/backup";
 import { DailyCardRef, pickDailyCard, toDateKey } from "./lib/dailyCard";
 import {
   loadAccentColor,
@@ -114,6 +124,7 @@ export default function App() {
   const [sharedDeckLink, setSharedDeckLink] = useState<SharedDeckLink | null>(null);
   const [isSharingDeck, setIsSharingDeck] = useState(false);
   const [showSyncPanel, setShowSyncPanel] = useState(false);
+  const [backupMessage, setBackupMessage] = useState("");
   const [showThemesPanel, setShowThemesPanel] = useState(false);
   const [view, setView] = useState<ViewState>({ kind: "home" });
   const [toast, setToast] = useState(
@@ -591,6 +602,74 @@ export default function App() {
     }
   };
 
+  const handleDownloadBackup = () => {
+    const snapshot = createLibrarySnapshot({
+      librarySections,
+      deckProgress,
+      selectedDeckId,
+      tombstones,
+      preferences,
+    });
+    const fileName = buildBackupFileName();
+    try {
+      downloadTextFile(fileName, serializeBackup(snapshot));
+    } catch {
+      setBackupMessage("This browser wouldn't let the backup download.");
+      return;
+    }
+    const cardCount = countBackupCards(snapshot);
+    setBackupMessage(`Saved ${cardCount} card${cardCount === 1 ? "" : "s"} to ${fileName}.`);
+  };
+
+  const handleRestoreBackup = async (file: File) => {
+    setBackupMessage(`Reading ${file.name}…`);
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      setBackupMessage("That file couldn't be read.");
+      return;
+    }
+    const result = readBackup(text);
+    if (!result.ok) {
+      setBackupMessage(result.message);
+      return;
+    }
+
+    const { snapshot } = result;
+    const cardCount = countBackupCards(snapshot);
+    askConfirm(
+      `Restore ${cardCount} card${cardCount === 1 ? "" : "s"} from ${file.name}? ` +
+        "Anything only in the backup comes back, and nothing already here is removed.",
+      () => {
+        // Restoring is an explicit request for the backup's contents, so the
+        // deletions covering them are dropped first — otherwise the merge
+        // would honour them and delete everything again.
+        const restoredIds = collectEntityIds(snapshot.librarySections);
+        const merged = mergeLibraryState(
+          { ...libraryState, tombstones: forgetDeletions(tombstones, restoredIds) },
+          {
+            librarySections: snapshot.librarySections,
+            deckProgress: snapshot.deckProgress,
+            tombstones: forgetDeletions(snapshot.tombstones, restoredIds),
+            preferences: snapshot.preferences,
+          },
+        );
+        const mergedDeckIds = new Set(flattenDecks(merged.librarySections).map((deck) => deck.id));
+        startTransition(() => {
+          applyMergedState(
+            merged,
+            mergedDeckIds.has(selectedDeckId)
+              ? selectedDeckId
+              : (merged.librarySections[0]?.decks[0]?.id ?? ""),
+          );
+        });
+        setBackupMessage(`Restored ${cardCount} card${cardCount === 1 ? "" : "s"} from ${file.name}.`);
+        setConfirmDialog(null);
+      },
+    );
+  };
+
   const handleShareDeck = async () => {
     if (!selectedDeck || !selectedSection || isSharingDeck) return;
     setIsSharingDeck(true);
@@ -992,6 +1071,9 @@ export default function App() {
           onLoadFromCloud={cloudSync.onLoadFromCloud}
           onSaveToCloud={cloudSync.onSaveToCloud}
           onGenerateSyncKey={cloudSync.onGenerateSyncKey}
+          backupMessage={backupMessage}
+          onDownloadBackup={handleDownloadBackup}
+          onRestoreBackup={handleRestoreBackup}
           showThemesPanel={showThemesPanel}
           setShowThemesPanel={setShowThemesPanel}
           theme={theme}

@@ -1268,6 +1268,16 @@ button {
   font-size: 13px;
 }
 
+/* Separates a second group of controls inside one panel card (e.g. the
+   backup file controls under the cloud sync key). */
+.panel-card-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+}
+
 .panel-card-actions {
   display: flex;
   flex-wrap: wrap;

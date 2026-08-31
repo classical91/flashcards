@@ -123,3 +123,33 @@ export const recordCardDeletion = (
   ...tombstones,
   cards: { ...tombstones.cards, [cardTombstoneKey(deckId, cardId)]: deletedAt },
 });
+
+const without = (map: Record<string, number>, ids: Iterable<string>) => {
+  const drop = new Set(ids);
+  return Object.fromEntries(Object.entries(map).filter(([id]) => !drop.has(id)));
+};
+
+/**
+ * Drops the deletions covering ids that are being deliberately brought back —
+ * restoring a backup is a statement that its contents should exist, and
+ * without this the very next merge would delete them again.
+ */
+export const forgetDeletions = (
+  tombstones: Tombstones,
+  ids: { sections: Iterable<string>; decks: Iterable<string>; cards: Iterable<string> },
+): Tombstones => ({
+  sections: without(tombstones.sections, ids.sections),
+  decks: without(tombstones.decks, ids.decks),
+  cards: without(tombstones.cards, ids.cards),
+});
+
+/** The section, deck and card-tombstone keys a set of sections covers. */
+export const collectEntityIds = (
+  sections: { id: string; decks: { id: string; cards: { id: string }[] }[] }[],
+) => ({
+  sections: sections.map((section) => section.id),
+  decks: sections.flatMap((section) => section.decks.map((deck) => deck.id)),
+  cards: sections.flatMap((section) =>
+    section.decks.flatMap((deck) => deck.cards.map((card) => cardTombstoneKey(deck.id, card.id))),
+  ),
+});

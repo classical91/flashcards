@@ -1,4 +1,4 @@
-import { Dispatch, MutableRefObject, SetStateAction, useState } from "react";
+import { ChangeEvent, Dispatch, MutableRefObject, SetStateAction, useRef, useState } from "react";
 import { Deck, DeckSection, Flashcard } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
 import { ACCENT_COLORS } from "../lib/constants";
@@ -36,6 +36,10 @@ type HomeViewProps = {
   onLoadFromCloud: () => void;
   onSaveToCloud: () => void;
   onGenerateSyncKey: () => void;
+  // Local backup
+  backupMessage: string;
+  onDownloadBackup: () => void;
+  onRestoreBackup: (file: File) => void;
   // Themes panel
   showThemesPanel: boolean;
   setShowThemesPanel: Dispatch<SetStateAction<boolean>>;
@@ -83,6 +87,9 @@ export function HomeView({
   onLoadFromCloud,
   onSaveToCloud,
   onGenerateSyncKey,
+  backupMessage,
+  onDownloadBackup,
+  onRestoreBackup,
   showThemesPanel,
   setShowThemesPanel,
   theme,
@@ -97,9 +104,17 @@ export function HomeView({
   dailyCard,
 }: HomeViewProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const restoreInputRef = useRef<HTMLInputElement>(null);
   // Keyed by card id so tomorrow's card starts face down again.
   const [revealedDailyCardId, setRevealedDailyCardId] = useState<string | null>(null);
   const isDailyCardRevealed = !!dailyCard && revealedDailyCardId === dailyCard.card.id;
+
+  const handleRestoreFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // Cleared straight away so picking the same file twice still fires.
+    event.target.value = "";
+    if (file) onRestoreBackup(file);
+  };
 
   const recentDecks = recentDeckIds
     .map((entry) => {
@@ -255,6 +270,31 @@ export function HomeView({
           >
             {syncMessage}
           </p>
+
+          <div className="panel-card-section">
+            <strong>Backup file</strong>
+            <p className="hint-text">
+              A backup is one JSON file holding every topic, deck, card and your progress. Restoring
+              adds back anything the backup has that this device is missing; nothing here is
+              removed.
+            </p>
+            <div className="panel-card-actions">
+              <button className="mini-btn" onClick={onDownloadBackup}>
+                Download backup
+              </button>
+              <button className="mini-btn" onClick={() => restoreInputRef.current?.click()}>
+                Restore from file
+              </button>
+              <input
+                ref={restoreInputRef}
+                type="file"
+                accept="application/json,.json"
+                onChange={handleRestoreFileChange}
+                hidden
+              />
+            </div>
+            {backupMessage && <p className="message-line">{backupMessage}</p>}
+          </div>
         </div>
       )}
 
