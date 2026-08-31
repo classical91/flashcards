@@ -599,6 +599,126 @@ button {
   overflow: hidden;
 }
 
+/* ── Today's reviews ──────────────────────────────────────────────────────── */
+
+.home-reviews {
+  display: block;
+  padding: 0 20px 12px;
+}
+
+.review-summary {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--accent-subtle);
+}
+
+.review-summary-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.review-summary-count {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.review-summary-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+
+.review-summary-decks {
+  display: grid;
+  gap: 6px;
+}
+
+.review-summary-deck {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.review-summary-deck:hover {
+  border-color: var(--accent);
+}
+
+.review-summary-deck-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-summary-deck-meta {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ── Review grading ───────────────────────────────────────────────────────── */
+
+.grade-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  width: 100%;
+  max-width: 420px;
+  margin: 14px auto 0;
+}
+
+.grade-btn {
+  display: grid;
+  gap: 2px;
+  padding: 8px 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.grade-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.grade-btn-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* When the card next comes back if you press this button. */
+.grade-btn-interval {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.grade-again .grade-btn-label {
+  color: var(--danger);
+}
+
+.grade-easy .grade-btn-label {
+  color: var(--success);
+}
+
 /* ── Card of the day ──────────────────────────────────────────────────────── */
 
 .home-daily {

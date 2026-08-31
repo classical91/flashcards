@@ -328,6 +328,35 @@ const validateSharedDeckSection = (value, path) => {
   return valid;
 };
 
+/** Spaced-repetition schedules, keyed by card id. One entry per card at most. */
+const validateReviews = (value, path) => {
+  if (!isRecord(value)) {
+    return invalid(`${path} must be an object.`);
+  }
+
+  const entries = Object.entries(value);
+  if (entries.length > contentLimits.cardsPerDeck) {
+    return invalid(`${path} cannot contain more than ${contentLimits.cardsPerDeck} entries.`);
+  }
+
+  for (const [cardId, state] of entries) {
+    const idResult = validateString(cardId, `${path} card id`, contentLimits.idLength);
+    if (!idResult.ok) return idResult;
+
+    if (!isRecord(state)) {
+      return invalid(`${path}.${cardId} must be an object.`);
+    }
+
+    for (const field of ["due", "interval", "ease", "reps", "lapses", "lastReviewedAt"]) {
+      if (typeof state[field] !== "number" || !Number.isFinite(state[field])) {
+        return invalid(`${path}.${cardId}.${field} must be a finite number.`);
+      }
+    }
+  }
+
+  return valid;
+};
+
 const validateDeckProgress = (value, path) => {
   if (!isRecord(value)) {
     return invalid(`${path} must be an object.`);
@@ -354,6 +383,11 @@ const validateDeckProgress = (value, path) => {
 
   if (value.studyMode !== "all" && value.studyMode !== "remaining") {
     return invalid(`${path}.studyMode must be "all" or "remaining".`);
+  }
+
+  if ("reviews" in value && value.reviews !== undefined) {
+    const reviewsResult = validateReviews(value.reviews, `${path}.reviews`);
+    if (!reviewsResult.ok) return reviewsResult;
   }
 
   return valid;

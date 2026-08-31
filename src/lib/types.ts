@@ -34,6 +34,10 @@ export type SectionEditor = {
 export type ConfirmDialog = {
   message: string;
   onConfirm: () => void;
+  /** Defaults to "Yes, delete" — most confirmations here are deletions. */
+  confirmLabel?: string;
+  /** "danger" styles the confirm button as destructive. */
+  tone?: "danger" | "primary";
 };
 
 /**

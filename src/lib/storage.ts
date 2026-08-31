@@ -2,6 +2,7 @@ import { defaultDeckId, starterSections } from "../data/decks";
 import { DeckSection, sanitizeDeckSections } from "../data/deckBuilder";
 import { DeckProgress, parseLibrarySections } from "../data/librarySnapshot";
 import { Tombstones, emptyTombstones, parseTombstones } from "./tombstones";
+import { parseReviews } from "./srs";
 import {
   ACCENT_COLORS,
   ACCENT_STORAGE_KEY,
@@ -101,6 +102,12 @@ export const loadProgressState = (sections: DeckSection[]) => {
           ...progress,
           currentCardId: cardIdMap.get(progress.currentCardId) ?? progress.currentCardId,
           knownIds: progress.knownIds.map((id) => cardIdMap.get(id) ?? id),
+          reviews: Object.fromEntries(
+            Object.entries(parseReviews(progress.reviews)).map(([cardId, state]) => [
+              cardIdMap.get(cardId) ?? cardId,
+              state,
+            ]),
+          ),
         },
       ]),
     );

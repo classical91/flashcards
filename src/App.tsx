@@ -36,6 +36,13 @@ import {
 } from "./lib/deckUtils";
 import { LibraryState, mergeLibraryState } from "./lib/merge";
 import {
+  ReviewGrade,
+  buildReviewQueue,
+  countReviewQueue,
+  gradeCard,
+  previewIntervals,
+} from "./lib/srs";
+import {
   collectEntityIds,
   forgetDeletions,
   recordCardDeletion,
@@ -145,6 +152,13 @@ export default function App() {
   // is deliberately never persisted or synced. Keyed by deck so returning to a
   // deck you shuffled keeps that order for the rest of the session.
   const [studyOrder, setStudyOrder] = useState<{ deckId: string; cardIds: string[] } | null>(null);
+  // A review session is also session-only. `startedAt` freezes the "due by"
+  // cutoff for its whole run, so the queue doesn't reshuffle underneath you as
+  // the clock moves — and so a card you press Again on comes back today.
+  const [reviewSession, setReviewSession] = useState<{
+    deckId: string;
+    startedAt: number;
+  } | null>(null);
   const [tombstones, setTombstones] = useState(loadTombstones);
   const [preferencesUpdatedAt, setPreferencesUpdatedAt] = useState(loadPreferencesUpdatedAt);
 
@@ -199,8 +213,12 @@ export default function App() {
     touchPreferences();
   };
 
-  const askConfirm = (message: string, onConfirm: () => void) => {
-    setConfirmDialog({ message, onConfirm });
+  const askConfirm = (
+    message: string,
+    onConfirm: () => void,
+    options: Pick<ConfirmDialog, "confirmLabel" | "tone"> = {},
+  ) => {
+    setConfirmDialog({ message, onConfirm, ...options });
   };
 
   const allDecks = useMemo(() => flattenDecks(librarySections), [librarySections]);
@@ -227,6 +245,7 @@ export default function App() {
   const knownSet = useMemo(() => new Set(activeProgress?.knownIds ?? []), [activeProgress]);
 
   const isShuffled = !!selectedDeck && studyOrder?.deckId === selectedDeck.id;
+  const isReviewing = !!selectedDeck && reviewSession?.deckId === selectedDeck.id;
 
   const orderedCards = useMemo(
     () =>
@@ -236,12 +255,26 @@ export default function App() {
     [selectedDeck, isShuffled, studyOrder],
   );
 
-  const visibleCards = useMemo(
+  const visibleCards = useMemo(() => {
+    if (isReviewing && reviewSession) {
+      return buildReviewQueue(orderedCards, activeProgress?.reviews, reviewSession.startedAt);
+    }
+    return activeProgress?.studyMode === "remaining"
+      ? orderedCards.filter((card) => !knownSet.has(card.id))
+      : orderedCards;
+  }, [orderedCards, activeProgress?.studyMode, activeProgress?.reviews, knownSet, isReviewing, reviewSession]);
+
+  const deckReviewCounts = useMemo(
     () =>
-      activeProgress?.studyMode === "remaining"
-        ? orderedCards.filter((card) => !knownSet.has(card.id))
-        : orderedCards,
-    [orderedCards, activeProgress?.studyMode, knownSet],
+      selectedDeck
+        ? countReviewQueue(
+            selectedDeck.cards.map((card) => card.id),
+            activeProgress?.reviews,
+          )
+        : { due: 0, newCards: 0 },
+    // todayKey is a dependency so the counts roll over at midnight on a tab
+    // that has been left open.
+    [selectedDeck, activeProgress?.reviews, todayKey],
   );
 
   const currentCard = useMemo(
@@ -257,12 +290,41 @@ export default function App() {
     [currentCard, visibleCards],
   );
 
+  const gradePreview = useMemo(
+    () => previewIntervals(currentCard ? activeProgress?.reviews?.[currentCard.id] : undefined),
+    [currentCard, activeProgress?.reviews],
+  );
+
   const totalCards = selectedDeck?.cards.length ?? 0;
   const knownCount = activeProgress?.knownIds.length ?? 0;
   const remainingCount = totalCards - knownCount;
   const hasRemainingCards = remainingCount > 0;
   const currentCardIsKnown = currentCard ? knownSet.has(currentCard.id) : false;
   const isDeckEmpty = totalCards === 0;
+
+  /**
+   * What the whole library has waiting today, for the home page. Only decks
+   * with something due are listed: a deck whose cards have never been graded
+   * is not "overdue", it just hasn't been started.
+   */
+  const reviewSummary = useMemo(() => {
+    const decks = librarySections
+      .flatMap((section) =>
+        section.decks.map((deck) => ({
+          deck,
+          section,
+          ...countReviewQueue(
+            deck.cards.map((card) => card.id),
+            deckProgress[deck.id]?.reviews,
+          ),
+        })),
+      )
+      .filter((entry) => entry.due > 0)
+      .sort((a, b) => b.due - a.due);
+
+    return { totalDue: decks.reduce((sum, entry) => sum + entry.due, 0), decks };
+    // todayKey rolls the counts over at midnight on a tab left open overnight.
+  }, [librarySections, deckProgress, todayKey]);
 
   // The picked card is stored by id, so resolve it against the live library —
   // that way a deck deleted mid-day just retires the pick instead of dangling.
@@ -347,12 +409,39 @@ export default function App() {
     setToast("Shuffled for this session. The deck's own order is unchanged.");
   };
 
+  const handleStartReview = (deckId?: string) => {
+    const targetDeckId = deckId ?? selectedDeck?.id;
+    if (!targetDeckId) return;
+    setReviewSession({ deckId: targetDeckId, startedAt: Date.now() });
+  };
+
+  const handleExitReview = () => setReviewSession(null);
+
+  const handleGrade = (grade: ReviewGrade) => {
+    if (!currentCard || !selectedDeck) return;
+    // The next card is chosen from the queue as it looks now, before the grade
+    // reshuffles it by due date. Pressing Again keeps the card in today's
+    // queue, so without this the session would sit on it forever.
+    const remaining = visibleCards.filter((card) => card.id !== currentCard.id);
+    const nextCard = remaining[cardPosition] ?? remaining[0] ?? null;
+    updateSelectedDeckProgress((progress) => ({
+      ...progress,
+      reviews: {
+        ...(progress.reviews ?? {}),
+        [currentCard.id]: gradeCard(grade, progress.reviews?.[currentCard.id]),
+      },
+      currentCardId: nextCard?.id ?? "",
+      isFlipped: false,
+    }));
+  };
+
   const handleRestoreOrder = () => {
     setStudyOrder(null);
     setToast("Back to the deck's own order.");
   };
 
   const handleStudyModeChange = (mode: StudyMode) => {
+    setReviewSession(null);
     updateSelectedDeckProgress((progress) => ({ ...progress, studyMode: mode }));
   };
 
@@ -529,6 +618,11 @@ export default function App() {
     setDeckLastViewed((prev) => ({ ...prev, [deckId]: viewedAt }));
   };
 
+  const openDeckForReview = (deckId: string) => {
+    openDeck(deckId);
+    handleStartReview(deckId);
+  };
+
   const openRandomDeck = (decks: Deck[]) => {
     if (!decks.length) return;
     const deck = decks[Math.floor(Math.random() * decks.length)];
@@ -687,6 +781,7 @@ export default function App() {
         setBackupMessage(`Restored ${cardCount} card${cardCount === 1 ? "" : "s"} from ${file.name}.`);
         setConfirmDialog(null);
       },
+      { confirmLabel: "Restore", tone: "primary" },
     );
   };
 
@@ -905,6 +1000,10 @@ export default function App() {
         }
         const validCardIds = new Set(deck.cards.map((card) => card.id));
         const knownIds = savedProgress.knownIds.filter((id) => validCardIds.has(id));
+        const savedReviews = savedProgress.reviews ?? {};
+        const reviewEntries = Object.entries(savedReviews).filter(([cardId]) =>
+          validCardIds.has(cardId),
+        );
         const currentCardId = validCardIds.has(savedProgress.currentCardId)
           ? savedProgress.currentCardId
           : (deck.cards[0]?.id ?? "");
@@ -912,13 +1011,20 @@ export default function App() {
         if (
           currentCardId === savedProgress.currentCardId &&
           isFlipped === savedProgress.isFlipped &&
-          knownIds.length === savedProgress.knownIds.length
+          knownIds.length === savedProgress.knownIds.length &&
+          reviewEntries.length === Object.keys(savedReviews).length
         ) {
           nextProgress[deck.id] = savedProgress;
           return;
         }
         changed = true;
-        nextProgress[deck.id] = { ...savedProgress, currentCardId, isFlipped, knownIds };
+        nextProgress[deck.id] = {
+          ...savedProgress,
+          currentCardId,
+          isFlipped,
+          knownIds,
+          reviews: Object.fromEntries(reviewEntries),
+        };
       });
       return changed ? nextProgress : currentProgress;
     });
@@ -1006,6 +1112,7 @@ export default function App() {
     onPrev: () => moveToCard(-1),
     onToggleKnown: toggleKnown,
     onShuffle: handleShuffle,
+    onGrade: isReviewing ? handleGrade : null,
   });
 
   useEffect(() => {
@@ -1101,6 +1208,8 @@ export default function App() {
           accentColor={accentColor}
           setAccentColor={chooseAccentColor}
           dailyCard={dailyCard}
+          reviewSummary={reviewSummary}
+          onStartReview={openDeckForReview}
           sectionComposer={sectionComposer}
           setSectionComposer={setSectionComposer}
           sectionComposerMessage={sectionComposerMessage}
@@ -1213,6 +1322,13 @@ export default function App() {
         isShuffled={isShuffled}
         onShuffle={handleShuffle}
         onRestoreOrder={handleRestoreOrder}
+        isReviewing={isReviewing}
+        dueCount={deckReviewCounts.due}
+        newCount={deckReviewCounts.newCards}
+        gradePreview={gradePreview}
+        onStartReview={() => handleStartReview()}
+        onExitReview={handleExitReview}
+        onGrade={handleGrade}
         onToggleKnown={toggleKnown}
         onMoveToCard={moveToCard}
         onGoogleSearch={googleSearch}

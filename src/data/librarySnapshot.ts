@@ -5,6 +5,7 @@ import {
   emptyTombstones,
   parseTombstones,
 } from "../lib/tombstones";
+import { ReviewState, parseReviews } from "../lib/srs";
 import { DeckSection, sanitizeDeckSections } from "./deckBuilder";
 
 export type StudyMode = "all" | "remaining";
@@ -20,6 +21,12 @@ export type DeckProgress = {
    * unmark on one device is undone by the other device's stale list.
    */
   updatedAt?: number;
+  /**
+   * Card id -> spaced-repetition schedule. Optional: a deck only gains one
+   * once its cards have been graded, and libraries saved before review mode
+   * have none at all.
+   */
+  reviews?: Record<string, ReviewState>;
 };
 
 export type RecentDeckEntry = { id: string; viewedAt: number };
@@ -270,6 +277,12 @@ const remapById = (
         ...progress,
         currentCardId: cardId(progress.currentCardId),
         knownIds: progress.knownIds.map(cardId),
+        reviews: Object.fromEntries(
+          Object.entries(parseReviews(progress.reviews)).map(([card, state]) => [
+            cardId(card),
+            state,
+          ]),
+        ),
       },
     ]),
   );

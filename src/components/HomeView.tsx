@@ -57,7 +57,16 @@ type HomeViewProps = {
   onCreateSection: () => void;
   // Card of the day
   dailyCard: { deck: Deck; card: Flashcard; section: DeckSection | null } | null;
+  // Today's reviews
+  reviewSummary: {
+    totalDue: number;
+    decks: { deck: Deck; section: DeckSection; due: number; newCards: number }[];
+  };
+  onStartReview: (deckId: string) => void;
 };
+
+/** Enough to act on at a glance; the rest are reachable from their topic. */
+const MAX_REVIEW_DECKS = 5;
 
 const ACCENT_EMOJI: Record<AccentColor, string> = {
   blue: "🔵",
@@ -104,6 +113,8 @@ export function HomeView({
   setSectionComposerMessage,
   onCreateSection,
   dailyCard,
+  reviewSummary,
+  onStartReview,
 }: HomeViewProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const restoreInputRef = useRef<HTMLInputElement>(null);
@@ -421,6 +432,39 @@ export function HomeView({
             </button>
           </div>
         </div>
+      )}
+
+      {reviewSummary.totalDue > 0 && !trimmedQuery && (
+        <section className="home-reviews" aria-label="Today's reviews">
+          <div className="review-summary">
+            <div className="review-summary-head">
+              <span className="review-summary-count">
+                {reviewSummary.totalDue} card{reviewSummary.totalDue === 1 ? "" : "s"} due today
+              </span>
+              <span className="review-summary-label">Spaced repetition</span>
+            </div>
+            <div className="review-summary-decks">
+              {reviewSummary.decks.slice(0, MAX_REVIEW_DECKS).map(({ deck, section, due }) => (
+                <button
+                  key={deck.id}
+                  className="review-summary-deck"
+                  onClick={() => onStartReview(deck.id)}
+                >
+                  <span className="review-summary-deck-name">{deck.title}</span>
+                  <span className="review-summary-deck-meta">
+                    {section.title} · {due} due
+                  </span>
+                </button>
+              ))}
+            </div>
+            {reviewSummary.decks.length > MAX_REVIEW_DECKS && (
+              <p className="hint-text">
+                and {reviewSummary.decks.length - MAX_REVIEW_DECKS} more deck
+                {reviewSummary.decks.length - MAX_REVIEW_DECKS === 1 ? "" : "s"} with cards due.
+              </p>
+            )}
+          </div>
+        </section>
       )}
 
       {dailyCard && !trimmedQuery && (

@@ -42,6 +42,7 @@ const progress = (overrides: Partial<DeckProgress> = {}): DeckProgress => ({
   knownIds: [],
   isFlipped: false,
   studyMode: "all",
+  reviews: {},
   ...overrides,
 });
 
@@ -320,5 +321,46 @@ describe("tombstone keys", () => {
     const merged = mergeLibraryState(local, remote, NOW);
     expect(cardIds(merged.librarySections, "d1")).toEqual([]);
     expect(cardIds(merged.librarySections, "d2")).toEqual(["shared"]);
+  });
+});
+
+describe("mergeLibraryState — review schedules", () => {
+  const schedule = (due: number) => ({
+    due,
+    interval: 1,
+    ease: 2.5,
+    reps: 1,
+    lapses: 0,
+    lastReviewedAt: due,
+  });
+
+  it("keeps the schedules from the device that reviewed most recently", () => {
+    const local = state({
+      librarySections: [section("topic", [deck("d1", ["a"])])],
+      deckProgress: { d1: progress({ reviews: { a: schedule(NOW) }, updatedAt: NOW }) },
+    });
+    const remote = state({
+      librarySections: [section("topic", [deck("d1", ["a"])])],
+      deckProgress: {
+        d1: progress({ reviews: { a: schedule(NOW - 5000) }, updatedAt: NOW - 1 }),
+      },
+    });
+
+    expect(mergeLibraryState(local, remote, NOW).deckProgress.d1.reviews).toEqual({
+      a: schedule(NOW),
+    });
+  });
+
+  it("drops the schedule of a card that no longer exists", () => {
+    const local = state({
+      librarySections: [section("topic", [deck("d1", ["a"])])],
+      deckProgress: {
+        d1: progress({ reviews: { a: schedule(NOW), gone: schedule(NOW) }, updatedAt: NOW }),
+      },
+    });
+
+    expect(
+      Object.keys(mergeLibraryState(local, state(), NOW).deckProgress.d1.reviews ?? {}),
+    ).toEqual(["a"]);
   });
 });

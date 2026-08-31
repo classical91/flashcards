@@ -192,3 +192,47 @@ describe("snapshot versions", () => {
     expect(result.body.message).toContain("tombstones.decks");
   });
 });
+
+describe("review schedules", () => {
+  const withReviews = (reviews: unknown) => {
+    const snapshot = buildSnapshot([{ title: "Words", cardCount: 2 }]);
+    return {
+      ...snapshot,
+      deckProgress: { "deck-0": { ...snapshot.deckProgress["deck-0"], reviews } },
+    };
+  };
+
+  it("accepts a snapshot carrying spaced-repetition schedules", async () => {
+    const result = await put(
+      "reviews-key",
+      withReviews({
+        "card-0-0": {
+          due: 1700000000000,
+          interval: 3,
+          ease: 2.5,
+          reps: 2,
+          lapses: 0,
+          lastReviewedAt: 1699000000000,
+        },
+      }),
+    );
+
+    expect(result.status).toBe(200);
+  });
+
+  it("accepts a snapshot from a client that has no schedules yet", async () => {
+    const result = await put("reviews-absent-key", withReviews(undefined));
+
+    expect(result.status).toBe(200);
+  });
+
+  it("rejects a schedule with a missing field", async () => {
+    const result = await put(
+      "reviews-bad-key",
+      withReviews({ "card-0-0": { due: 1700000000000, interval: 3 } }),
+    );
+
+    expect(result.status).toBe(400);
+    expect(result.body.message).toContain("ease");
+  });
+});

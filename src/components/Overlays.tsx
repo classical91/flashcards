@@ -14,7 +14,12 @@ export function ConfirmOverlay({ confirmDialog, onCancel }: ConfirmOverlayProps)
         <p>{confirmDialog.message}</p>
         <div className="confirm-actions">
           <button className="mini-btn" onClick={onCancel}>Cancel</button>
-          <button className="danger-btn" onClick={confirmDialog.onConfirm}>Yes, delete</button>
+          <button
+            className={confirmDialog.tone === "primary" ? "mini-btn primary" : "danger-btn"}
+            onClick={confirmDialog.onConfirm}
+          >
+            {confirmDialog.confirmLabel ?? "Yes, delete"}
+          </button>
         </div>
       </div>
     </div>

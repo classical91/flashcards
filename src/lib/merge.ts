@@ -162,9 +162,13 @@ const mergeDeckProgress = (
     }
 
     const knownIds = base.knownIds.filter((id) => validCardIds.has(id));
+    const reviews = Object.fromEntries(
+      Object.entries(base.reviews ?? {}).filter(([cardId]) => validCardIds.has(cardId)),
+    );
     merged[deck.id] = {
       ...base,
       knownIds,
+      reviews,
       currentCardId: validCardIds.has(base.currentCardId)
         ? base.currentCardId
         : (deck.cards[0]?.id ?? ""),

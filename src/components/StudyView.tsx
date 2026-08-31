@@ -1,7 +1,15 @@
 import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Deck, DeckSection, Flashcard } from "../data/deckBuilder";
 import { DeckProgress, StudyMode } from "../data/librarySnapshot";
+import { REVIEW_GRADES, ReviewGrade } from "../lib/srs";
 import { ViewState } from "../lib/types";
+
+const GRADE_LABELS: Record<ReviewGrade, string> = {
+  again: "Again",
+  hard: "Hard",
+  good: "Good",
+  easy: "Easy",
+};
 
 type CardEdits = Record<string, { term: string; definition: string }>;
 
@@ -49,6 +57,14 @@ type StudyViewProps = {
   isShuffled: boolean;
   onShuffle: () => void;
   onRestoreOrder: () => void;
+  // Review session
+  isReviewing: boolean;
+  dueCount: number;
+  newCount: number;
+  gradePreview: Record<ReviewGrade, string>;
+  onStartReview: () => void;
+  onExitReview: () => void;
+  onGrade: (grade: ReviewGrade) => void;
   onToggleKnown: () => void;
   onMoveToCard: (direction: 1 | -1) => void;
   onGoogleSearch: (type: string) => void;
@@ -101,6 +117,13 @@ export function StudyView({
   isShuffled,
   onShuffle,
   onRestoreOrder,
+  isReviewing,
+  dueCount,
+  newCount,
+  gradePreview,
+  onStartReview,
+  onExitReview,
+  onGrade,
   onToggleKnown,
   onMoveToCard,
   onGoogleSearch,
@@ -156,17 +179,25 @@ export function StudyView({
           </button>
           <div className="study-mode-toggle">
             <button
-              className={`study-mode-btn${activeProgress.studyMode === "all" ? " active" : ""}`}
+              className={`study-mode-btn${!isReviewing && activeProgress.studyMode === "all" ? " active" : ""}`}
               onClick={() => onStudyModeChange("all")}
             >
               All
             </button>
             <button
-              className={`study-mode-btn${activeProgress.studyMode === "remaining" ? " active" : ""}`}
+              className={`study-mode-btn${!isReviewing && activeProgress.studyMode === "remaining" ? " active" : ""}`}
               onClick={() => onStudyModeChange("remaining")}
               disabled={!hasRemainingCards}
             >
               Remaining
+            </button>
+            <button
+              className={`study-mode-btn${isReviewing ? " active" : ""}`}
+              onClick={isReviewing ? onExitReview : onStartReview}
+              disabled={isDeckEmpty}
+              title="Spaced repetition: cards due today, then ones you have never graded"
+            >
+              Review{dueCount + newCount > 0 ? ` (${dueCount + newCount})` : ""}
             </button>
           </div>
         </div>
@@ -194,6 +225,22 @@ export function StudyView({
                   </div>
                 </article>
               </section>
+
+              {isReviewing && (
+                <div className="grade-row" aria-label="How well did you know this card?">
+                  {REVIEW_GRADES.map((grade, index) => (
+                    <button
+                      key={grade}
+                      className={`grade-btn grade-${grade}`}
+                      onClick={() => onGrade(grade)}
+                      title={`${GRADE_LABELS[grade]} — keyboard ${index + 1}`}
+                    >
+                      <span className="grade-btn-label">{GRADE_LABELS[grade]}</span>
+                      <span className="grade-btn-interval">{gradePreview[grade]}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
 
               <nav className="player" aria-label="Flashcard controls">
                 <button
@@ -265,14 +312,23 @@ export function StudyView({
           ) : (
             <div className="state-card">
               <h3>All done!</h3>
-              <p>You&apos;ve worked through every remaining card.</p>
+              <p>
+                {isReviewing
+                  ? "Nothing left to review in this deck today."
+                  : "You've worked through every remaining card."}
+              </p>
               <div className="state-card-actions">
-                <button className="mini-btn" onClick={() => onStudyModeChange("all")}>
-                  Review full deck
+                <button
+                  className="mini-btn"
+                  onClick={isReviewing ? onExitReview : () => onStudyModeChange("all")}
+                >
+                  {isReviewing ? "Back to the full deck" : "Review full deck"}
                 </button>
-                <button className="mini-btn" onClick={onResetProgress}>
-                  Reset progress
-                </button>
+                {!isReviewing && (
+                  <button className="mini-btn" onClick={onResetProgress}>
+                    Reset progress
+                  </button>
+                )}
               </div>
             </div>
           )}

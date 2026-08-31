@@ -73,6 +73,7 @@ export const createDeckProgress = (deck: Deck): DeckProgress => ({
   knownIds: [],
   isFlipped: false,
   studyMode: "all",
+  reviews: {},
 });
 
 export const buildProgressState = (sections: DeckSection[]) =>
