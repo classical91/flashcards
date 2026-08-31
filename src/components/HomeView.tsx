@@ -1,8 +1,9 @@
-import { Dispatch, MutableRefObject, SetStateAction, useState } from "react";
+import { ChangeEvent, Dispatch, MutableRefObject, SetStateAction, useRef, useState } from "react";
 import { Deck, DeckSection, Flashcard } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
 import { ACCENT_COLORS } from "../lib/constants";
 import { findDeckById, findSectionForDeck } from "../lib/deckUtils";
+import { MAX_SEARCH_RESULTS, searchLibrary } from "../lib/search";
 import { formatRelativeTime } from "../lib/format";
 import {
   AccentColor,
@@ -23,7 +24,8 @@ type HomeViewProps = {
   setShowActionsMenu: Dispatch<SetStateAction<boolean>>;
   actionsMenuRef: MutableRefObject<HTMLDivElement | null>;
   setView: (view: ViewState) => void;
-  openDeck: (deckId: string) => void;
+  /** `cardId` opens the deck at that card — used by the card search results. */
+  openDeck: (deckId: string, cardId?: string) => void;
   openRandomDeck: (decks: Deck[]) => void;
   // Sync panel
   syncState: SyncState;
@@ -36,6 +38,10 @@ type HomeViewProps = {
   onLoadFromCloud: () => void;
   onSaveToCloud: () => void;
   onGenerateSyncKey: () => void;
+  // Local backup
+  backupMessage: string;
+  onDownloadBackup: () => void;
+  onRestoreBackup: (file: File) => void;
   // Themes panel
   showThemesPanel: boolean;
   setShowThemesPanel: Dispatch<SetStateAction<boolean>>;
@@ -51,7 +57,16 @@ type HomeViewProps = {
   onCreateSection: () => void;
   // Card of the day
   dailyCard: { deck: Deck; card: Flashcard; section: DeckSection | null } | null;
+  // Today's reviews
+  reviewSummary: {
+    totalDue: number;
+    decks: { deck: Deck; section: DeckSection; due: number; newCards: number }[];
+  };
+  onStartReview: (deckId: string) => void;
 };
+
+/** Enough to act on at a glance; the rest are reachable from their topic. */
+const MAX_REVIEW_DECKS = 5;
 
 const ACCENT_EMOJI: Record<AccentColor, string> = {
   blue: "🔵",
@@ -83,6 +98,9 @@ export function HomeView({
   onLoadFromCloud,
   onSaveToCloud,
   onGenerateSyncKey,
+  backupMessage,
+  onDownloadBackup,
+  onRestoreBackup,
   showThemesPanel,
   setShowThemesPanel,
   theme,
@@ -95,11 +113,21 @@ export function HomeView({
   setSectionComposerMessage,
   onCreateSection,
   dailyCard,
+  reviewSummary,
+  onStartReview,
 }: HomeViewProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const restoreInputRef = useRef<HTMLInputElement>(null);
   // Keyed by card id so tomorrow's card starts face down again.
   const [revealedDailyCardId, setRevealedDailyCardId] = useState<string | null>(null);
   const isDailyCardRevealed = !!dailyCard && revealedDailyCardId === dailyCard.card.id;
+
+  const handleRestoreFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // Cleared straight away so picking the same file twice still fires.
+    event.target.value = "";
+    if (file) onRestoreBackup(file);
+  };
 
   const recentDecks = recentDeckIds
     .map((entry) => {
@@ -109,19 +137,11 @@ export function HomeView({
     })
     .filter((x): x is { deck: Deck; section: DeckSection; viewedAt: number } => x !== null);
 
-  const trimmedQuery = searchQuery.trim().toLowerCase();
-  const searchResults = trimmedQuery
-    ? librarySections.flatMap((section) =>
-        section.decks
-          .filter(
-            (deck) =>
-              deck.title.toLowerCase().includes(trimmedQuery) ||
-              (deck.subtitle ?? "").toLowerCase().includes(trimmedQuery) ||
-              section.title.toLowerCase().includes(trimmedQuery),
-          )
-          .map((deck) => ({ deck, section })),
-      )
-    : [];
+  const trimmedQuery = searchQuery.trim();
+  const { results: searchResults, total: searchTotal } = searchLibrary(
+    librarySections,
+    trimmedQuery,
+  );
 
   return (
     <div className="home-view">
@@ -204,7 +224,7 @@ export function HomeView({
           type="search"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search decks…"
+          placeholder="Search decks and cards…"
         />
       </div>
 
@@ -255,6 +275,31 @@ export function HomeView({
           >
             {syncMessage}
           </p>
+
+          <div className="panel-card-section">
+            <strong>Backup file</strong>
+            <p className="hint-text">
+              A backup is one JSON file holding every topic, deck, card and your progress. Restoring
+              adds back anything the backup has that this device is missing; nothing here is
+              removed.
+            </p>
+            <div className="panel-card-actions">
+              <button className="mini-btn" onClick={onDownloadBackup}>
+                Download backup
+              </button>
+              <button className="mini-btn" onClick={() => restoreInputRef.current?.click()}>
+                Restore from file
+              </button>
+              <input
+                ref={restoreInputRef}
+                type="file"
+                accept="application/json,.json"
+                onChange={handleRestoreFileChange}
+                hidden
+              />
+            </div>
+            {backupMessage && <p className="message-line">{backupMessage}</p>}
+          </div>
         </div>
       )}
 
@@ -389,6 +434,39 @@ export function HomeView({
         </div>
       )}
 
+      {reviewSummary.totalDue > 0 && !trimmedQuery && (
+        <section className="home-reviews" aria-label="Today's reviews">
+          <div className="review-summary">
+            <div className="review-summary-head">
+              <span className="review-summary-count">
+                {reviewSummary.totalDue} card{reviewSummary.totalDue === 1 ? "" : "s"} due today
+              </span>
+              <span className="review-summary-label">Spaced repetition</span>
+            </div>
+            <div className="review-summary-decks">
+              {reviewSummary.decks.slice(0, MAX_REVIEW_DECKS).map(({ deck, section, due }) => (
+                <button
+                  key={deck.id}
+                  className="review-summary-deck"
+                  onClick={() => onStartReview(deck.id)}
+                >
+                  <span className="review-summary-deck-name">{deck.title}</span>
+                  <span className="review-summary-deck-meta">
+                    {section.title} · {due} due
+                  </span>
+                </button>
+              ))}
+            </div>
+            {reviewSummary.decks.length > MAX_REVIEW_DECKS && (
+              <p className="hint-text">
+                and {reviewSummary.decks.length - MAX_REVIEW_DECKS} more deck
+                {reviewSummary.decks.length - MAX_REVIEW_DECKS === 1 ? "" : "s"} with cards due.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
       {dailyCard && !trimmedQuery && (
         <section className="home-daily" aria-label="Card of the day">
           <div className="daily-card">
@@ -425,26 +503,53 @@ export function HomeView({
       <div className="home-main">
         {trimmedQuery ? (
           searchResults.length === 0 ? (
-            <div className="empty-state">No decks match "{searchQuery}".</div>
+            <div className="empty-state">Nothing matches "{searchQuery}".</div>
           ) : (
             <div className="search-results">
-              {searchResults.map(({ deck, section }) => (
-                <button
-                  key={deck.id}
-                  className="search-result-item"
-                  onClick={() => openDeck(deck.id)}
-                >
-                  <div className="search-result-info">
-                    <span className="search-result-title">{deck.title}</span>
-                    <span className="search-result-meta">
-                      {section.title}
-                      {deck.subtitle ? ` · ${deck.subtitle}` : ""}
-                      {` · ${deck.cards.length} card${deck.cards.length !== 1 ? "s" : ""}`}
-                    </span>
-                  </div>
-                  <span className="section-card-arrow">›</span>
-                </button>
-              ))}
+              {searchResults.map((result) =>
+                result.kind === "deck" ? (
+                  <button
+                    key={`deck:${result.deck.id}`}
+                    className="search-result-item"
+                    onClick={() => openDeck(result.deck.id)}
+                  >
+                    <div className="search-result-info">
+                      <span className="search-result-title">{result.deck.title}</span>
+                      <span className="search-result-meta">
+                        {result.section.title}
+                        {result.deck.subtitle ? ` · ${result.deck.subtitle}` : ""}
+                        {` · ${result.deck.cards.length} card${result.deck.cards.length !== 1 ? "s" : ""}`}
+                      </span>
+                    </div>
+                    <span className="section-card-arrow">›</span>
+                  </button>
+                ) : (
+                  <button
+                    key={`card:${result.deck.id}:${result.card.id}`}
+                    className="search-result-item"
+                    onClick={() => openDeck(result.deck.id, result.card.id)}
+                    title={result.card.definition}
+                  >
+                    <div className="search-result-info">
+                      <span className="search-result-title">
+                        <span className="search-result-kind">Card</span>
+                        {result.card.term}
+                      </span>
+                      <span className="search-result-meta">
+                        {result.section.title} · {result.deck.title}
+                      </span>
+                      <span className="search-result-snippet">{result.card.definition}</span>
+                    </div>
+                    <span className="section-card-arrow">›</span>
+                  </button>
+                ),
+              )}
+              {searchTotal > searchResults.length && (
+                <p className="hint-text">
+                  Showing the first {MAX_SEARCH_RESULTS} of {searchTotal} matches. Keep typing to
+                  narrow them down.
+                </p>
+              )}
             </div>
           )
         ) : librarySections.length === 0 ? (

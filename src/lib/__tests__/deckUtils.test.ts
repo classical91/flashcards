@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sortDecksByLastViewed } from "../deckUtils";
+import { applyStudyOrder, shuffleCards, sortDecksByLastViewed } from "../deckUtils";
 
 const decks = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
 
@@ -38,5 +38,39 @@ describe("sortDecksByLastViewed", () => {
     const original = [...decks];
     sortDecksByLastViewed(decks, { d: 1 });
     expect(decks).toEqual(original);
+  });
+});
+
+describe("applyStudyOrder", () => {
+  const cards = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+  it("returns the deck's own order when no session order is set", () => {
+    expect(applyStudyOrder(cards, null)).toBe(cards);
+  });
+
+  it("reorders the cards to match the session order", () => {
+    expect(ids(applyStudyOrder(cards, ["c", "a", "b"]))).toEqual(["c", "a", "b"]);
+  });
+
+  it("puts cards added since the shuffle at the end, in the deck's order", () => {
+    const withNewCards = [...cards, { id: "d" }, { id: "e" }];
+    expect(ids(applyStudyOrder(withNewCards, ["c", "a", "b"]))).toEqual(["c", "a", "b", "d", "e"]);
+  });
+
+  it("ignores ids for cards that have since been deleted", () => {
+    expect(ids(applyStudyOrder(cards, ["gone", "c", "b", "a"]))).toEqual(["c", "b", "a"]);
+  });
+
+  it("does not mutate the deck's card list", () => {
+    const original = [...cards];
+    applyStudyOrder(cards, ["c", "b", "a"]);
+    expect(cards).toEqual(original);
+  });
+
+  it("shuffling produces an order without changing the deck itself", () => {
+    const deckCards = [...cards];
+    const order = shuffleCards(deckCards).map((card) => card.id);
+    expect(order.slice().sort()).toEqual(["a", "b", "c"]);
+    expect(deckCards).toEqual(cards);
   });
 });

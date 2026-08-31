@@ -16,12 +16,24 @@ This repository is a Vite React app with a small Node API server for cloud libra
   - `Space` / `Enter`: flip card
   - `Left` / `Right`: previous/next card
   - `K`: mark/unmark current card as known
-  - `S`: shuffle current deck
+  - `S`: shuffle current deck for this session
+  - `1`–`4`: grade the current card during a review session (Again/Hard/Good/Easy)
 - Track progress per deck:
   - known card count
   - remaining card count
   - progress meter
   - optional “Only remaining” study mode
+- Study with spaced repetition:
+  - grade a card Again / Hard / Good / Easy; each button shows when the card
+    would next come back
+  - an SM-2 style schedule is stored per card and syncs with the library
+  - **Review** in the study view works through cards due today, most overdue
+    first, then cards that have never been graded
+  - the home page lists how many cards are due today and which decks they are in
+- Shuffle is session-only: it changes the order you study in, not the deck
+  itself, and **Unshuffle** puts it back.
+- Search decks _and_ cards from the home page. Card hits open the deck at the
+  matching card.
 - Create new decks inside any section.
 - Bulk import cards when creating a deck or appending to an existing one.
 - Parse pasted lines in multiple formats:
@@ -34,8 +46,11 @@ This repository is a Vite React app with a small Node API server for cloud libra
   previews the deck and offers to add it to your own library.
 - Persist state in cloud sync storage:
   - library/deck content
-  - per-deck study progress
+  - per-deck study progress, including review schedules
   - selected deck
+  - preferences: pinned decks, recently viewed decks, theme and accent colour
+- Download the whole library as a JSON backup file and restore it later
+  (**⋯ → ☁ Sync → Backup file**).
 - Includes starter deck data in `src/data`:
   - `Positive Adjectives`
   - `emotions1`
@@ -88,6 +103,27 @@ npm run start
 The production server serves `dist/` and the `/api/*` sync routes on the same port.
 
 ## Cloud Sync
+
+### How two devices are merged
+
+Snapshots are version 2. Every section, deck, card and per-deck progress entry
+carries an optional `updatedAt`, and the snapshot carries deletion tombstones
+for sections, decks and cards. Merging is deterministic:
+
+- A tombstone removes the entity on both devices, so deletes actually
+  propagate instead of being undone by whichever device still had the item.
+- A tombstone loses to an entity edited or re-created after the delete.
+- Tombstones expire after 90 days, which bounds snapshot growth; a device
+  offline longer than that can resurrect what it still holds.
+- Two edits to the same id are settled by `updatedAt`, newest wins.
+- Progress saved before version 2 has no timestamp, so it still merges by
+  union rather than silently dropping marks.
+- Every tie falls to the local device, so repeated merges converge.
+- Pins, theme and accent move as one timestamped group; view times merge per
+  deck by keeping the later one.
+
+Version 1 snapshots are read and upgraded, and the server still accepts them,
+so a device that has not been reloaded keeps syncing.
 
 New installs generate a private sync key on first use and store it in the browser. Use the same key on another browser or device to load the same cloud library. If `VITE_FLASHCARDS_SYNC_KEY` is explicitly set at build time, that configured key is used for new installs that do not already have a saved key.
 
@@ -153,14 +189,14 @@ included.
 
 ### Server (Node API)
 
-| Variable               | Required          | Description                                                                                                                                               |
-| ---------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`         | Yes in production | PostgreSQL connection string. Without it the server uses in-memory storage (data lost on restart).                                                        |
-| `PORT`                 | No                | HTTP port for the Node server (default: `3000`).                                                                                                          |
-| `ALLOW_MEMORY_STORAGE` | No                | Set to `true` to allow in-memory fallback even when `NODE_ENV=production`. Useful for local staging runs without a database.                              |
-| `ADMIN_TOKEN`          | No                | Strong admin password and bearer token. Enables `/admin`, the library directory API, and confirmed deletion. When unset, all admin API routes return 404. |
-| `ADMIN_USERNAME`       | No                | Username for `/admin`. Defaults to `admin`.                                                                                                               |
-| `ALLOW_CUSTOM_LIBRARY_IDS` | No            | Set to `true` to let a **new** cloud library be created under any well-formed id instead of only a generated `fc_…` key. Needed when seeding installs onto a hand-picked `VITE_FLASHCARDS_SYNC_KEY`. Leave unset otherwise — it re-opens the guessable-key problem described under Cloud Sync. |
+| Variable                   | Required          | Description                                                                                                                                                                                                                                                                                    |
+| -------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`             | Yes in production | PostgreSQL connection string. Without it the server uses in-memory storage (data lost on restart).                                                                                                                                                                                             |
+| `PORT`                     | No                | HTTP port for the Node server (default: `3000`).                                                                                                                                                                                                                                               |
+| `ALLOW_MEMORY_STORAGE`     | No                | Set to `true` to allow in-memory fallback even when `NODE_ENV=production`. Useful for local staging runs without a database.                                                                                                                                                                   |
+| `ADMIN_TOKEN`              | No                | Strong admin password and bearer token. Enables `/admin`, the library directory API, and confirmed deletion. When unset, all admin API routes return 404.                                                                                                                                      |
+| `ADMIN_USERNAME`           | No                | Username for `/admin`. Defaults to `admin`.                                                                                                                                                                                                                                                    |
+| `ALLOW_CUSTOM_LIBRARY_IDS` | No                | Set to `true` to let a **new** cloud library be created under any well-formed id instead of only a generated `fc_…` key. Needed when seeding installs onto a hand-picked `VITE_FLASHCARDS_SYNC_KEY`. Leave unset otherwise — it re-opens the guessable-key problem described under Cloud Sync. |
 
 ### Client (Vite build-time)
 
@@ -200,12 +236,18 @@ included.
    │  ├─ useStudyKeyboard.ts
    │  └─ useDebouncedPersist.ts
    ├─ lib/
+   │  ├─ backup.ts
    │  ├─ constants.ts
+   │  ├─ dailyCard.ts
    │  ├─ deckUtils.ts
    │  ├─ format.ts
+   │  ├─ merge.ts
+   │  ├─ search.ts
    │  ├─ share.ts
+   │  ├─ srs.ts
    │  ├─ storage.ts
    │  ├─ sync.ts
+   │  ├─ tombstones.ts
    │  └─ types.ts
    └─ data/
       ├─ deckBuilder.ts
@@ -227,6 +269,11 @@ included.
 - `src/data/deckBuilder.ts`: Core deck/card types and helpers (slug/id generation, import parsing, raw deck conversion).
 - `src/data/decks.ts`: Library sections plus default selected deck.
 - `src/data/positiveAdjectives.ts` and `src/data/emotions1.ts`: starter deck datasets.
+- `src/lib/merge.ts`: the two-device merge — tombstones, last-writer-wins, preferences.
+- `src/lib/tombstones.ts`: deletion records, their expiry, and the resurrection rule.
+- `src/lib/srs.ts`: the spaced-repetition scheduler and review queue.
+- `src/lib/backup.ts`: backup file naming, serialisation and reading.
+- `src/lib/search.ts`: home search across deck names and card content.
 - `src/styles.css`: complete visual design system for the SPA.
 - `package.json`: npm scripts and dependency definitions.
 
@@ -237,6 +284,8 @@ included.
 - When adding import formats, update `splitLine()` in `src/data/deckBuilder.ts` and test invalid-line handling.
 - Deck/card IDs are slug-based and deduplicated; preserve `createUniqueId()` semantics to avoid collisions.
 - Keep the client snapshot format in `src/data/librarySnapshot.ts` aligned with server validation in `server.mjs`.
+- Anything that edits the library must stamp `updatedAt` (see the `touch*` helpers in `src/lib/deckUtils.ts`) and anything that deletes must record a tombstone, or the change will not survive a merge.
+- Session-only state (shuffle order, an active review session) is deliberately not persisted or synced. Keep it that way.
 - Keep README and UI copy aligned with actual supported import formats and shortcuts.
 
 ## Known Limitations / TODO Signals
@@ -247,3 +296,7 @@ included.
 - Share links cannot be revoked or listed, and shared deck snapshots are never garbage-collected.
 - Large starter content is embedded directly in TypeScript source files.
 - `index.html` title/description currently emphasize “Positive Adjectives,” while the app now supports a broader multi-section library.
+- Known/Remaining and the review schedule are separate systems; a card can be marked known without ever being graded, and vice versa.
+- There is no per-day cap on how many new cards a review session introduces.
+- Restoring a backup merges rather than replaces, so it cannot be used to undo an unwanted addition.
+- No CSV import/export, no duplicate-term detection on import, and no offline/PWA support.

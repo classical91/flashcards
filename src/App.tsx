@@ -6,6 +6,7 @@ import {
   parsePastedFlashcards,
   withCardIds,
 } from "./data/deckBuilder";
+import { createLibrarySnapshot } from "./data/librarySnapshot";
 import {
   ACCENT_STORAGE_KEY,
   DAILY_CARD_STORAGE_KEY,
@@ -13,19 +14,48 @@ import {
   LIBRARY_STORAGE_KEY,
   MAX_RECENT_DECKS,
   PINNED_DECKS_STORAGE_KEY,
+  PREFERENCES_UPDATED_AT_STORAGE_KEY,
   PROGRESS_STORAGE_KEY,
   RECENT_DECKS_STORAGE_KEY,
   SELECTED_DECK_STORAGE_KEY,
   THEME_STORAGE_KEY,
+  TOMBSTONES_STORAGE_KEY,
 } from "./lib/constants";
 import {
   createDeckProgress,
   findDeckById,
   findSectionForDeck,
+  applyStudyOrder,
   flattenDecks,
   shuffleCards,
+  touchCard,
+  touchDeck,
+  touchProgress,
+  touchSection,
   updateDeckInSections,
 } from "./lib/deckUtils";
+import { LibraryState, mergeLibraryState } from "./lib/merge";
+import {
+  ReviewGrade,
+  buildReviewQueue,
+  countReviewQueue,
+  gradeCard,
+  previewIntervals,
+} from "./lib/srs";
+import {
+  collectEntityIds,
+  forgetDeletions,
+  recordCardDeletion,
+  recordDeckDeletion,
+  recordSectionDeletion,
+} from "./lib/tombstones";
+import {
+  buildBackupFileName,
+  countBackupCards,
+  downloadTextFile,
+  readBackup,
+  serializeBackup,
+} from "./lib/backup";
 import { DailyCardRef, pickDailyCard, toDateKey } from "./lib/dailyCard";
 import {
   loadAccentColor,
@@ -34,9 +64,11 @@ import {
   loadLibrarySections,
   loadPinnedDeckIds,
   loadProgressState,
+  loadPreferencesUpdatedAt,
   loadRecentDeckIds,
   loadSelectedDeckId,
   loadTheme,
+  loadTombstones,
   safeSetItem,
 } from "./lib/storage";
 import {
@@ -51,6 +83,7 @@ import {
   SectionEditor,
   SharedDeckLink,
   StudyMode,
+  SyncedPreferences,
   Theme,
   ViewState,
 } from "./lib/types";
@@ -98,6 +131,7 @@ export default function App() {
   const [sharedDeckLink, setSharedDeckLink] = useState<SharedDeckLink | null>(null);
   const [isSharingDeck, setIsSharingDeck] = useState(false);
   const [showSyncPanel, setShowSyncPanel] = useState(false);
+  const [backupMessage, setBackupMessage] = useState("");
   const [showThemesPanel, setShowThemesPanel] = useState(false);
   const [view, setView] = useState<ViewState>({ kind: "home" });
   const [toast, setToast] = useState(
@@ -114,20 +148,77 @@ export default function App() {
   const [accentColor, setAccentColor] = useState<AccentColor>(loadAccentColor);
   const [dailyCardRef, setDailyCardRef] = useState<DailyCardRef | null>(loadDailyCard);
   const [todayKey, setTodayKey] = useState(() => toDateKey(new Date()));
+  // Session-only: a shuffle is a way to study, not an edit to the deck, so it
+  // is deliberately never persisted or synced. Keyed by deck so returning to a
+  // deck you shuffled keeps that order for the rest of the session.
+  const [studyOrder, setStudyOrder] = useState<{ deckId: string; cardIds: string[] } | null>(null);
+  // A review session is also session-only. `startedAt` freezes the "due by"
+  // cutoff for its whole run, so the queue doesn't reshuffle underneath you as
+  // the clock moves — and so a card you press Again on comes back today.
+  const [reviewSession, setReviewSession] = useState<{
+    deckId: string;
+    startedAt: number;
+  } | null>(null);
+  const [tombstones, setTombstones] = useState(loadTombstones);
+  const [preferencesUpdatedAt, setPreferencesUpdatedAt] = useState(loadPreferencesUpdatedAt);
 
   const actionsMenuRef = useRef<HTMLDivElement>(null);
 
-  const cloudSync = useCloudSync({
-    librarySections,
-    deckProgress,
-    selectedDeckId,
-    setLibrarySections,
-    setDeckProgress,
-    setSelectedDeckId,
-  });
+  const preferences = useMemo<SyncedPreferences>(
+    () => ({
+      pinnedDeckIds,
+      recentDecks: recentDeckIds,
+      deckLastViewed,
+      theme,
+      accentColor,
+      updatedAt: preferencesUpdatedAt,
+    }),
+    [pinnedDeckIds, recentDeckIds, deckLastViewed, theme, accentColor, preferencesUpdatedAt],
+  );
 
-  const askConfirm = (message: string, onConfirm: () => void) => {
-    setConfirmDialog({ message, onConfirm });
+  const libraryState = useMemo<LibraryState>(
+    () => ({ librarySections, deckProgress, tombstones, preferences }),
+    [librarySections, deckProgress, tombstones, preferences],
+  );
+
+  // Applies a completed cloud merge in one pass. Preferences are written back
+  // with the merge's own timestamp rather than through the UI setters below,
+  // so accepting the cloud's theme doesn't count as this device changing it.
+  const applyMergedState = (merged: LibraryState, mergedSelectedDeckId: string) => {
+    setLibrarySections(merged.librarySections);
+    setDeckProgress(merged.deckProgress);
+    setTombstones(merged.tombstones);
+    setPinnedDeckIds(merged.preferences.pinnedDeckIds);
+    setRecentDeckIds(merged.preferences.recentDecks);
+    setDeckLastViewed(merged.preferences.deckLastViewed);
+    setTheme(merged.preferences.theme);
+    setAccentColor(merged.preferences.accentColor);
+    setPreferencesUpdatedAt(merged.preferences.updatedAt);
+    setSelectedDeckId(mergedSelectedDeckId);
+  };
+
+  const cloudSync = useCloudSync({ libraryState, selectedDeckId, applyMergedState });
+
+  // Marks the preference group (pins, theme, accent) as changed on this device
+  // so the merge prefers it over another device's older settings.
+  const touchPreferences = () => setPreferencesUpdatedAt(Date.now());
+
+  const chooseTheme = (nextTheme: Theme) => {
+    setTheme(nextTheme);
+    touchPreferences();
+  };
+
+  const chooseAccentColor = (nextAccent: AccentColor) => {
+    setAccentColor(nextAccent);
+    touchPreferences();
+  };
+
+  const askConfirm = (
+    message: string,
+    onConfirm: () => void,
+    options: Pick<ConfirmDialog, "confirmLabel" | "tone"> = {},
+  ) => {
+    setConfirmDialog({ message, onConfirm, ...options });
   };
 
   const allDecks = useMemo(() => flattenDecks(librarySections), [librarySections]);
@@ -153,12 +244,38 @@ export default function App() {
 
   const knownSet = useMemo(() => new Set(activeProgress?.knownIds ?? []), [activeProgress]);
 
+  const isShuffled = !!selectedDeck && studyOrder?.deckId === selectedDeck.id;
+  const isReviewing = !!selectedDeck && reviewSession?.deckId === selectedDeck.id;
+
+  const orderedCards = useMemo(
+    () =>
+      selectedDeck
+        ? applyStudyOrder(selectedDeck.cards, isShuffled ? (studyOrder?.cardIds ?? null) : null)
+        : [],
+    [selectedDeck, isShuffled, studyOrder],
+  );
+
   const visibleCards = useMemo(() => {
-    if (!selectedDeck) return [];
+    if (isReviewing && reviewSession) {
+      return buildReviewQueue(orderedCards, activeProgress?.reviews, reviewSession.startedAt);
+    }
     return activeProgress?.studyMode === "remaining"
-      ? selectedDeck.cards.filter((card) => !knownSet.has(card.id))
-      : selectedDeck.cards;
-  }, [selectedDeck, activeProgress?.studyMode, knownSet]);
+      ? orderedCards.filter((card) => !knownSet.has(card.id))
+      : orderedCards;
+  }, [orderedCards, activeProgress?.studyMode, activeProgress?.reviews, knownSet, isReviewing, reviewSession]);
+
+  const deckReviewCounts = useMemo(
+    () =>
+      selectedDeck
+        ? countReviewQueue(
+            selectedDeck.cards.map((card) => card.id),
+            activeProgress?.reviews,
+          )
+        : { due: 0, newCards: 0 },
+    // todayKey is a dependency so the counts roll over at midnight on a tab
+    // that has been left open.
+    [selectedDeck, activeProgress?.reviews, todayKey],
+  );
 
   const currentCard = useMemo(
     () =>
@@ -173,12 +290,41 @@ export default function App() {
     [currentCard, visibleCards],
   );
 
+  const gradePreview = useMemo(
+    () => previewIntervals(currentCard ? activeProgress?.reviews?.[currentCard.id] : undefined),
+    [currentCard, activeProgress?.reviews],
+  );
+
   const totalCards = selectedDeck?.cards.length ?? 0;
   const knownCount = activeProgress?.knownIds.length ?? 0;
   const remainingCount = totalCards - knownCount;
   const hasRemainingCards = remainingCount > 0;
   const currentCardIsKnown = currentCard ? knownSet.has(currentCard.id) : false;
   const isDeckEmpty = totalCards === 0;
+
+  /**
+   * What the whole library has waiting today, for the home page. Only decks
+   * with something due are listed: a deck whose cards have never been graded
+   * is not "overdue", it just hasn't been started.
+   */
+  const reviewSummary = useMemo(() => {
+    const decks = librarySections
+      .flatMap((section) =>
+        section.decks.map((deck) => ({
+          deck,
+          section,
+          ...countReviewQueue(
+            deck.cards.map((card) => card.id),
+            deckProgress[deck.id]?.reviews,
+          ),
+        })),
+      )
+      .filter((entry) => entry.due > 0)
+      .sort((a, b) => b.due - a.due);
+
+    return { totalDue: decks.reduce((sum, entry) => sum + entry.due, 0), decks };
+    // todayKey rolls the counts over at midnight on a tab left open overnight.
+  }, [librarySections, deckProgress, todayKey]);
 
   // The picked card is stored by id, so resolve it against the live library —
   // that way a deck deleted mid-day just retires the pick instead of dangling.
@@ -228,7 +374,10 @@ export default function App() {
       const nextProgress = updater(
         currentProgress[selectedDeck.id] ?? createDeckProgress(selectedDeck),
       );
-      return { ...currentProgress, [selectedDeck.id]: nextProgress };
+      // Every progress change is stamped here rather than at each call site, so
+      // the cloud merge can order this device's marks against another's — an
+      // unmarked card stays unmarked instead of being restored by a stale peer.
+      return { ...currentProgress, [selectedDeck.id]: touchProgress(nextProgress) };
     });
   };
 
@@ -253,18 +402,46 @@ export default function App() {
 
   const handleShuffle = () => {
     if (!selectedDeck) return;
-    startTransition(() => {
-      setLibrarySections((currentSections) =>
-        updateDeckInSections(currentSections, selectedDeck.id, (deck) => ({
-          ...deck,
-          cards: shuffleCards(deck.cards),
-        })),
-      );
+    setStudyOrder({
+      deckId: selectedDeck.id,
+      cardIds: shuffleCards(selectedDeck.cards).map((card) => card.id),
     });
-    setToast("Deck shuffled.");
+    setToast("Shuffled for this session. The deck's own order is unchanged.");
+  };
+
+  const handleStartReview = (deckId?: string) => {
+    const targetDeckId = deckId ?? selectedDeck?.id;
+    if (!targetDeckId) return;
+    setReviewSession({ deckId: targetDeckId, startedAt: Date.now() });
+  };
+
+  const handleExitReview = () => setReviewSession(null);
+
+  const handleGrade = (grade: ReviewGrade) => {
+    if (!currentCard || !selectedDeck) return;
+    // The next card is chosen from the queue as it looks now, before the grade
+    // reshuffles it by due date. Pressing Again keeps the card in today's
+    // queue, so without this the session would sit on it forever.
+    const remaining = visibleCards.filter((card) => card.id !== currentCard.id);
+    const nextCard = remaining[cardPosition] ?? remaining[0] ?? null;
+    updateSelectedDeckProgress((progress) => ({
+      ...progress,
+      reviews: {
+        ...(progress.reviews ?? {}),
+        [currentCard.id]: gradeCard(grade, progress.reviews?.[currentCard.id]),
+      },
+      currentCardId: nextCard?.id ?? "",
+      isFlipped: false,
+    }));
+  };
+
+  const handleRestoreOrder = () => {
+    setStudyOrder(null);
+    setToast("Back to the deck's own order.");
   };
 
   const handleStudyModeChange = (mode: StudyMode) => {
+    setReviewSession(null);
     updateSelectedDeckProgress((progress) => ({ ...progress, studyMode: mode }));
   };
 
@@ -311,12 +488,14 @@ export default function App() {
     const parsed = parsePastedFlashcards(deckComposer?.paste ?? "");
     const deckIds = new Set(allDecks.map((deck) => deck.id));
     const deckId = createUniqueId(title, deckIds);
-    const cards = withCardIds(parsed.cards);
+    const now = Date.now();
+    const cards = withCardIds(parsed.cards).map((card) => touchCard(card, now));
     const newDeck: Deck = {
       id: deckId,
       title,
       subtitle: subtitle || `Custom flashcards in ${section.title}.`,
       cards,
+      updatedAt: now,
     };
     setLibrarySections((currentSections) =>
       currentSections.map((item) =>
@@ -339,10 +518,11 @@ export default function App() {
       setCardImportMessage("Paste at least one valid card line first.");
       return;
     }
+    const now = Date.now();
     const newCards = withCardIds(
       parsed.cards,
       selectedDeck.cards.map((card) => card.id),
-    );
+    ).map((card) => touchCard(card, now));
     startTransition(() => {
       setLibrarySections((currentSections) =>
         updateDeckInSections(currentSections, selectedDeck.id, (deck) => ({
@@ -377,7 +557,9 @@ export default function App() {
       return;
     }
     const existingIds = selectedDeck.cards.map((c) => c.id);
-    const newCards = withCardIds([{ term: word, definition: def }], existingIds);
+    const newCards = withCardIds([{ term: word, definition: def }], existingIds).map((card) =>
+      touchCard(card),
+    );
     const newCard = newCards[0];
     if (!newCard) return;
     startTransition(() => {
@@ -403,10 +585,30 @@ export default function App() {
     setToast(`Added "${word}".`);
   };
 
-  const openDeck = (deckId: string) => {
+  const openDeck = (deckId: string, cardId?: string) => {
     const viewedAt = Date.now();
     setSelectedDeckId(deckId);
     setView({ kind: "study", deckId });
+    // Opening a search hit lands on that card rather than wherever the deck
+    // was left. A card already marked known is invisible in "remaining", so
+    // that deck switches back to the full deck for this visit.
+    if (cardId) {
+      setDeckProgress((currentProgress) => {
+        const deck = findDeckById(librarySections, deckId);
+        if (!deck || !deck.cards.some((card) => card.id === cardId)) return currentProgress;
+        const progress = currentProgress[deckId] ?? createDeckProgress(deck);
+        const isHidden = progress.studyMode === "remaining" && progress.knownIds.includes(cardId);
+        return {
+          ...currentProgress,
+          [deckId]: touchProgress({
+            ...progress,
+            currentCardId: cardId,
+            isFlipped: false,
+            studyMode: isHidden ? "all" : progress.studyMode,
+          }),
+        };
+      });
+    }
     setRecentDeckIds((prev) =>
       [{ id: deckId, viewedAt }, ...prev.filter((e) => e.id !== deckId)].slice(
         0,
@@ -414,6 +616,11 @@ export default function App() {
       ),
     );
     setDeckLastViewed((prev) => ({ ...prev, [deckId]: viewedAt }));
+  };
+
+  const openDeckForReview = (deckId: string) => {
+    openDeck(deckId);
+    handleStartReview(deckId);
   };
 
   const openRandomDeck = (decks: Deck[]) => {
@@ -426,6 +633,7 @@ export default function App() {
     setPinnedDeckIds((current) =>
       current.includes(deckId) ? current.filter((id) => id !== deckId) : [...current, deckId],
     );
+    touchPreferences();
   };
 
   const handleDeleteCard = (cardId: string) => {
@@ -439,6 +647,10 @@ export default function App() {
             cards: deck.cards.filter((c) => c.id !== cardId),
           })),
         );
+        // Recorded so the delete reaches other devices. Without it the next
+        // merge would simply take the card back from whichever device still
+        // has it.
+        setTombstones((current) => recordCardDeletion(current, selectedDeck.id, cardId));
       });
       setToast(`Deleted card.`);
       setConfirmDialog(null);
@@ -458,7 +670,11 @@ export default function App() {
     startTransition(() => {
       setLibrarySections((curr) =>
         updateDeckInSections(curr, selectedDeck.id, (deck) => {
-          const updated = { ...deck.cards.find((c) => c.id === cardId)!, term, definition };
+          const updated = touchCard({
+            ...deck.cards.find((c) => c.id === cardId)!,
+            term,
+            definition,
+          });
           return {
             ...deck,
             cards: [updated, ...deck.cards.filter((c) => c.id !== cardId)],
@@ -478,7 +694,9 @@ export default function App() {
     if (!selectedDeck || !title) return;
     startTransition(() => {
       setLibrarySections((curr) =>
-        updateDeckInSections(curr, selectedDeck.id, (deck) => ({ ...deck, title, subtitle })),
+        updateDeckInSections(curr, selectedDeck.id, (deck) =>
+          touchDeck({ ...deck, title, subtitle }),
+        ),
       );
     });
     setToast("Deck updated.");
@@ -496,6 +714,75 @@ export default function App() {
     } catch {
       setToast("Could not copy to clipboard.");
     }
+  };
+
+  const handleDownloadBackup = () => {
+    const snapshot = createLibrarySnapshot({
+      librarySections,
+      deckProgress,
+      selectedDeckId,
+      tombstones,
+      preferences,
+    });
+    const fileName = buildBackupFileName();
+    try {
+      downloadTextFile(fileName, serializeBackup(snapshot));
+    } catch {
+      setBackupMessage("This browser wouldn't let the backup download.");
+      return;
+    }
+    const cardCount = countBackupCards(snapshot);
+    setBackupMessage(`Saved ${cardCount} card${cardCount === 1 ? "" : "s"} to ${fileName}.`);
+  };
+
+  const handleRestoreBackup = async (file: File) => {
+    setBackupMessage(`Reading ${file.name}…`);
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      setBackupMessage("That file couldn't be read.");
+      return;
+    }
+    const result = readBackup(text);
+    if (!result.ok) {
+      setBackupMessage(result.message);
+      return;
+    }
+
+    const { snapshot } = result;
+    const cardCount = countBackupCards(snapshot);
+    askConfirm(
+      `Restore ${cardCount} card${cardCount === 1 ? "" : "s"} from ${file.name}? ` +
+        "Anything only in the backup comes back, and nothing already here is removed.",
+      () => {
+        // Restoring is an explicit request for the backup's contents, so the
+        // deletions covering them are dropped first — otherwise the merge
+        // would honour them and delete everything again.
+        const restoredIds = collectEntityIds(snapshot.librarySections);
+        const merged = mergeLibraryState(
+          { ...libraryState, tombstones: forgetDeletions(tombstones, restoredIds) },
+          {
+            librarySections: snapshot.librarySections,
+            deckProgress: snapshot.deckProgress,
+            tombstones: forgetDeletions(snapshot.tombstones, restoredIds),
+            preferences: snapshot.preferences,
+          },
+        );
+        const mergedDeckIds = new Set(flattenDecks(merged.librarySections).map((deck) => deck.id));
+        startTransition(() => {
+          applyMergedState(
+            merged,
+            mergedDeckIds.has(selectedDeckId)
+              ? selectedDeckId
+              : (merged.librarySections[0]?.decks[0]?.id ?? ""),
+          );
+        });
+        setBackupMessage(`Restored ${cardCount} card${cardCount === 1 ? "" : "s"} from ${file.name}.`);
+        setConfirmDialog(null);
+      },
+      { confirmLabel: "Restore", tone: "primary" },
+    );
   };
 
   const handleShareDeck = async () => {
@@ -524,7 +811,22 @@ export default function App() {
     if (sharedDeckLink?.status !== "ready") return;
     const { sections, deck } = importSharedDeck(librarySections, sharedDeckLink.snapshot);
 
-    setLibrarySections(sections);
+    // Stamped as new so a tombstone for an id it happens to reuse can't delete
+    // it again on the next merge.
+    const now = Date.now();
+    setLibrarySections(
+      sections.map((section) => ({
+        ...section,
+        decks: section.decks.map((existing) =>
+          existing.id === deck.id
+            ? touchDeck(
+                { ...existing, cards: existing.cards.map((card) => touchCard(card, now)) },
+                now,
+              )
+            : existing,
+        ),
+      })),
+    );
     setDeckProgress((current) => ({ ...current, [deck.id]: createDeckProgress(deck) }));
     setSharedDeckLink(null);
     openDeck(deck.id);
@@ -549,6 +851,7 @@ export default function App() {
           delete next[deckId];
           return next;
         });
+        setTombstones((current) => recordDeckDeletion(current, deckId));
         setPinnedDeckIds((current) => current.filter((id) => id !== deckId));
         setRecentDeckIds((current) => current.filter((entry) => entry.id !== deckId));
         setDeckLastViewed((current) => {
@@ -578,6 +881,16 @@ export default function App() {
           deckIds.forEach((id) => delete next[id]);
           return next;
         });
+        // The decks are tombstoned individually too: another device may have
+        // filed the same deck under a different topic, and a section tombstone
+        // alone would leave it there.
+        setTombstones((current) => {
+          const deletedAt = Date.now();
+          return deckIds.reduce(
+            (acc, id) => recordDeckDeletion(acc, id, deletedAt),
+            recordSectionDeletion(current, sectionId, deletedAt),
+          );
+        });
         setPinnedDeckIds((current) => current.filter((id) => !deckIds.includes(id)));
         setRecentDeckIds((current) => current.filter((entry) => !deckIds.includes(entry.id)));
         setDeckLastViewed((current) => {
@@ -603,7 +916,7 @@ export default function App() {
     setLibrarySections((current) =>
       current.map((section) =>
         section.id === sectionId
-          ? { ...section, title, description: description.trim() }
+          ? touchSection({ ...section, title, description: description.trim() })
           : section,
       ),
     );
@@ -624,6 +937,7 @@ export default function App() {
       title,
       description: sectionComposer?.description.trim() || `Cards from ${title}.`,
       decks: [],
+      updatedAt: Date.now(),
     };
     setLibrarySections((current) => [...current, newSection]);
     setSectionComposer(null);
@@ -686,6 +1000,10 @@ export default function App() {
         }
         const validCardIds = new Set(deck.cards.map((card) => card.id));
         const knownIds = savedProgress.knownIds.filter((id) => validCardIds.has(id));
+        const savedReviews = savedProgress.reviews ?? {};
+        const reviewEntries = Object.entries(savedReviews).filter(([cardId]) =>
+          validCardIds.has(cardId),
+        );
         const currentCardId = validCardIds.has(savedProgress.currentCardId)
           ? savedProgress.currentCardId
           : (deck.cards[0]?.id ?? "");
@@ -693,13 +1011,20 @@ export default function App() {
         if (
           currentCardId === savedProgress.currentCardId &&
           isFlipped === savedProgress.isFlipped &&
-          knownIds.length === savedProgress.knownIds.length
+          knownIds.length === savedProgress.knownIds.length &&
+          reviewEntries.length === Object.keys(savedReviews).length
         ) {
           nextProgress[deck.id] = savedProgress;
           return;
         }
         changed = true;
-        nextProgress[deck.id] = { ...savedProgress, currentCardId, isFlipped, knownIds };
+        nextProgress[deck.id] = {
+          ...savedProgress,
+          currentCardId,
+          isFlipped,
+          knownIds,
+          reviews: Object.fromEntries(reviewEntries),
+        };
       });
       return changed ? nextProgress : currentProgress;
     });
@@ -739,6 +1064,8 @@ export default function App() {
   useDebouncedPersist(RECENT_DECKS_STORAGE_KEY, recentDeckIds);
   useDebouncedPersist(DECK_LAST_VIEWED_STORAGE_KEY, deckLastViewed);
   useDebouncedPersist(DAILY_CARD_STORAGE_KEY, dailyCardRef);
+  useDebouncedPersist(TOMBSTONES_STORAGE_KEY, tombstones);
+  useDebouncedPersist(PREFERENCES_UPDATED_AT_STORAGE_KEY, preferencesUpdatedAt);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -785,6 +1112,7 @@ export default function App() {
     onPrev: () => moveToCard(-1),
     onToggleKnown: toggleKnown,
     onShuffle: handleShuffle,
+    onGrade: isReviewing ? handleGrade : null,
   });
 
   useEffect(() => {
@@ -870,13 +1198,18 @@ export default function App() {
           onLoadFromCloud={cloudSync.onLoadFromCloud}
           onSaveToCloud={cloudSync.onSaveToCloud}
           onGenerateSyncKey={cloudSync.onGenerateSyncKey}
+          backupMessage={backupMessage}
+          onDownloadBackup={handleDownloadBackup}
+          onRestoreBackup={handleRestoreBackup}
           showThemesPanel={showThemesPanel}
           setShowThemesPanel={setShowThemesPanel}
           theme={theme}
-          setTheme={setTheme}
+          setTheme={chooseTheme}
           accentColor={accentColor}
-          setAccentColor={setAccentColor}
+          setAccentColor={chooseAccentColor}
           dailyCard={dailyCard}
+          reviewSummary={reviewSummary}
+          onStartReview={openDeckForReview}
           sectionComposer={sectionComposer}
           setSectionComposer={setSectionComposer}
           sectionComposerMessage={sectionComposerMessage}
@@ -986,7 +1319,16 @@ export default function App() {
         togglePinDeck={togglePinDeck}
         onStudyModeChange={handleStudyModeChange}
         onFlip={handleFlip}
+        isShuffled={isShuffled}
         onShuffle={handleShuffle}
+        onRestoreOrder={handleRestoreOrder}
+        isReviewing={isReviewing}
+        dueCount={deckReviewCounts.due}
+        newCount={deckReviewCounts.newCards}
+        gradePreview={gradePreview}
+        onStartReview={() => handleStartReview()}
+        onExitReview={handleExitReview}
+        onGrade={handleGrade}
         onToggleKnown={toggleKnown}
         onMoveToCard={moveToCard}
         onGoogleSearch={googleSearch}

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { isTypingTarget } from "../lib/format";
+import { REVIEW_GRADES, ReviewGrade } from "../lib/srs";
 
 export type StudyKeyboardHandlers = {
   onFlip: () => void;
@@ -7,6 +8,8 @@ export type StudyKeyboardHandlers = {
   onPrev: () => void;
   onToggleKnown: () => void;
   onShuffle: () => void;
+  /** Only called while a review session is running; 1-4 grade the card. */
+  onGrade: ((grade: ReviewGrade) => void) | null;
 };
 
 /**
@@ -44,6 +47,10 @@ export function useStudyKeyboard(active: boolean, handlers: StudyKeyboardHandler
       if (event.key.toLowerCase() === "s") {
         event.preventDefault();
         current.onShuffle();
+      }
+      if (current.onGrade && event.key >= "1" && event.key <= "4") {
+        event.preventDefault();
+        current.onGrade(REVIEW_GRADES[Number(event.key) - 1]);
       }
     };
     window.addEventListener("keydown", handleKeyDown);

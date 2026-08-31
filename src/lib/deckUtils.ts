@@ -1,14 +1,32 @@
-import { Deck, DeckSection } from "../data/deckBuilder";
+import { Deck, DeckSection, Flashcard } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
 import { DeckLastViewed } from "./types";
 
-export const shuffleCards = (cards: { id: string; term: string; definition: string }[]) => {
+export const shuffleCards = <T>(cards: T[]): T[] => {
   const copy = [...cards];
   for (let index = copy.length - 1; index > 0; index -= 1) {
     const swapIndex = Math.floor(Math.random() * (index + 1));
     [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
   }
   return copy;
+};
+
+/**
+ * Reorders a deck's cards for the current study session.
+ *
+ * Shuffling used to rewrite `deck.cards` in the saved library, which made a
+ * throwaway reordering permanent and pushed it to every other device. The
+ * order now lives only in session state and is applied here instead. Cards
+ * added since the shuffle aren't in `order`, so they keep the deck's own
+ * order at the end rather than jumping to the front.
+ */
+export const applyStudyOrder = <T extends { id: string }>(cards: T[], order: string[] | null) => {
+  if (!order) return cards;
+  const rank = new Map(order.map((id, index) => [id, index]));
+  return [...cards].sort(
+    (a, b) =>
+      (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+  );
 };
 
 export const cloneSections = (sections: DeckSection[]) =>
@@ -19,62 +37,6 @@ export const cloneSections = (sections: DeckSection[]) =>
       cards: deck.cards.map((card) => ({ ...card })),
     })),
   }));
-
-export const mergeDeck = (cloudDeck: Deck, localDeck: Deck): Deck => {
-  const cloudCardIds = new Set(cloudDeck.cards.map((card) => card.id));
-  return {
-    ...cloudDeck,
-    cards: [
-      ...cloudDeck.cards.map((card) => ({ ...card })),
-      ...localDeck.cards
-        .filter((card) => !cloudCardIds.has(card.id))
-        .map((card) => ({ ...card })),
-    ],
-  };
-};
-
-export const mergeSections = (localSections: DeckSection[], cloudSections: DeckSection[]) => {
-  const localSectionsById = new Map(localSections.map((s) => [s.id, s]));
-  const cloudSectionIds = new Set(cloudSections.map((s) => s.id));
-  const mergedSections = cloudSections.map((cloudSection) => {
-    const localSection = localSectionsById.get(cloudSection.id);
-    if (!localSection) {
-      return {
-        ...cloudSection,
-        decks: cloudSection.decks.map((deck) => ({
-          ...deck,
-          cards: deck.cards.map((card) => ({ ...card })),
-        })),
-      };
-    }
-    const localDecksById = new Map(localSection.decks.map((deck) => [deck.id, deck]));
-    const cloudDeckIds = new Set(cloudSection.decks.map((deck) => deck.id));
-    return {
-      ...cloudSection,
-      decks: [
-        ...cloudSection.decks.map((cloudDeck) => {
-          const localDeck = localDecksById.get(cloudDeck.id);
-          return localDeck ? mergeDeck(cloudDeck, localDeck) : { ...cloudDeck };
-        }),
-        ...localSection.decks
-          .filter((deck) => !cloudDeckIds.has(deck.id))
-          .map((deck) => ({ ...deck, cards: deck.cards.map((card) => ({ ...card })) })),
-      ],
-    };
-  });
-  return [
-    ...mergedSections,
-    ...localSections
-      .filter((section) => !cloudSectionIds.has(section.id))
-      .map((section) => ({
-        ...section,
-        decks: section.decks.map((deck) => ({
-          ...deck,
-          cards: deck.cards.map((card) => ({ ...card })),
-        })),
-      })),
-  ];
-};
 
 export const flattenDecks = (sections: DeckSection[]) => sections.flatMap((s) => s.decks);
 
@@ -111,6 +73,7 @@ export const createDeckProgress = (deck: Deck): DeckProgress => ({
   knownIds: [],
   isFlipped: false,
   studyMode: "all",
+  reviews: {},
 });
 
 export const buildProgressState = (sections: DeckSection[]) =>
@@ -128,25 +91,24 @@ export const updateDeckInSections = (
     decks: section.decks.map((deck) => (deck.id === deckId ? updater(deck) : deck)),
   }));
 
-export const mergeProgressState = (
-  localProgress: Record<string, DeckProgress>,
-  cloudProgress: Record<string, DeckProgress>,
-  sections: DeckSection[],
-) => {
-  const mergedProgress: Record<string, DeckProgress> = {};
-  flattenDecks(sections).forEach((deck) => {
-    const cloudDeckProgress = cloudProgress[deck.id];
-    const localDeckProgress = localProgress[deck.id];
-    const baseProgress = cloudDeckProgress ?? localDeckProgress ?? createDeckProgress(deck);
-    mergedProgress[deck.id] = {
-      ...baseProgress,
-      knownIds: Array.from(
-        new Set([
-          ...(cloudDeckProgress?.knownIds ?? []),
-          ...(localDeckProgress?.knownIds ?? []),
-        ]),
-      ),
-    };
-  });
-  return mergedProgress;
-};
+/**
+ * Stamps an entity as edited now. Every library mutation goes through one of
+ * these so the cloud merge can order two devices' edits to the same id; an
+ * unstamped entity is treated as older than anything stamped.
+ */
+export const touchCard = (card: Flashcard, now = Date.now()): Flashcard => ({
+  ...card,
+  updatedAt: now,
+});
+
+export const touchDeck = (deck: Deck, now = Date.now()): Deck => ({ ...deck, updatedAt: now });
+
+export const touchSection = (section: DeckSection, now = Date.now()): DeckSection => ({
+  ...section,
+  updatedAt: now,
+});
+
+export const touchProgress = (progress: DeckProgress, now = Date.now()): DeckProgress => ({
+  ...progress,
+  updatedAt: now,
+});
