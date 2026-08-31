@@ -3,6 +3,7 @@ import { Deck, DeckSection, Flashcard } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
 import { ACCENT_COLORS } from "../lib/constants";
 import { findDeckById, findSectionForDeck } from "../lib/deckUtils";
+import { MAX_SEARCH_RESULTS, searchLibrary } from "../lib/search";
 import { formatRelativeTime } from "../lib/format";
 import {
   AccentColor,
@@ -23,7 +24,8 @@ type HomeViewProps = {
   setShowActionsMenu: Dispatch<SetStateAction<boolean>>;
   actionsMenuRef: MutableRefObject<HTMLDivElement | null>;
   setView: (view: ViewState) => void;
-  openDeck: (deckId: string) => void;
+  /** `cardId` opens the deck at that card — used by the card search results. */
+  openDeck: (deckId: string, cardId?: string) => void;
   openRandomDeck: (decks: Deck[]) => void;
   // Sync panel
   syncState: SyncState;
@@ -124,19 +126,11 @@ export function HomeView({
     })
     .filter((x): x is { deck: Deck; section: DeckSection; viewedAt: number } => x !== null);
 
-  const trimmedQuery = searchQuery.trim().toLowerCase();
-  const searchResults = trimmedQuery
-    ? librarySections.flatMap((section) =>
-        section.decks
-          .filter(
-            (deck) =>
-              deck.title.toLowerCase().includes(trimmedQuery) ||
-              (deck.subtitle ?? "").toLowerCase().includes(trimmedQuery) ||
-              section.title.toLowerCase().includes(trimmedQuery),
-          )
-          .map((deck) => ({ deck, section })),
-      )
-    : [];
+  const trimmedQuery = searchQuery.trim();
+  const { results: searchResults, total: searchTotal } = searchLibrary(
+    librarySections,
+    trimmedQuery,
+  );
 
   return (
     <div className="home-view">
@@ -219,7 +213,7 @@ export function HomeView({
           type="search"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search decks…"
+          placeholder="Search decks and cards…"
         />
       </div>
 
@@ -465,26 +459,53 @@ export function HomeView({
       <div className="home-main">
         {trimmedQuery ? (
           searchResults.length === 0 ? (
-            <div className="empty-state">No decks match "{searchQuery}".</div>
+            <div className="empty-state">Nothing matches "{searchQuery}".</div>
           ) : (
             <div className="search-results">
-              {searchResults.map(({ deck, section }) => (
-                <button
-                  key={deck.id}
-                  className="search-result-item"
-                  onClick={() => openDeck(deck.id)}
-                >
-                  <div className="search-result-info">
-                    <span className="search-result-title">{deck.title}</span>
-                    <span className="search-result-meta">
-                      {section.title}
-                      {deck.subtitle ? ` · ${deck.subtitle}` : ""}
-                      {` · ${deck.cards.length} card${deck.cards.length !== 1 ? "s" : ""}`}
-                    </span>
-                  </div>
-                  <span className="section-card-arrow">›</span>
-                </button>
-              ))}
+              {searchResults.map((result) =>
+                result.kind === "deck" ? (
+                  <button
+                    key={`deck:${result.deck.id}`}
+                    className="search-result-item"
+                    onClick={() => openDeck(result.deck.id)}
+                  >
+                    <div className="search-result-info">
+                      <span className="search-result-title">{result.deck.title}</span>
+                      <span className="search-result-meta">
+                        {result.section.title}
+                        {result.deck.subtitle ? ` · ${result.deck.subtitle}` : ""}
+                        {` · ${result.deck.cards.length} card${result.deck.cards.length !== 1 ? "s" : ""}`}
+                      </span>
+                    </div>
+                    <span className="section-card-arrow">›</span>
+                  </button>
+                ) : (
+                  <button
+                    key={`card:${result.deck.id}:${result.card.id}`}
+                    className="search-result-item"
+                    onClick={() => openDeck(result.deck.id, result.card.id)}
+                    title={result.card.definition}
+                  >
+                    <div className="search-result-info">
+                      <span className="search-result-title">
+                        <span className="search-result-kind">Card</span>
+                        {result.card.term}
+                      </span>
+                      <span className="search-result-meta">
+                        {result.section.title} · {result.deck.title}
+                      </span>
+                      <span className="search-result-snippet">{result.card.definition}</span>
+                    </div>
+                    <span className="section-card-arrow">›</span>
+                  </button>
+                ),
+              )}
+              {searchTotal > searchResults.length && (
+                <p className="hint-text">
+                  Showing the first {MAX_SEARCH_RESULTS} of {searchTotal} matches. Keep typing to
+                  narrow them down.
+                </p>
+              )}
             </div>
           )
         ) : librarySections.length === 0 ? (

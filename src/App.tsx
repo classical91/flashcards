@@ -496,10 +496,30 @@ export default function App() {
     setToast(`Added "${word}".`);
   };
 
-  const openDeck = (deckId: string) => {
+  const openDeck = (deckId: string, cardId?: string) => {
     const viewedAt = Date.now();
     setSelectedDeckId(deckId);
     setView({ kind: "study", deckId });
+    // Opening a search hit lands on that card rather than wherever the deck
+    // was left. A card already marked known is invisible in "remaining", so
+    // that deck switches back to the full deck for this visit.
+    if (cardId) {
+      setDeckProgress((currentProgress) => {
+        const deck = findDeckById(librarySections, deckId);
+        if (!deck || !deck.cards.some((card) => card.id === cardId)) return currentProgress;
+        const progress = currentProgress[deckId] ?? createDeckProgress(deck);
+        const isHidden = progress.studyMode === "remaining" && progress.knownIds.includes(cardId);
+        return {
+          ...currentProgress,
+          [deckId]: touchProgress({
+            ...progress,
+            currentCardId: cardId,
+            isFlipped: false,
+            studyMode: isHidden ? "all" : progress.studyMode,
+          }),
+        };
+      });
+    }
     setRecentDeckIds((prev) =>
       [{ id: deckId, viewedAt }, ...prev.filter((e) => e.id !== deckId)].slice(
         0,
