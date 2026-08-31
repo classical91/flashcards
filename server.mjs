@@ -328,6 +328,28 @@ const validateSharedDeckSection = (value, path) => {
   return valid;
 };
 
+/** A map of id -> epoch-ms timestamp, as used by tombstones and deckLastViewed. */
+const validateTimestampMap = (value, path, maxEntries, maxKeyLength) => {
+  if (!isRecord(value)) {
+    return invalid(`${path} must be an object.`);
+  }
+
+  const entries = Object.entries(value);
+  if (entries.length > maxEntries) {
+    return invalid(`${path} cannot contain more than ${maxEntries} entries.`);
+  }
+
+  for (const [key, timestamp] of entries) {
+    const keyResult = validateString(key, `${path} key`, maxKeyLength);
+    if (!keyResult.ok) return keyResult;
+    if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
+      return invalid(`${path}.${key} must be a finite number.`);
+    }
+  }
+
+  return valid;
+};
+
 /** Spaced-repetition schedules, keyed by card id. One entry per card at most. */
 const validateReviews = (value, path) => {
   if (!isRecord(value)) {
@@ -390,25 +412,22 @@ const validateDeckProgress = (value, path) => {
     if (!reviewsResult.ok) return reviewsResult;
   }
 
-  return valid;
-};
-
-/** A map of id -> epoch-ms timestamp, as used by tombstones and deckLastViewed. */
-const validateTimestampMap = (value, path, maxEntries, maxKeyLength) => {
-  if (!isRecord(value)) {
-    return invalid(`${path} must be an object.`);
+  if ("knownUpdatedAt" in value && value.knownUpdatedAt !== undefined) {
+    const knownStampsResult = validateTimestampMap(
+      value.knownUpdatedAt,
+      `${path}.knownUpdatedAt`,
+      // One entry per card at most, same ceiling as knownIds itself.
+      contentLimits.knownIdsPerDeck,
+      contentLimits.idLength,
+    );
+    if (!knownStampsResult.ok) return knownStampsResult;
   }
 
-  const entries = Object.entries(value);
-  if (entries.length > maxEntries) {
-    return invalid(`${path} cannot contain more than ${maxEntries} entries.`);
-  }
-
-  for (const [key, timestamp] of entries) {
-    const keyResult = validateString(key, `${path} key`, maxKeyLength);
-    if (!keyResult.ok) return keyResult;
-    if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
-      return invalid(`${path}.${key} must be a finite number.`);
+  for (const field of ["positionUpdatedAt", "resetAt", "updatedAt"]) {
+    if (field in value && value[field] !== undefined) {
+      if (typeof value[field] !== "number" || !Number.isFinite(value[field])) {
+        return invalid(`${path}.${field} must be a finite number.`);
+      }
     }
   }
 

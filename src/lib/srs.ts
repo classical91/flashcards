@@ -104,48 +104,86 @@ export const isDue = (state: ReviewState | undefined, now = Date.now()) =>
 /**
  * Counts what a deck has waiting.
  *
- * "Due" is measured against the end of the local day rather than this instant,
- * so a card scheduled for later this evening is already part of today's work
- * instead of appearing out of nowhere at 9pm. A card that has never been
- * graded is counted as new, not due — otherwise every card in a fresh library
- * would be reported as overdue.
+ * `due` is what can be studied right now. `later` is scheduled for later today
+ * — mostly cards just answered Again, whose short step has not elapsed yet —
+ * and is reported separately so the home page can say what the day holds
+ * without the study queue pretending those cards are ready. A card that has
+ * never been graded is new, not due; otherwise every card in a fresh library
+ * would read as overdue.
  */
 export const countReviewQueue = (
   cardIds: string[],
   reviews: Record<string, ReviewState> | undefined,
   now = Date.now(),
 ) => {
-  const cutoff = endOfLocalDay(now);
+  const endOfDay = endOfLocalDay(now);
   let due = 0;
+  let later = 0;
   let newCards = 0;
   cardIds.forEach((cardId) => {
     const state = reviews?.[cardId];
     if (!state) newCards += 1;
-    else if (state.due <= cutoff) due += 1;
+    else if (state.due <= now) due += 1;
+    else if (state.due <= endOfDay) later += 1;
   });
-  return { due, newCards };
+  return { due, later, newCards };
 };
 
 /**
- * The cards to work through: everything already due, oldest first, then cards
- * that have never been graded in the deck's own order.
+ * The cards to work through: everything due by `now`, most overdue first, then
+ * cards that have never been graded in the deck's own order.
+ *
+ * The cutoff is this instant, not the end of the day. Answering Again schedules
+ * a card ten minutes out and the button says so, so the queue has to honour it
+ * rather than handing the same card straight back.
  */
 export const buildReviewQueue = <T extends { id: string }>(
   cards: T[],
   reviews: Record<string, ReviewState> | undefined,
   now = Date.now(),
 ) => {
-  const cutoff = endOfLocalDay(now);
   const dueCards: { card: T; due: number }[] = [];
   const newCards: T[] = [];
 
   cards.forEach((card) => {
     const state = reviews?.[card.id];
     if (!state) newCards.push(card);
-    else if (state.due <= cutoff) dueCards.push({ card, due: state.due });
+    else if (state.due <= now) dueCards.push({ card, due: state.due });
   });
 
   return [...dueCards.sort((a, b) => a.due - b.due).map((entry) => entry.card), ...newCards];
+};
+
+/**
+ * When the next card that isn't ready yet comes back, or null if nothing is
+ * waiting. Lets an emptied session say "back in 9 minutes" instead of
+ * claiming the deck is finished for the day.
+ */
+export const nextReviewDueAt = (
+  cardIds: string[],
+  reviews: Record<string, ReviewState> | undefined,
+  now = Date.now(),
+) => {
+  let soonest: number | null = null;
+  cardIds.forEach((cardId) => {
+    const state = reviews?.[cardId];
+    if (!state || state.due <= now) return;
+    if (soonest === null || state.due < soonest) soonest = state.due;
+  });
+  return soonest;
+};
+
+/** "in 9 min" / "in 2 hours" / "tomorrow", for the waiting-card message. */
+export const formatTimeUntil = (due: number, now = Date.now()) => {
+  const ms = due - now;
+  if (ms <= 0) return "now";
+  const minutes = Math.ceil(ms / MINUTE);
+  if (minutes < 60) return `in ${minutes} min`;
+  if (due <= endOfLocalDay(now)) {
+    const hours = Math.round(minutes / 60);
+    return `in ${hours} hour${hours === 1 ? "" : "s"}`;
+  }
+  return "tomorrow";
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

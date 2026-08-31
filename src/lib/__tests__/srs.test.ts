@@ -7,7 +7,9 @@ import {
   endOfLocalDay,
   formatInterval,
   gradeCard,
+  formatTimeUntil,
   isDue,
+  nextReviewDueAt,
   parseReviews,
   previewIntervals,
 } from "../srs";
@@ -133,16 +135,24 @@ describe("the review queue", () => {
   const cards = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
 
   it("counts an ungraded card as new rather than overdue", () => {
-    expect(countReviewQueue(["a", "b"], {}, NOW)).toEqual({ due: 0, newCards: 2 });
+    expect(countReviewQueue(["a", "b"], {}, NOW)).toEqual({ due: 0, later: 0, newCards: 2 });
   });
 
-  it("counts a card due later today as due now", () => {
+  it("counts a card due later today separately from one ready now", () => {
     const laterToday = endOfLocalDay(NOW) - 1000;
-    expect(countReviewQueue(["a"], { a: state(laterToday) }, NOW)).toEqual({ due: 1, newCards: 0 });
+    expect(countReviewQueue(["a", "b"], { a: state(laterToday), b: state(NOW - 1) }, NOW)).toEqual({
+      due: 1,
+      later: 1,
+      newCards: 0,
+    });
   });
 
   it("does not count a card due tomorrow", () => {
-    expect(countReviewQueue(["a"], { a: state(NOW + DAY) }, NOW)).toEqual({ due: 0, newCards: 0 });
+    expect(countReviewQueue(["a"], { a: state(NOW + DAY) }, NOW)).toEqual({
+      due: 0,
+      later: 0,
+      newCards: 0,
+    });
   });
 
   it("puts the most overdue card first and never-graded cards last", () => {
@@ -154,9 +164,27 @@ describe("the review queue", () => {
     expect(buildReviewQueue(cards, reviews, NOW).map((card) => card.id)).toEqual(["c", "a", "b"]);
   });
 
-  it("keeps a card graded Again in today's queue", () => {
+  it("holds a card graded Again back for the ten minutes the button promised", () => {
     const graded = gradeCard("again", undefined, NOW);
-    expect(buildReviewQueue([{ id: "a" }], { a: graded }, NOW).map((c) => c.id)).toEqual(["a"]);
+    expect(buildReviewQueue([{ id: "a" }], { a: graded }, NOW)).toEqual([]);
+    expect(buildReviewQueue([{ id: "a" }], { a: graded }, NOW + 9 * 60 * 1000)).toEqual([]);
+    expect(
+      buildReviewQueue([{ id: "a" }], { a: graded }, NOW + 10 * 60 * 1000).map((c) => c.id),
+    ).toEqual(["a"]);
+  });
+
+  it("still counts a card put off for ten minutes as part of today's work", () => {
+    const graded = gradeCard("again", undefined, NOW);
+    expect(countReviewQueue(["a"], { a: graded }, NOW)).toEqual({
+      due: 0,
+      later: 1,
+      newCards: 0,
+    });
+  });
+
+  it("does not offer a card scheduled for later today until its time comes", () => {
+    const laterToday = endOfLocalDay(NOW) - 1000;
+    expect(buildReviewQueue([{ id: "a" }], { a: state(laterToday) }, NOW)).toEqual([]);
   });
 
   it("drops a card graded Good out of today's queue", () => {
@@ -250,5 +278,51 @@ describe("previewIntervals", () => {
     };
     expect(previewIntervals(learned).good).toBe(formatInterval(25));
     expect(days(gradeCard("good", learned, NOW))).toBe(25);
+  });
+});
+
+describe("nextReviewDueAt", () => {
+  const state = (due: number): ReviewState => ({
+    due,
+    interval: 1,
+    ease: 2.5,
+    reps: 1,
+    lapses: 0,
+    lastReviewedAt: NOW,
+  });
+
+  it("is null when nothing is waiting", () => {
+    expect(nextReviewDueAt(["a"], {}, NOW)).toBeNull();
+    expect(nextReviewDueAt(["a"], { a: state(NOW - 1) }, NOW)).toBeNull();
+  });
+
+  it("returns the soonest card that is not ready yet", () => {
+    const reviews = { a: state(NOW + 5 * 60 * 1000), b: state(NOW + 60 * 1000) };
+    expect(nextReviewDueAt(["a", "b"], reviews, NOW)).toBe(NOW + 60 * 1000);
+  });
+
+  it("ignores cards that are already due", () => {
+    const reviews = { a: state(NOW - 1000), b: state(NOW + 60 * 1000) };
+    expect(nextReviewDueAt(["a", "b"], reviews, NOW)).toBe(NOW + 60 * 1000);
+  });
+});
+
+describe("formatTimeUntil", () => {
+  it("rounds up to whole minutes so a card never reads as ready early", () => {
+    expect(formatTimeUntil(NOW + 30 * 1000, NOW)).toBe("in 1 min");
+    expect(formatTimeUntil(NOW + 10 * 60 * 1000, NOW)).toBe("in 10 min");
+  });
+
+  it("switches to hours later in the day", () => {
+    expect(formatTimeUntil(NOW + 2 * 60 * 60 * 1000, NOW)).toBe("in 2 hours");
+    expect(formatTimeUntil(NOW + 60 * 60 * 1000, NOW)).toBe("in 1 hour");
+  });
+
+  it("says tomorrow once the card falls past midnight", () => {
+    expect(formatTimeUntil(endOfLocalDay(NOW) + 1000, NOW)).toBe("tomorrow");
+  });
+
+  it("says now for a card that is already due", () => {
+    expect(formatTimeUntil(NOW - 1, NOW)).toBe("now");
   });
 });

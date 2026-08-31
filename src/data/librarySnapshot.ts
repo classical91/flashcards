@@ -20,6 +20,10 @@ export type DeckProgress = {
    * settle two devices that disagree about what is known — without it, an
    * unmark on one device is undone by the other device's stale list.
    */
+  /**
+   * Kept for clients that predate per-field merging and settle progress by
+   * comparing whole objects. Nothing in this codebase merges on it any more.
+   */
   updatedAt?: number;
   /**
    * Card id -> spaced-repetition schedule. Optional: a deck only gains one
@@ -27,6 +31,20 @@ export type DeckProgress = {
    * have none at all.
    */
   reviews?: Record<string, ReviewState>;
+  /**
+   * Card id -> when that card's known state last changed, marked or unmarked.
+   * Without it, two devices marking different cards can only be merged by
+   * taking one side's whole list and discarding the other's.
+   */
+  knownUpdatedAt?: Record<string, number>;
+  /** When currentCardId or studyMode last changed. Flipping is not a change. */
+  positionUpdatedAt?: number;
+  /**
+   * When this deck's progress was last reset. Review schedules older than it
+   * are dropped, so a reset reaches other devices instead of being refilled
+   * by whichever one still holds the old schedules.
+   */
+  resetAt?: number;
 };
 
 export type RecentDeckEntry = { id: string; viewedAt: number };
@@ -203,7 +221,8 @@ export const parseRecentDecks = (value: unknown): RecentDeckEntry[] => {
   return entries;
 };
 
-export const parseDeckLastViewed = (value: unknown): DeckLastViewed => {
+/** Reads an `id -> epoch ms` map, dropping anything that isn't a real number. */
+export const parseTimestampsById = (value: unknown): Record<string, number> => {
   if (!isRecord(value)) return {};
   return Object.fromEntries(
     Object.entries(value).filter(
@@ -230,7 +249,7 @@ const parsePreferences = (value: unknown, fallbackRecentIds: string[]): SyncedPr
         ? Array.from(new Set(value.pinnedDeckIds as string[]))
         : defaults.pinnedDeckIds,
     recentDecks: parseRecentDecks(value.recentDecks),
-    deckLastViewed: parseDeckLastViewed(value.deckLastViewed),
+    deckLastViewed: parseTimestampsById(value.deckLastViewed),
     theme: value.theme === "dark" || value.theme === "light" ? value.theme : defaults.theme,
     accentColor: (ACCENT_COLORS as readonly string[]).includes(String(value.accentColor))
       ? (value.accentColor as AccentColor)
@@ -281,6 +300,12 @@ const remapById = (
           Object.entries(parseReviews(progress.reviews)).map(([card, state]) => [
             cardId(card),
             state,
+          ]),
+        ),
+        knownUpdatedAt: Object.fromEntries(
+          Object.entries(parseTimestampsById(progress.knownUpdatedAt)).map(([card, at]) => [
+            cardId(card),
+            at,
           ]),
         ),
       },

@@ -60,7 +60,8 @@ type HomeViewProps = {
   // Today's reviews
   reviewSummary: {
     totalDue: number;
-    decks: { deck: Deck; section: DeckSection; due: number; newCards: number }[];
+    /** `dueToday` is what the day holds; some of it may not be ready yet. */
+    decks: { deck: Deck; section: DeckSection; dueToday: number }[];
   };
   onStartReview: (deckId: string) => void;
 };
@@ -444,7 +445,7 @@ export function HomeView({
               <span className="review-summary-label">Spaced repetition</span>
             </div>
             <div className="review-summary-decks">
-              {reviewSummary.decks.slice(0, MAX_REVIEW_DECKS).map(({ deck, section, due }) => (
+              {reviewSummary.decks.slice(0, MAX_REVIEW_DECKS).map(({ deck, section, dueToday }) => (
                 <button
                   key={deck.id}
                   className="review-summary-deck"
@@ -452,7 +453,7 @@ export function HomeView({
                 >
                   <span className="review-summary-deck-name">{deck.title}</span>
                   <span className="review-summary-deck-meta">
-                    {section.title} · {due} due
+                    {section.title} · {dueToday} due
                   </span>
                 </button>
               ))}
