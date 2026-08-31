@@ -2,13 +2,31 @@ import { Deck, DeckSection, Flashcard } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
 import { DeckLastViewed } from "./types";
 
-export const shuffleCards = (cards: { id: string; term: string; definition: string }[]) => {
+export const shuffleCards = <T>(cards: T[]): T[] => {
   const copy = [...cards];
   for (let index = copy.length - 1; index > 0; index -= 1) {
     const swapIndex = Math.floor(Math.random() * (index + 1));
     [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
   }
   return copy;
+};
+
+/**
+ * Reorders a deck's cards for the current study session.
+ *
+ * Shuffling used to rewrite `deck.cards` in the saved library, which made a
+ * throwaway reordering permanent and pushed it to every other device. The
+ * order now lives only in session state and is applied here instead. Cards
+ * added since the shuffle aren't in `order`, so they keep the deck's own
+ * order at the end rather than jumping to the front.
+ */
+export const applyStudyOrder = <T extends { id: string }>(cards: T[], order: string[] | null) => {
+  if (!order) return cards;
+  const rank = new Map(order.map((id, index) => [id, index]));
+  return [...cards].sort(
+    (a, b) =>
+      (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+  );
 };
 
 export const cloneSections = (sections: DeckSection[]) =>

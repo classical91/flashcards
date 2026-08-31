@@ -46,7 +46,9 @@ type StudyViewProps = {
   togglePinDeck: (deckId: string) => void;
   onStudyModeChange: (mode: StudyMode) => void;
   onFlip: () => void;
+  isShuffled: boolean;
   onShuffle: () => void;
+  onRestoreOrder: () => void;
   onToggleKnown: () => void;
   onMoveToCard: (direction: 1 | -1) => void;
   onGoogleSearch: (type: string) => void;
@@ -96,7 +98,9 @@ export function StudyView({
   togglePinDeck,
   onStudyModeChange,
   onFlip,
+  isShuffled,
   onShuffle,
+  onRestoreOrder,
   onToggleKnown,
   onMoveToCard,
   onGoogleSearch,
@@ -192,7 +196,16 @@ export function StudyView({
               </section>
 
               <nav className="player" aria-label="Flashcard controls">
-                <button className="icon-btn" onClick={onShuffle} title="Shuffle deck">
+                <button
+                  className={`icon-btn${isShuffled ? " active" : ""}`}
+                  onClick={onShuffle}
+                  title={
+                    isShuffled
+                      ? "Shuffled for this session — click to reshuffle"
+                      : "Shuffle for this session"
+                  }
+                  aria-pressed={isShuffled}
+                >
                   ↭
                 </button>
                 <button
@@ -311,6 +324,11 @@ export function StudyView({
                 {showCardImporter ? "Hide import" : "Bulk import"}
               </button>
               <button className="mini-btn" onClick={onResetProgress}>Reset</button>
+              {isShuffled && (
+                <button className="mini-btn" onClick={onRestoreOrder}>
+                  Unshuffle
+                </button>
+              )}
               <button className="mini-btn" onClick={() => setShowCardList(true)} disabled={isDeckEmpty}>
                 View all
               </button>
@@ -445,6 +463,11 @@ export function StudyView({
                 {showCardImporter ? "Hide import" : "Bulk import"}
               </button>
               <button className="mini-btn" onClick={onResetProgress}>Reset</button>
+              {isShuffled && (
+                <button className="mini-btn" onClick={onRestoreOrder}>
+                  Unshuffle
+                </button>
+              )}
               <button className="mini-btn" onClick={() => setShowCardList(true)} disabled={isDeckEmpty}>
                 View all
               </button>

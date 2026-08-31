@@ -24,6 +24,7 @@ import {
   createDeckProgress,
   findDeckById,
   findSectionForDeck,
+  applyStudyOrder,
   flattenDecks,
   shuffleCards,
   touchCard,
@@ -129,6 +130,10 @@ export default function App() {
   const [accentColor, setAccentColor] = useState<AccentColor>(loadAccentColor);
   const [dailyCardRef, setDailyCardRef] = useState<DailyCardRef | null>(loadDailyCard);
   const [todayKey, setTodayKey] = useState(() => toDateKey(new Date()));
+  // Session-only: a shuffle is a way to study, not an edit to the deck, so it
+  // is deliberately never persisted or synced. Keyed by deck so returning to a
+  // deck you shuffled keeps that order for the rest of the session.
+  const [studyOrder, setStudyOrder] = useState<{ deckId: string; cardIds: string[] } | null>(null);
   const [tombstones, setTombstones] = useState(loadTombstones);
   const [preferencesUpdatedAt, setPreferencesUpdatedAt] = useState(loadPreferencesUpdatedAt);
 
@@ -210,12 +215,23 @@ export default function App() {
 
   const knownSet = useMemo(() => new Set(activeProgress?.knownIds ?? []), [activeProgress]);
 
-  const visibleCards = useMemo(() => {
-    if (!selectedDeck) return [];
-    return activeProgress?.studyMode === "remaining"
-      ? selectedDeck.cards.filter((card) => !knownSet.has(card.id))
-      : selectedDeck.cards;
-  }, [selectedDeck, activeProgress?.studyMode, knownSet]);
+  const isShuffled = !!selectedDeck && studyOrder?.deckId === selectedDeck.id;
+
+  const orderedCards = useMemo(
+    () =>
+      selectedDeck
+        ? applyStudyOrder(selectedDeck.cards, isShuffled ? (studyOrder?.cardIds ?? null) : null)
+        : [],
+    [selectedDeck, isShuffled, studyOrder],
+  );
+
+  const visibleCards = useMemo(
+    () =>
+      activeProgress?.studyMode === "remaining"
+        ? orderedCards.filter((card) => !knownSet.has(card.id))
+        : orderedCards,
+    [orderedCards, activeProgress?.studyMode, knownSet],
+  );
 
   const currentCard = useMemo(
     () =>
@@ -313,15 +329,16 @@ export default function App() {
 
   const handleShuffle = () => {
     if (!selectedDeck) return;
-    startTransition(() => {
-      setLibrarySections((currentSections) =>
-        updateDeckInSections(currentSections, selectedDeck.id, (deck) => ({
-          ...deck,
-          cards: shuffleCards(deck.cards),
-        })),
-      );
+    setStudyOrder({
+      deckId: selectedDeck.id,
+      cardIds: shuffleCards(selectedDeck.cards).map((card) => card.id),
     });
-    setToast("Deck shuffled.");
+    setToast("Shuffled for this session. The deck's own order is unchanged.");
+  };
+
+  const handleRestoreOrder = () => {
+    setStudyOrder(null);
+    setToast("Back to the deck's own order.");
   };
 
   const handleStudyModeChange = (mode: StudyMode) => {
@@ -1091,7 +1108,9 @@ export default function App() {
         togglePinDeck={togglePinDeck}
         onStudyModeChange={handleStudyModeChange}
         onFlip={handleFlip}
+        isShuffled={isShuffled}
         onShuffle={handleShuffle}
+        onRestoreOrder={handleRestoreOrder}
         onToggleKnown={toggleKnown}
         onMoveToCard={moveToCard}
         onGoogleSearch={googleSearch}
