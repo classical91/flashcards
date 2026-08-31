@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Deck, DeckSection } from "../../data/deckBuilder";
 import { DeckProgress, SyncedPreferences, defaultPreferences } from "../../data/librarySnapshot";
 import { LibraryState, mergeLibraryState } from "../merge";
+import { resetDeckProgress } from "../deckUtils";
 import {
   TOMBSTONE_TTL_MS,
   Tombstones,
@@ -265,6 +266,35 @@ describe("mergeLibraryState — progress", () => {
     });
 
     expect(mergeLibraryState(local, remote, NOW).deckProgress.d1.knownIds).toEqual([]);
+  });
+
+  it("keeps a reset over an unseen remote mark but accepts a newer mark", () => {
+    const liveDeck = deck("d1", ["a"]);
+    const resetDevice = state({
+      librarySections: [section("topic", [liveDeck])],
+      deckProgress: { d1: resetDeckProgress(liveDeck, NOW) },
+    });
+    const markedBeforeReset = state({
+      librarySections: [section("topic", [liveDeck])],
+      deckProgress: {
+        d1: progress({ knownIds: ["a"], knownUpdatedAt: { a: NOW - 1 } }),
+      },
+    });
+
+    expect(mergeLibraryState(resetDevice, markedBeforeReset, NOW).deckProgress.d1.knownIds).toEqual(
+      [],
+    );
+
+    const markedAfterReset = state({
+      librarySections: [section("topic", [liveDeck])],
+      deckProgress: {
+        d1: progress({ knownIds: ["a"], knownUpdatedAt: { a: NOW + 1 } }),
+      },
+    });
+
+    expect(mergeLibraryState(resetDevice, markedAfterReset, NOW).deckProgress.d1.knownIds).toEqual([
+      "a",
+    ]);
   });
 
   it("does not let navigating on one device discard a mark from another", () => {

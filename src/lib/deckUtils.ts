@@ -76,6 +76,19 @@ export const createDeckProgress = (deck: Deck): DeckProgress => ({
   reviews: {},
 });
 
+/**
+ * Clears a deck's progress without allowing older cloud state to reappear.
+ *
+ * A reset must stamp every live card, including cards this device has never
+ * seen marked as known. Otherwise a remote-only mark has the sole per-card
+ * timestamp and wins the next merge.
+ */
+export const resetDeckProgress = (deck: Deck, now = Date.now()): DeckProgress => ({
+  ...createDeckProgress(deck),
+  knownUpdatedAt: Object.fromEntries(deck.cards.map((card) => [card.id, now])),
+  resetAt: now,
+});
+
 export const buildProgressState = (sections: DeckSection[]) =>
   Object.fromEntries(
     flattenDecks(sections).map((deck) => [deck.id, createDeckProgress(deck)]),

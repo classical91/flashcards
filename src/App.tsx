@@ -23,6 +23,7 @@ import {
 } from "./lib/constants";
 import {
   createDeckProgress,
+  resetDeckProgress,
   findDeckById,
   findSectionForDeck,
   applyStudyOrder,
@@ -488,21 +489,12 @@ export default function App() {
     if (!selectedDeck) return;
     const now = Date.now();
     startTransition(() => {
+      // Clearing the lists locally isn't enough: another device still
+      // holding the old marks and schedules would merge them straight back.
+      // Stamp every live card, including marks this device has not received;
+      // resetAt covers the review schedules.
       updateSelectedDeckProgress(
-        (progress) => ({
-          ...createDeckProgress(selectedDeck),
-          // Clearing the lists locally isn't enough: another device still
-          // holding the old marks and schedules would merge them straight
-          // back. Each previously known card is stamped as changed now, and
-          // resetAt does the same job for review schedules.
-          knownUpdatedAt: Object.fromEntries(
-            [...Object.keys(progress.knownUpdatedAt ?? {}), ...progress.knownIds].map((cardId) => [
-              cardId,
-              now,
-            ]),
-          ),
-          resetAt: now,
-        }),
+        () => resetDeckProgress(selectedDeck, now),
         { position: true },
       );
     });
