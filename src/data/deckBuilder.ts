@@ -1,7 +1,15 @@
+/**
+ * `updatedAt` is the epoch-ms stamp of the last edit to this entity, used by
+ * the cloud merge to settle simultaneous edits and to tell a re-created id
+ * apart from one another device deleted (see lib/tombstones.ts). It is
+ * optional because starter decks, shared decks, and libraries saved before
+ * snapshot v2 never carried one; absent means "older than anything stamped".
+ */
 export type Flashcard = {
   id: string;
   term: string;
   definition: string;
+  updatedAt?: number;
 };
 
 export type Deck = {
@@ -9,6 +17,7 @@ export type Deck = {
   title: string;
   subtitle: string;
   cards: Flashcard[];
+  updatedAt?: number;
 };
 
 export type DeckSection = {
@@ -16,6 +25,7 @@ export type DeckSection = {
   title: string;
   description: string;
   decks: Deck[];
+  updatedAt?: number;
 };
 
 type CreateDeckOptions = {

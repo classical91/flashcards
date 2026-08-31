@@ -32,15 +32,20 @@ const validSnapshot = (): LibrarySnapshot =>
       },
     },
     selectedDeckId: "test-deck",
-    recentDeckIds: [],
   });
+
+/** A snapshot as written by the client before tombstones and preference sync. */
+const v1Snapshot = () => {
+  const { tombstones: _t, preferences: _p, ...rest } = validSnapshot();
+  return { ...rest, version: 1 as const, recentDeckIds: [] as string[] };
+};
 
 describe("parseLibrarySnapshot", () => {
   it("parses a valid snapshot round-trip", () => {
     const snapshot = validSnapshot();
     const result = parseLibrarySnapshot(snapshot);
     expect(result).not.toBeNull();
-    expect(result?.version).toBe(1);
+    expect(result?.version).toBe(2);
     expect(result?.librarySections).toHaveLength(1);
     expect(result?.selectedDeckId).toBe("test-deck");
     expect(result?.deckProgress["test-deck"].studyMode).toBe("all");
@@ -62,9 +67,18 @@ describe("parseLibrarySnapshot", () => {
     expect(parseLibrarySnapshot([])).toBeNull();
   });
 
-  it("returns null for wrong version number", () => {
-    const snapshot = { ...validSnapshot(), version: 2 as unknown as 1 };
+  it("returns null for an unknown version number", () => {
+    const snapshot = { ...validSnapshot(), version: 3 as unknown as 2 };
     expect(parseLibrarySnapshot(snapshot)).toBeNull();
+  });
+
+  it("upgrades a version 1 snapshot instead of rejecting it", () => {
+    const result = parseLibrarySnapshot(v1Snapshot());
+    expect(result?.version).toBe(2);
+    expect(result?.tombstones).toEqual({ sections: {}, decks: {}, cards: {} });
+    // Zero so an upgraded library never outranks a device that has actually
+    // chosen a theme or pinned something.
+    expect(result?.preferences.updatedAt).toBe(0);
   });
 
   it("returns null when librarySections is missing", () => {
@@ -111,24 +125,38 @@ describe("parseLibrarySnapshot", () => {
     expect(parseLibrarySnapshot({ ...validSnapshot(), deckProgress: [] })).toBeNull();
   });
 
-  it("deduplicates recentDeckIds", () => {
-    const snapshot = { ...validSnapshot(), recentDeckIds: ["a", "b", "a"] };
+  it("deduplicates a version 1 snapshot's recentDeckIds", () => {
+    const snapshot = { ...v1Snapshot(), recentDeckIds: ["a", "b", "a"] };
     const result = parseLibrarySnapshot(snapshot);
     expect(result?.recentDeckIds).toEqual(["a", "b"]);
   });
 
   it("accepts snapshot without recentDeckIds and defaults to []", () => {
-    const { recentDeckIds: _, ...rest } = validSnapshot();
+    const { recentDeckIds: _, ...rest } = v1Snapshot();
     const result = parseLibrarySnapshot(rest);
     expect(result).not.toBeNull();
     expect(result?.recentDeckIds).toEqual([]);
   });
 
   it("falls back to [] when recentDeckIds contains a non-string value", () => {
-    const snapshot = { ...validSnapshot(), recentDeckIds: ["a", 1] };
+    const snapshot = { ...v1Snapshot(), recentDeckIds: ["a", 1] };
     const result = parseLibrarySnapshot(snapshot);
     expect(result).not.toBeNull();
     expect(result?.recentDeckIds).toEqual([]);
+  });
+
+  it("keeps a version 2 snapshot's timestamped recents over the flat list", () => {
+    const snapshot = {
+      ...validSnapshot(),
+      recentDeckIds: ["stale"],
+      preferences: {
+        ...validSnapshot().preferences,
+        recentDecks: [{ id: "test-deck", viewedAt: 42 }],
+      },
+    };
+    const result = parseLibrarySnapshot(snapshot);
+    expect(result?.preferences.recentDecks).toEqual([{ id: "test-deck", viewedAt: 42 }]);
+    expect(result?.recentDeckIds).toEqual(["test-deck"]);
   });
 
   it("preserves multiple sections and decks", () => {
@@ -157,7 +185,13 @@ describe("parseLibrarySnapshot", () => {
       },
     };
     snapshot.selectedDeckId = longDeckId;
-    snapshot.recentDeckIds = [longDeckId];
+    snapshot.preferences = {
+      ...snapshot.preferences,
+      pinnedDeckIds: [longDeckId],
+      recentDecks: [{ id: longDeckId, viewedAt: 1 }],
+      deckLastViewed: { [longDeckId]: 1 },
+    };
+    snapshot.tombstones = { sections: {}, decks: { "gone-deck": 5 }, cards: {} };
 
     const result = parseLibrarySnapshot(snapshot);
     expect(result).not.toBeNull();
@@ -166,6 +200,8 @@ describe("parseLibrarySnapshot", () => {
     expect(repairedDeckId).not.toBe(longDeckId);
     expect(result?.selectedDeckId).toBe(repairedDeckId);
     expect(result?.recentDeckIds).toEqual([repairedDeckId]);
+    expect(result?.preferences.pinnedDeckIds).toEqual([repairedDeckId]);
+    expect(Object.keys(result?.preferences.deckLastViewed ?? {})).toEqual([repairedDeckId]);
     expect(Object.keys(result?.deckProgress ?? {})).toEqual([repairedDeckId]);
     expect(result?.deckProgress[repairedDeckId].knownIds).toEqual([
       result?.librarySections[0].decks[0].cards[0].id,
@@ -201,7 +237,14 @@ describe("createLibrarySnapshot", () => {
         },
       },
       selectedDeckId: longDeckId,
-      recentDeckIds: [longDeckId],
+      preferences: {
+        pinnedDeckIds: [],
+        recentDecks: [{ id: longDeckId, viewedAt: 1 }],
+        deckLastViewed: {},
+        theme: "light",
+        accentColor: "blue",
+        updatedAt: 1,
+      },
     });
 
     const repairedDeckId = snapshot.librarySections[0].decks[0].id;

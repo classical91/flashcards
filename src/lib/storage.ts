@@ -1,6 +1,7 @@
 import { defaultDeckId, starterSections } from "../data/decks";
 import { DeckSection, sanitizeDeckSections } from "../data/deckBuilder";
 import { DeckProgress, parseLibrarySections } from "../data/librarySnapshot";
+import { Tombstones, emptyTombstones, parseTombstones } from "./tombstones";
 import {
   ACCENT_COLORS,
   ACCENT_STORAGE_KEY,
@@ -12,8 +13,10 @@ import {
   PROGRESS_STORAGE_KEY,
   RECENT_DECKS_STORAGE_KEY,
   SELECTED_DECK_STORAGE_KEY,
+  PREFERENCES_UPDATED_AT_STORAGE_KEY,
   SYNC_KEY_STORAGE_KEY,
   THEME_STORAGE_KEY,
+  TOMBSTONES_STORAGE_KEY,
 } from "./constants";
 import { buildProgressState, cloneSections } from "./deckUtils";
 import { DailyCardRef, parseDailyCard } from "./dailyCard";
@@ -199,5 +202,31 @@ export const loadDailyCard = (): DailyCardRef | null => {
     };
   } catch {
     return null;
+  }
+};
+
+export const loadTombstones = (): Tombstones => {
+  if (typeof window === "undefined") return emptyTombstones();
+  try {
+    const saved = window.localStorage.getItem(TOMBSTONES_STORAGE_KEY);
+    if (!saved) return emptyTombstones();
+    return parseTombstones(JSON.parse(saved));
+  } catch {
+    return emptyTombstones();
+  }
+};
+
+/**
+ * When this device last changed a synced preference (pins, theme, accent).
+ * Kept separate from the preference values so the merge can tell a device that
+ * has never touched them from one that deliberately cleared them.
+ */
+export const loadPreferencesUpdatedAt = (): number => {
+  if (typeof window === "undefined") return 0;
+  try {
+    const saved = Number(window.localStorage.getItem(PREFERENCES_UPDATED_AT_STORAGE_KEY));
+    return Number.isFinite(saved) ? saved : 0;
+  } catch {
+    return 0;
   }
 };

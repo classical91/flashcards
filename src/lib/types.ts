@@ -1,8 +1,17 @@
 import { Deck, DeckSection } from "../data/deckBuilder";
-import { DeckProgress, StudyMode } from "../data/librarySnapshot";
+import { AccentColor, Theme } from "./constants";
+import {
+  DeckLastViewed,
+  DeckProgress,
+  RecentDeckEntry,
+  StudyMode,
+  SyncedPreferences,
+} from "../data/librarySnapshot";
 import { SharedDeckSnapshot } from "../data/sharedDeck";
 
 export type { Deck, DeckSection, DeckProgress, StudyMode };
+export type { DeckLastViewed, RecentDeckEntry, SyncedPreferences };
+export type { AccentColor, Theme };
 
 export type DeckComposer = {
   sectionId: string;
@@ -52,16 +61,3 @@ export type AiModal = {
   word: string;
   prompt: string;
 } | null;
-
-export type Theme = "light" | "dark";
-export type AccentColor = "blue" | "purple" | "green" | "red" | "amber";
-
-export type RecentDeckEntry = { id: string; viewedAt: number };
-
-/**
- * Deck id -> timestamp of the last time the deck was opened. Unlike
- * recentDeckIds (capped at MAX_RECENT_DECKS for the home page list) this keeps
- * an entry for every deck ever opened, so a topic's deck list can stay ordered
- * most-recently-viewed first no matter how many decks are in it.
- */
-export type DeckLastViewed = Record<string, number>;

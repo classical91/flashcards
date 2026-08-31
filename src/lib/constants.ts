@@ -17,3 +17,8 @@ export const shareIdPattern = /^[A-Za-z0-9_-]{10,120}$/;
 export const BUILD_SYNC_KEY = import.meta.env.VITE_FLASHCARDS_SYNC_KEY?.trim() || "";
 
 export const ACCENT_COLORS = ["blue", "purple", "green", "red", "amber"] as const;
+
+export type Theme = "light" | "dark";
+export type AccentColor = (typeof ACCENT_COLORS)[number];
+export const TOMBSTONES_STORAGE_KEY = "flashcards.tombstones.v1";
+export const PREFERENCES_UPDATED_AT_STORAGE_KEY = "flashcards.preferencesUpdatedAt.v1";

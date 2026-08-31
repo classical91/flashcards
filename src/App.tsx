@@ -13,10 +13,12 @@ import {
   LIBRARY_STORAGE_KEY,
   MAX_RECENT_DECKS,
   PINNED_DECKS_STORAGE_KEY,
+  PREFERENCES_UPDATED_AT_STORAGE_KEY,
   PROGRESS_STORAGE_KEY,
   RECENT_DECKS_STORAGE_KEY,
   SELECTED_DECK_STORAGE_KEY,
   THEME_STORAGE_KEY,
+  TOMBSTONES_STORAGE_KEY,
 } from "./lib/constants";
 import {
   createDeckProgress,
@@ -24,8 +26,18 @@ import {
   findSectionForDeck,
   flattenDecks,
   shuffleCards,
+  touchCard,
+  touchDeck,
+  touchProgress,
+  touchSection,
   updateDeckInSections,
 } from "./lib/deckUtils";
+import { LibraryState } from "./lib/merge";
+import {
+  recordCardDeletion,
+  recordDeckDeletion,
+  recordSectionDeletion,
+} from "./lib/tombstones";
 import { DailyCardRef, pickDailyCard, toDateKey } from "./lib/dailyCard";
 import {
   loadAccentColor,
@@ -34,9 +46,11 @@ import {
   loadLibrarySections,
   loadPinnedDeckIds,
   loadProgressState,
+  loadPreferencesUpdatedAt,
   loadRecentDeckIds,
   loadSelectedDeckId,
   loadTheme,
+  loadTombstones,
   safeSetItem,
 } from "./lib/storage";
 import {
@@ -51,6 +65,7 @@ import {
   SectionEditor,
   SharedDeckLink,
   StudyMode,
+  SyncedPreferences,
   Theme,
   ViewState,
 } from "./lib/types";
@@ -114,17 +129,59 @@ export default function App() {
   const [accentColor, setAccentColor] = useState<AccentColor>(loadAccentColor);
   const [dailyCardRef, setDailyCardRef] = useState<DailyCardRef | null>(loadDailyCard);
   const [todayKey, setTodayKey] = useState(() => toDateKey(new Date()));
+  const [tombstones, setTombstones] = useState(loadTombstones);
+  const [preferencesUpdatedAt, setPreferencesUpdatedAt] = useState(loadPreferencesUpdatedAt);
 
   const actionsMenuRef = useRef<HTMLDivElement>(null);
 
-  const cloudSync = useCloudSync({
-    librarySections,
-    deckProgress,
-    selectedDeckId,
-    setLibrarySections,
-    setDeckProgress,
-    setSelectedDeckId,
-  });
+  const preferences = useMemo<SyncedPreferences>(
+    () => ({
+      pinnedDeckIds,
+      recentDecks: recentDeckIds,
+      deckLastViewed,
+      theme,
+      accentColor,
+      updatedAt: preferencesUpdatedAt,
+    }),
+    [pinnedDeckIds, recentDeckIds, deckLastViewed, theme, accentColor, preferencesUpdatedAt],
+  );
+
+  const libraryState = useMemo<LibraryState>(
+    () => ({ librarySections, deckProgress, tombstones, preferences }),
+    [librarySections, deckProgress, tombstones, preferences],
+  );
+
+  // Applies a completed cloud merge in one pass. Preferences are written back
+  // with the merge's own timestamp rather than through the UI setters below,
+  // so accepting the cloud's theme doesn't count as this device changing it.
+  const applyMergedState = (merged: LibraryState, mergedSelectedDeckId: string) => {
+    setLibrarySections(merged.librarySections);
+    setDeckProgress(merged.deckProgress);
+    setTombstones(merged.tombstones);
+    setPinnedDeckIds(merged.preferences.pinnedDeckIds);
+    setRecentDeckIds(merged.preferences.recentDecks);
+    setDeckLastViewed(merged.preferences.deckLastViewed);
+    setTheme(merged.preferences.theme);
+    setAccentColor(merged.preferences.accentColor);
+    setPreferencesUpdatedAt(merged.preferences.updatedAt);
+    setSelectedDeckId(mergedSelectedDeckId);
+  };
+
+  const cloudSync = useCloudSync({ libraryState, selectedDeckId, applyMergedState });
+
+  // Marks the preference group (pins, theme, accent) as changed on this device
+  // so the merge prefers it over another device's older settings.
+  const touchPreferences = () => setPreferencesUpdatedAt(Date.now());
+
+  const chooseTheme = (nextTheme: Theme) => {
+    setTheme(nextTheme);
+    touchPreferences();
+  };
+
+  const chooseAccentColor = (nextAccent: AccentColor) => {
+    setAccentColor(nextAccent);
+    touchPreferences();
+  };
 
   const askConfirm = (message: string, onConfirm: () => void) => {
     setConfirmDialog({ message, onConfirm });
@@ -228,7 +285,10 @@ export default function App() {
       const nextProgress = updater(
         currentProgress[selectedDeck.id] ?? createDeckProgress(selectedDeck),
       );
-      return { ...currentProgress, [selectedDeck.id]: nextProgress };
+      // Every progress change is stamped here rather than at each call site, so
+      // the cloud merge can order this device's marks against another's — an
+      // unmarked card stays unmarked instead of being restored by a stale peer.
+      return { ...currentProgress, [selectedDeck.id]: touchProgress(nextProgress) };
     });
   };
 
@@ -311,12 +371,14 @@ export default function App() {
     const parsed = parsePastedFlashcards(deckComposer?.paste ?? "");
     const deckIds = new Set(allDecks.map((deck) => deck.id));
     const deckId = createUniqueId(title, deckIds);
-    const cards = withCardIds(parsed.cards);
+    const now = Date.now();
+    const cards = withCardIds(parsed.cards).map((card) => touchCard(card, now));
     const newDeck: Deck = {
       id: deckId,
       title,
       subtitle: subtitle || `Custom flashcards in ${section.title}.`,
       cards,
+      updatedAt: now,
     };
     setLibrarySections((currentSections) =>
       currentSections.map((item) =>
@@ -339,10 +401,11 @@ export default function App() {
       setCardImportMessage("Paste at least one valid card line first.");
       return;
     }
+    const now = Date.now();
     const newCards = withCardIds(
       parsed.cards,
       selectedDeck.cards.map((card) => card.id),
-    );
+    ).map((card) => touchCard(card, now));
     startTransition(() => {
       setLibrarySections((currentSections) =>
         updateDeckInSections(currentSections, selectedDeck.id, (deck) => ({
@@ -377,7 +440,9 @@ export default function App() {
       return;
     }
     const existingIds = selectedDeck.cards.map((c) => c.id);
-    const newCards = withCardIds([{ term: word, definition: def }], existingIds);
+    const newCards = withCardIds([{ term: word, definition: def }], existingIds).map((card) =>
+      touchCard(card),
+    );
     const newCard = newCards[0];
     if (!newCard) return;
     startTransition(() => {
@@ -426,6 +491,7 @@ export default function App() {
     setPinnedDeckIds((current) =>
       current.includes(deckId) ? current.filter((id) => id !== deckId) : [...current, deckId],
     );
+    touchPreferences();
   };
 
   const handleDeleteCard = (cardId: string) => {
@@ -439,6 +505,10 @@ export default function App() {
             cards: deck.cards.filter((c) => c.id !== cardId),
           })),
         );
+        // Recorded so the delete reaches other devices. Without it the next
+        // merge would simply take the card back from whichever device still
+        // has it.
+        setTombstones((current) => recordCardDeletion(current, selectedDeck.id, cardId));
       });
       setToast(`Deleted card.`);
       setConfirmDialog(null);
@@ -458,7 +528,11 @@ export default function App() {
     startTransition(() => {
       setLibrarySections((curr) =>
         updateDeckInSections(curr, selectedDeck.id, (deck) => {
-          const updated = { ...deck.cards.find((c) => c.id === cardId)!, term, definition };
+          const updated = touchCard({
+            ...deck.cards.find((c) => c.id === cardId)!,
+            term,
+            definition,
+          });
           return {
             ...deck,
             cards: [updated, ...deck.cards.filter((c) => c.id !== cardId)],
@@ -478,7 +552,9 @@ export default function App() {
     if (!selectedDeck || !title) return;
     startTransition(() => {
       setLibrarySections((curr) =>
-        updateDeckInSections(curr, selectedDeck.id, (deck) => ({ ...deck, title, subtitle })),
+        updateDeckInSections(curr, selectedDeck.id, (deck) =>
+          touchDeck({ ...deck, title, subtitle }),
+        ),
       );
     });
     setToast("Deck updated.");
@@ -524,7 +600,22 @@ export default function App() {
     if (sharedDeckLink?.status !== "ready") return;
     const { sections, deck } = importSharedDeck(librarySections, sharedDeckLink.snapshot);
 
-    setLibrarySections(sections);
+    // Stamped as new so a tombstone for an id it happens to reuse can't delete
+    // it again on the next merge.
+    const now = Date.now();
+    setLibrarySections(
+      sections.map((section) => ({
+        ...section,
+        decks: section.decks.map((existing) =>
+          existing.id === deck.id
+            ? touchDeck(
+                { ...existing, cards: existing.cards.map((card) => touchCard(card, now)) },
+                now,
+              )
+            : existing,
+        ),
+      })),
+    );
     setDeckProgress((current) => ({ ...current, [deck.id]: createDeckProgress(deck) }));
     setSharedDeckLink(null);
     openDeck(deck.id);
@@ -549,6 +640,7 @@ export default function App() {
           delete next[deckId];
           return next;
         });
+        setTombstones((current) => recordDeckDeletion(current, deckId));
         setPinnedDeckIds((current) => current.filter((id) => id !== deckId));
         setRecentDeckIds((current) => current.filter((entry) => entry.id !== deckId));
         setDeckLastViewed((current) => {
@@ -578,6 +670,16 @@ export default function App() {
           deckIds.forEach((id) => delete next[id]);
           return next;
         });
+        // The decks are tombstoned individually too: another device may have
+        // filed the same deck under a different topic, and a section tombstone
+        // alone would leave it there.
+        setTombstones((current) => {
+          const deletedAt = Date.now();
+          return deckIds.reduce(
+            (acc, id) => recordDeckDeletion(acc, id, deletedAt),
+            recordSectionDeletion(current, sectionId, deletedAt),
+          );
+        });
         setPinnedDeckIds((current) => current.filter((id) => !deckIds.includes(id)));
         setRecentDeckIds((current) => current.filter((entry) => !deckIds.includes(entry.id)));
         setDeckLastViewed((current) => {
@@ -603,7 +705,7 @@ export default function App() {
     setLibrarySections((current) =>
       current.map((section) =>
         section.id === sectionId
-          ? { ...section, title, description: description.trim() }
+          ? touchSection({ ...section, title, description: description.trim() })
           : section,
       ),
     );
@@ -624,6 +726,7 @@ export default function App() {
       title,
       description: sectionComposer?.description.trim() || `Cards from ${title}.`,
       decks: [],
+      updatedAt: Date.now(),
     };
     setLibrarySections((current) => [...current, newSection]);
     setSectionComposer(null);
@@ -739,6 +842,8 @@ export default function App() {
   useDebouncedPersist(RECENT_DECKS_STORAGE_KEY, recentDeckIds);
   useDebouncedPersist(DECK_LAST_VIEWED_STORAGE_KEY, deckLastViewed);
   useDebouncedPersist(DAILY_CARD_STORAGE_KEY, dailyCardRef);
+  useDebouncedPersist(TOMBSTONES_STORAGE_KEY, tombstones);
+  useDebouncedPersist(PREFERENCES_UPDATED_AT_STORAGE_KEY, preferencesUpdatedAt);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -873,9 +978,9 @@ export default function App() {
           showThemesPanel={showThemesPanel}
           setShowThemesPanel={setShowThemesPanel}
           theme={theme}
-          setTheme={setTheme}
+          setTheme={chooseTheme}
           accentColor={accentColor}
-          setAccentColor={setAccentColor}
+          setAccentColor={chooseAccentColor}
           dailyCard={dailyCard}
           sectionComposer={sectionComposer}
           setSectionComposer={setSectionComposer}

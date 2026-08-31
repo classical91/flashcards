@@ -40,6 +40,19 @@ const buildSnapshot = (decks: { title: string; cardCount: number }[], knownCount
   selectedDeckId: "deck-0",
 });
 
+const v2Extras = () => ({
+  version: 2,
+  tombstones: { sections: {}, decks: { "deleted-deck": 1700000000000 }, cards: {} },
+  preferences: {
+    pinnedDeckIds: ["deck-0"],
+    recentDecks: [{ id: "deck-0", viewedAt: 1700000000000 }],
+    deckLastViewed: { "deck-0": 1700000000000 },
+    theme: "dark",
+    accentColor: "purple",
+    updatedAt: 1700000000000,
+  },
+});
+
 const put = async (libraryId: string, snapshot: unknown) => {
   const response = await fetch(`${baseUrl}/api/libraries/${libraryId}`, {
     method: "PUT",
@@ -126,5 +139,56 @@ describe("library snapshot size limits", () => {
     expect(result.status).toBe(400);
     expect(result.body.message).toContain('"Personal"');
     expect(result.body.message).toContain("251");
+  });
+});
+
+describe("snapshot versions", () => {
+  it("accepts a version 2 snapshot with tombstones and preferences", async () => {
+    const result = await put("v2-snapshot-key", {
+      ...buildSnapshot([{ title: "Words", cardCount: 2 }]),
+      ...v2Extras(),
+    });
+
+    expect(result.status).toBe(200);
+  });
+
+  it("still accepts a version 1 snapshot from a device that has not upgraded", async () => {
+    const result = await put("v1-snapshot-key", buildSnapshot([{ title: "Words", cardCount: 2 }]));
+
+    expect(result.status).toBe(200);
+  });
+
+  it("rejects an unknown snapshot version", async () => {
+    const result = await put("v3-snapshot-key", {
+      ...buildSnapshot([{ title: "Words", cardCount: 2 }]),
+      version: 3,
+    });
+
+    expect(result.status).toBe(400);
+    expect(result.body.message).toContain("version 1 or 2");
+  });
+
+  it("rejects version 2 preferences with an unknown theme", async () => {
+    const extras = v2Extras();
+    const result = await put("v2-bad-theme-key", {
+      ...buildSnapshot([{ title: "Words", cardCount: 2 }]),
+      ...extras,
+      preferences: { ...extras.preferences, theme: "neon" },
+    });
+
+    expect(result.status).toBe(400);
+    expect(result.body.message).toContain("preferences.theme");
+  });
+
+  it("rejects version 2 tombstones with a non-numeric timestamp", async () => {
+    const extras = v2Extras();
+    const result = await put("v2-bad-tombstone-key", {
+      ...buildSnapshot([{ title: "Words", cardCount: 2 }]),
+      ...extras,
+      tombstones: { ...extras.tombstones, decks: { "deleted-deck": "yesterday" } },
+    });
+
+    expect(result.status).toBe(400);
+    expect(result.body.message).toContain("tombstones.decks");
   });
 });

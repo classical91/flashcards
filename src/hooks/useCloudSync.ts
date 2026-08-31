@@ -1,14 +1,13 @@
-import { Dispatch, SetStateAction, startTransition, useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import { defaultDeckId } from "../data/decks";
-import { DeckSection } from "../data/deckBuilder";
 import {
-  DeckProgress,
   LibrarySnapshot,
   createLibrarySnapshot,
   parseLibrarySnapshot,
 } from "../data/librarySnapshot";
 import { SYNC_KEY_STORAGE_KEY } from "../lib/constants";
-import { flattenDecks, mergeProgressState, mergeSections } from "../lib/deckUtils";
+import { flattenDecks } from "../lib/deckUtils";
+import { LibraryState, mergeLibraryState } from "../lib/merge";
 import { loadSyncKey, safeRemoveItem, safeSetItem } from "../lib/storage";
 import {
   createSyncKey,
@@ -20,12 +19,14 @@ import {
 import { SyncState } from "../lib/types";
 
 type UseCloudSyncOptions = {
-  librarySections: DeckSection[];
-  deckProgress: Record<string, DeckProgress>;
+  libraryState: LibraryState;
   selectedDeckId: string;
-  setLibrarySections: Dispatch<SetStateAction<DeckSection[]>>;
-  setDeckProgress: Dispatch<SetStateAction<Record<string, DeckProgress>>>;
-  setSelectedDeckId: Dispatch<SetStateAction<string>>;
+  /**
+   * Writes a completed merge back into the app. Called with the merged state
+   * rather than a set of setters so every merge lands in one render, and so
+   * the hook never has to know how the app splits that state up.
+   */
+  applyMergedState: (state: LibraryState, selectedDeckId: string) => void;
 };
 
 export type CloudSync = {
@@ -39,18 +40,31 @@ export type CloudSync = {
   onSaveToCloud: () => void;
 };
 
+const toSnapshot = (state: LibraryState, selectedDeckId: string): LibrarySnapshot =>
+  createLibrarySnapshot({
+    librarySections: state.librarySections,
+    deckProgress: state.deckProgress,
+    selectedDeckId,
+    tombstones: state.tombstones,
+    preferences: state.preferences,
+  });
+
+const toLibraryState = (snapshot: LibrarySnapshot): LibraryState => ({
+  librarySections: snapshot.librarySections,
+  deckProgress: snapshot.deckProgress,
+  tombstones: snapshot.tombstones,
+  preferences: snapshot.preferences,
+});
+
 /**
  * Owns all cloud-sync concerns: the sync key, connection lifecycle, conflict
- * resolution, and the debounced auto-save. It reads the live library/progress
- * state through props and writes merges back through the provided setters.
+ * resolution, and the debounced auto-save. It reads the live library state
+ * through props and writes merges back through `applyMergedState`.
  */
 export function useCloudSync({
-  librarySections,
-  deckProgress,
+  libraryState,
   selectedDeckId,
-  setLibrarySections,
-  setDeckProgress,
-  setSelectedDeckId,
+  applyMergedState,
 }: UseCloudSyncOptions): CloudSync {
   const [syncKey, setSyncKey] = useState(loadSyncKey);
   const [syncKeyInput, setSyncKeyInput] = useState(loadSyncKey);
@@ -62,34 +76,38 @@ export function useCloudSync({
   const cloudSyncReadyRef = useRef(false);
   const cloudSyncLoadKeyRef = useRef("");
   const cloudRevisionRef = useRef<number | null>(null);
-  const snapshotRef = useRef<LibrarySnapshot>(
-    createLibrarySnapshot({
-      librarySections,
-      deckProgress,
-      selectedDeckId,
-      recentDeckIds: [],
-    }),
-  );
 
-  const applyRemoteSnapshotMerge = (remoteSnapshot: LibrarySnapshot) => {
-    const mergedSections = mergeSections(librarySections, remoteSnapshot.librarySections);
-    const mergedProgress = mergeProgressState(
-      deckProgress,
-      remoteSnapshot.deckProgress,
-      mergedSections,
-    );
-    const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
-    const nextSelectedDeckId = mergedDeckIds.has(selectedDeckId)
-      ? selectedDeckId
-      : remoteSnapshot.selectedDeckId;
+  // Effects below run against whatever the app state was when they were
+  // scheduled, so read it through refs instead of closing over stale props.
+  const libraryStateRef = useRef(libraryState);
+  libraryStateRef.current = libraryState;
+  const selectedDeckIdRef = useRef(selectedDeckId);
+  selectedDeckIdRef.current = selectedDeckId;
+  const applyMergedStateRef = useRef(applyMergedState);
+  applyMergedStateRef.current = applyMergedState;
+
+  const mergeRemoteSnapshot = (remoteSnapshot: LibrarySnapshot, preferRemoteSelection: boolean) => {
+    const merged = mergeLibraryState(libraryStateRef.current, toLibraryState(remoteSnapshot));
+    const mergedDeckIds = new Set(flattenDecks(merged.librarySections).map((deck) => deck.id));
+    const localSelection = selectedDeckIdRef.current;
+    const remoteSelection = remoteSnapshot.selectedDeckId;
+    const nextSelectedDeckId = preferRemoteSelection
+      ? mergedDeckIds.has(remoteSelection)
+        ? remoteSelection
+        : localSelection
+      : mergedDeckIds.has(localSelection)
+        ? localSelection
+        : remoteSelection;
     startTransition(() => {
-      setLibrarySections(mergedSections);
-      setDeckProgress(mergedProgress);
-      setSelectedDeckId(nextSelectedDeckId || defaultDeckId);
+      applyMergedStateRef.current(
+        merged,
+        mergedDeckIds.has(nextSelectedDeckId) ? nextSelectedDeckId : defaultDeckId,
+      );
     });
   };
 
-  const saveWithConflictResolution = async (activeSyncKey: string, snapshot: LibrarySnapshot) => {
+  const saveWithConflictResolution = async (activeSyncKey: string) => {
+    const snapshot = toSnapshot(libraryStateRef.current, selectedDeckIdRef.current);
     const outcome = await saveSnapshotToCloud(activeSyncKey, snapshot, cloudRevisionRef.current);
     if (!outcome.conflict) {
       if (outcome.revision !== null) cloudRevisionRef.current = outcome.revision;
@@ -101,7 +119,7 @@ export function useCloudSync({
     }
     cloudRevisionRef.current =
       typeof outcome.current?.revision === "number" ? outcome.current.revision : null;
-    applyRemoteSnapshotMerge(remoteSnapshot);
+    mergeRemoteSnapshot(remoteSnapshot, false);
     return { resolved: false };
   };
 
@@ -159,21 +177,7 @@ export function useCloudSync({
       const snapshot = parseLibrarySnapshot(payload.snapshot);
       if (!snapshot) throw new Error("The cloud library was not in the expected format.");
       cloudRevisionRef.current = typeof payload.revision === "number" ? payload.revision : null;
-      const mergedSections = mergeSections(librarySections, snapshot.librarySections);
-      const mergedProgress = mergeProgressState(
-        deckProgress,
-        snapshot.deckProgress,
-        mergedSections,
-      );
-      const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
-      const nextSelectedDeckId = mergedDeckIds.has(snapshot.selectedDeckId)
-        ? snapshot.selectedDeckId
-        : selectedDeckId;
-      startTransition(() => {
-        setLibrarySections(mergedSections);
-        setDeckProgress(mergedProgress);
-        setSelectedDeckId(nextSelectedDeckId || defaultDeckId);
-      });
+      mergeRemoteSnapshot(snapshot, true);
       setSyncKey(activeSyncKey);
       setSyncKeyInput(activeSyncKey);
       cloudSyncReadyRef.current = true;
@@ -195,7 +199,7 @@ export function useCloudSync({
     setSyncState("saving");
     setSyncMessage("Saving this device's library to cloud...");
     try {
-      const result = await saveWithConflictResolution(activeSyncKey, snapshotRef.current);
+      const result = await saveWithConflictResolution(activeSyncKey);
       setSyncKey(activeSyncKey);
       setSyncKeyInput(activeSyncKey);
       cloudSyncReadyRef.current = true;
@@ -211,15 +215,6 @@ export function useCloudSync({
       setSyncMessage(error instanceof Error ? error.message : "Could not save to cloud.");
     }
   };
-
-  useEffect(() => {
-    snapshotRef.current = createLibrarySnapshot({
-      librarySections,
-      deckProgress,
-      selectedDeckId,
-      recentDeckIds: [],
-    });
-  }, [librarySections, deckProgress, selectedDeckId]);
 
   useEffect(() => {
     if (syncKey) {
@@ -248,21 +243,7 @@ export function useCloudSync({
         const snapshot = parseLibrarySnapshot(payload.snapshot);
         if (!snapshot) throw new Error("The cloud library was not in the expected format.");
         cloudRevisionRef.current = typeof payload.revision === "number" ? payload.revision : null;
-        const mergedSections = mergeSections(librarySections, snapshot.librarySections);
-        const mergedProgress = mergeProgressState(
-          deckProgress,
-          snapshot.deckProgress,
-          mergedSections,
-        );
-        const mergedDeckIds = new Set(flattenDecks(mergedSections).map((deck) => deck.id));
-        const nextSelectedDeckId = mergedDeckIds.has(selectedDeckId)
-          ? selectedDeckId
-          : snapshot.selectedDeckId;
-        startTransition(() => {
-          setLibrarySections(mergedSections);
-          setDeckProgress(mergedProgress);
-          setSelectedDeckId(nextSelectedDeckId || defaultDeckId);
-        });
+        mergeRemoteSnapshot(snapshot, false);
         cloudSyncReadyRef.current = true;
         setSyncState("saved");
         setSyncMessage("Cloud sync is active on this device. Changes will auto-save.");
@@ -279,7 +260,7 @@ export function useCloudSync({
     setSyncState("saving");
     setSyncMessage("Auto-saving changes to cloud...");
     const timer = window.setTimeout(() => {
-      saveWithConflictResolution(syncKey, snapshotRef.current)
+      saveWithConflictResolution(syncKey)
         .then((result) => {
           if (result.resolved) {
             setSyncState("saved");
@@ -294,7 +275,7 @@ export function useCloudSync({
         });
     }, 900);
     return () => window.clearTimeout(timer);
-  }, [librarySections, deckProgress, selectedDeckId, syncKey]);
+  }, [libraryState, selectedDeckId, syncKey]);
 
   return {
     syncKeyInput,

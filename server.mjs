@@ -167,6 +167,13 @@ const contentLimits = Object.freeze({
   // Every card in a deck can be marked known, so this must track cardsPerDeck.
   knownIdsPerDeck: 5000,
   recentDeckIds: 100,
+  // Tombstones are one small entry per deleted item and expire after 90 days,
+  // so these only need to be wide enough for a heavy pruning session.
+  tombstoneEntries: 10000,
+  // A card tombstone key is "<deckId>::<cardId>".
+  tombstoneKeyLength: 250,
+  pinnedDeckIds: 5000,
+  deckLastViewedEntries: 5000,
   idLength: 120,
   titleLength: 200,
   subtitleLength: 500,
@@ -175,6 +182,8 @@ const contentLimits = Object.freeze({
   definitionLength: 4000,
   timestampLength: 100,
 });
+
+const accentColors = new Set(["blue", "purple", "green", "red", "amber"]);
 
 const valid = { ok: true };
 const invalid = (message) => ({ ok: false, message });
@@ -350,13 +359,115 @@ const validateDeckProgress = (value, path) => {
   return valid;
 };
 
+/** A map of id -> epoch-ms timestamp, as used by tombstones and deckLastViewed. */
+const validateTimestampMap = (value, path, maxEntries, maxKeyLength) => {
+  if (!isRecord(value)) {
+    return invalid(`${path} must be an object.`);
+  }
+
+  const entries = Object.entries(value);
+  if (entries.length > maxEntries) {
+    return invalid(`${path} cannot contain more than ${maxEntries} entries.`);
+  }
+
+  for (const [key, timestamp] of entries) {
+    const keyResult = validateString(key, `${path} key`, maxKeyLength);
+    if (!keyResult.ok) return keyResult;
+    if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
+      return invalid(`${path}.${key} must be a finite number.`);
+    }
+  }
+
+  return valid;
+};
+
+const validateTombstones = (value) => {
+  if (!isRecord(value)) {
+    return invalid("tombstones must be an object.");
+  }
+
+  for (const field of ["sections", "decks", "cards"]) {
+    const result = validateTimestampMap(
+      value[field],
+      `tombstones.${field}`,
+      contentLimits.tombstoneEntries,
+      contentLimits.tombstoneKeyLength,
+    );
+    if (!result.ok) return result;
+  }
+
+  return valid;
+};
+
+const validateSyncedPreferences = (value) => {
+  if (!isRecord(value)) {
+    return invalid("preferences must be an object.");
+  }
+
+  const pinnedResult = validateStringArray(
+    value.pinnedDeckIds,
+    "preferences.pinnedDeckIds",
+    contentLimits.pinnedDeckIds,
+    contentLimits.idLength,
+  );
+  if (!pinnedResult.ok) return pinnedResult;
+
+  if (!Array.isArray(value.recentDecks)) {
+    return invalid("preferences.recentDecks must be an array.");
+  }
+
+  if (value.recentDecks.length > contentLimits.recentDeckIds) {
+    return invalid(
+      `preferences.recentDecks cannot contain more than ${contentLimits.recentDeckIds} items.`,
+    );
+  }
+
+  for (let index = 0; index < value.recentDecks.length; index += 1) {
+    const entry = value.recentDecks[index];
+    const path = `preferences.recentDecks[${index}]`;
+    if (!isRecord(entry)) {
+      return invalid(`${path} must be an object.`);
+    }
+    const idResult = validateString(entry.id, `${path}.id`, contentLimits.idLength);
+    if (!idResult.ok) return idResult;
+    if (typeof entry.viewedAt !== "number" || !Number.isFinite(entry.viewedAt)) {
+      return invalid(`${path}.viewedAt must be a finite number.`);
+    }
+  }
+
+  const lastViewedResult = validateTimestampMap(
+    value.deckLastViewed,
+    "preferences.deckLastViewed",
+    contentLimits.deckLastViewedEntries,
+    contentLimits.idLength,
+  );
+  if (!lastViewedResult.ok) return lastViewedResult;
+
+  if (value.theme !== "light" && value.theme !== "dark") {
+    return invalid('preferences.theme must be "light" or "dark".');
+  }
+
+  if (!accentColors.has(value.accentColor)) {
+    return invalid(`preferences.accentColor must be one of ${[...accentColors].join(", ")}.`);
+  }
+
+  if (typeof value.updatedAt !== "number" || !Number.isFinite(value.updatedAt)) {
+    return invalid("preferences.updatedAt must be a finite number.");
+  }
+
+  return valid;
+};
+
 const validateLibrarySnapshot = (value) => {
   if (!isRecord(value)) {
     return invalid("The uploaded library backup must be an object.");
   }
 
-  if (value.version !== 1) {
-    return invalid("The uploaded library backup must use snapshot version 1.");
+  // Version 1 is still accepted so a device that has not been reloaded since
+  // the tombstone/preferences upgrade can keep syncing; it just carries none
+  // of the version 2 fields.
+  if (value.version !== 1 && value.version !== 2) {
+    return invalid("The uploaded library backup must use snapshot version 1 or 2.");
   }
 
   const exportedAtResult = validateString(
@@ -410,6 +521,14 @@ const validateLibrarySnapshot = (value) => {
       contentLimits.idLength,
     );
     if (!recentDeckIdsResult.ok) return recentDeckIdsResult;
+  }
+
+  if (value.version === 2) {
+    const tombstonesResult = validateTombstones(value.tombstones);
+    if (!tombstonesResult.ok) return tombstonesResult;
+
+    const preferencesResult = validateSyncedPreferences(value.preferences);
+    if (!preferencesResult.ok) return preferencesResult;
   }
 
   return valid;
