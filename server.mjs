@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 import handler from "serve-handler";
+import { parseDateKey, resolveDailyCard, toDateKey } from "./server-daily-card.mjs";
 
 process.on("uncaughtException", (error) => {
   console.error("Uncaught exception (kept alive):", error);
@@ -1316,6 +1317,76 @@ const handleApiRequest = async (
       exists: true,
       shareId,
       snapshot: record.snapshot,
+      updatedAt: record.updatedAt,
+      storage: storageKind,
+    });
+  }
+
+  // Card of the Day, as one card.
+  //
+  // Main Hub's Daily Dashboard shows the same card the home screen leads with,
+  // and it has no business holding the library to work it out. This route
+  // resolves the pick server-side from the snapshot already stored here and
+  // returns the card, its deck and its topic — nothing else. The sync key is
+  // still the credential, exactly as it is for GET on the library itself.
+  const dailyCardMatch = pathname.match(/^\/api\/libraries\/([A-Za-z0-9_-]{1,200})\/daily-card$/);
+
+  if (dailyCardMatch) {
+    const libraryId = dailyCardMatch[1];
+
+    if (!libraryIdPattern.test(libraryId)) {
+      return sendJson(response, 400, {
+        error: "invalid_library_id",
+        message:
+          "Library IDs must be 8-120 characters long and use only letters, numbers, hyphens, or underscores.",
+      });
+    }
+
+    if (request.method !== "GET") {
+      return sendJson(response, 405, {
+        error: "method_not_allowed",
+        message: "Only GET is supported for the card of the day.",
+      });
+    }
+
+    // The caller's calendar day, not the server's. Main Hub runs on Railway and
+    // asks in Vancouver time; without this the card would turn over at whatever
+    // hour the container happens to think it is.
+    const requestedDate = searchParams.get("date");
+    const dateKey = requestedDate === null ? toDateKey(new Date()) : parseDateKey(requestedDate);
+
+    if (!dateKey) {
+      return sendJson(response, 400, {
+        error: "invalid_date",
+        message: "date must be a real calendar day in YYYY-MM-DD form.",
+      });
+    }
+
+    const record = await getLibrarySnapshot(libraryId);
+
+    if (!record) {
+      return sendJson(response, 200, {
+        exists: false,
+        dateKey,
+        card: null,
+        storage: storageKind,
+      });
+    }
+
+    const resolved = resolveDailyCard(record.snapshot, dateKey);
+
+    if (!resolved) {
+      return sendJson(response, 200, {
+        exists: true,
+        dateKey,
+        card: null,
+        storage: storageKind,
+      });
+    }
+
+    return sendJson(response, 200, {
+      exists: true,
+      ...resolved,
       updatedAt: record.updatedAt,
       storage: storageKind,
     });

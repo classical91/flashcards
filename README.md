@@ -193,6 +193,52 @@ For real deployment, publish the generated `dist/` assets to any static hosting 
   deletion. Browser sessions use a signed, HttpOnly, SameSite cookie and expire
   after eight hours.
 
+## Card of the Day API
+
+`GET /api/libraries/<syncKey>/daily-card?date=YYYY-MM-DD`
+
+The same card the home screen leads with, resolved server-side and returned on
+its own. Main Hub's Daily Dashboard reads this so it can show today's card
+without holding the library.
+
+```json
+{
+  "exists": true,
+  "dateKey": "2026-09-10",
+  "card": { "id": "…", "term": "…", "definition": "…" },
+  "deck": { "id": "…", "title": "emotions1", "subtitle": "" },
+  "section": { "id": "…", "title": "GPT" },
+  "updatedAt": "…"
+}
+```
+
+`date` is the **caller's** calendar day and defaults to the server's. A caller in
+another timezone must send it, or the card turns over at the wrong hour.
+
+The pick is `pickDailyCard()` — deterministic for the date, and skipping cards
+already marked known while any unknown card remains. `server-daily-card.mjs`
+restates that rule in plain JS because `server.mjs` runs untranspiled;
+`src/lib/__tests__/dailyCard.test.ts` runs both implementations over the same
+fixtures so the two cannot drift.
+
+Two things this route deliberately does **not** do:
+
+- It never returns anything but the one card, its deck's title, and its topic's
+  title. No other card, no progress, no tombstones, no preferences.
+- It never writes. Revealing the answer somewhere else does not mark a card
+  known or touch its review schedule.
+
+The sync key is still the credential, exactly as it is for `GET` on the library
+itself — anyone holding it can already read everything, so this route grants
+nothing new. A library that does not exist answers `200` with
+`{"exists": false, "card": null}` rather than confirming or denying a key.
+
+One behaviour to know about if you are comparing the two: the app pins the day's
+first pick in `localStorage` and keeps it for the rest of that day, so marking a
+card known at 2pm does not change what the app shows. This route recomputes on
+every call. They agree on the first computation of a day and can differ after
+the library changes within it.
+
 ## Sharing a deck
 
 Cloud sync moves a whole library between your own devices. Deck sharing is the

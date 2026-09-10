@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { DeckSection } from "../../data/deckBuilder";
 import { DeckProgress } from "../../data/librarySnapshot";
 import { parseDailyCard, pickDailyCard, toDateKey } from "../dailyCard";
+// The server's copy of this rule, checked against the app's at the bottom of
+// this file. See the header of server-daily-card.mjs for why a copy exists.
+import {
+  parseDateKey as serverParseDateKey,
+  pickDailyCard as serverPickDailyCard,
+  resolveDailyCard as serverResolveDailyCard,
+  toDateKey as serverToDateKey,
+} from "../../../server-daily-card.mjs";
 
 const card = (id: string) => ({ id, term: `term-${id}`, definition: `definition-${id}` });
 
@@ -112,5 +120,92 @@ describe("parseDailyCard", () => {
     expect(parseDailyCard("nope")).toBeNull();
     expect(parseDailyCard({ dateKey: "2026-07-27", deckId: "deck-1" })).toBeNull();
     expect(parseDailyCard({ dateKey: 1, deckId: "deck-1", cardId: "c1" })).toBeNull();
+  });
+});
+
+// ── Server parity ───────────────────────────────────────────────────────────
+//
+// server-daily-card.mjs restates pickDailyCard and toDateKey so the untranspiled
+// Node server can serve the Card of the Day to Main Hub's Daily Dashboard. Two
+// copies of one rule drift silently, so these run both over the same fixtures.
+// Change src/lib/dailyCard.ts without changing the server copy and this fails.
+
+describe("server parity", () => {
+  const days = Array.from(
+    { length: 60 },
+    (_, i) => `2026-${`${(i % 12) + 1}`.padStart(2, "0")}-${`${(i % 28) + 1}`.padStart(2, "0")}`,
+  );
+
+  it("picks the same card as the app for every day and progress state", () => {
+    const states = [
+      {},
+      progress({ "deck-1": ["c1"] }),
+      progress({ "deck-1": ["c1", "c2"], "deck-2": ["c3"] }),
+      progress({ "deck-1": ["c1", "c2"], "deck-2": ["c3"], "deck-3": ["c4"] }),
+    ];
+
+    for (const state of states) {
+      for (const day of days) {
+        expect(serverPickDailyCard(sections, state, day)).toEqual(
+          pickDailyCard(sections, state, day),
+        );
+      }
+    }
+  });
+
+  it("formats date keys the same way, local day included", () => {
+    expect(serverToDateKey(new Date(2026, 0, 5))).toBe(toDateKey(new Date(2026, 0, 5)));
+    expect(serverToDateKey(new Date(2026, 5, 5, 23, 30))).toBe(
+      toDateKey(new Date(2026, 5, 5, 23, 30)),
+    );
+  });
+
+  it("agrees that an empty library has no card", () => {
+    expect(serverPickDailyCard([], {}, "2026-07-27")).toBeNull();
+    expect(pickDailyCard([], {}, "2026-07-27")).toBeNull();
+  });
+});
+
+describe("parseDateKey", () => {
+  it("accepts a real calendar day", () => {
+    expect(serverParseDateKey("2026-07-27")).toBe("2026-07-27");
+    expect(serverParseDateKey(" 2026-02-28 ")).toBe("2026-02-28");
+  });
+
+  it("rejects days that do not exist and anything malformed", () => {
+    expect(serverParseDateKey("2026-02-31")).toBeNull();
+    expect(serverParseDateKey("2025-02-29")).toBeNull();
+    expect(serverParseDateKey("2026-13-01")).toBeNull();
+    expect(serverParseDateKey("26-07-27")).toBeNull();
+    expect(serverParseDateKey("")).toBeNull();
+    expect(serverParseDateKey(null)).toBeNull();
+  });
+});
+
+describe("resolveDailyCard", () => {
+  const snapshot = { librarySections: sections, deckProgress: progress({ "deck-1": ["c1"] }) };
+
+  it("returns the resolved card, its deck and its topic", () => {
+    const reference = pickDailyCard(sections, snapshot.deckProgress, "2026-07-27");
+    const resolved = serverResolveDailyCard(snapshot, "2026-07-27");
+
+    expect(resolved?.card.id).toBe(reference?.cardId);
+    expect(resolved?.deck.id).toBe(reference?.deckId);
+    expect(resolved?.section.title).toMatch(/^Topic /);
+    expect(resolved?.dateKey).toBe("2026-07-27");
+  });
+
+  it("hands back one card and nothing resembling the library", () => {
+    const resolved = serverResolveDailyCard(snapshot, "2026-07-27");
+
+    expect(Object.keys(resolved ?? {}).sort()).toEqual(["card", "dateKey", "deck", "section"]);
+    expect(Object.keys(resolved?.deck ?? {}).sort()).toEqual(["id", "subtitle", "title"]);
+    expect(resolved?.deck).not.toHaveProperty("cards");
+    expect(JSON.stringify(resolved)).not.toContain("knownIds");
+  });
+
+  it("survives a snapshot with nothing in it", () => {
+    expect(serverResolveDailyCard({}, "2026-07-27")).toBeNull();
+    expect(serverResolveDailyCard({ librarySections: [] }, "2026-07-27")).toBeNull();
   });
 });
