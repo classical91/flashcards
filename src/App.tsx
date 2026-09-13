@@ -91,6 +91,7 @@ import {
   Theme,
   ViewState,
 } from "./lib/types";
+import { DECK_LINK_WAIT_MS, DeckLink, getDeckLinkFromSearch } from "./lib/deckLink";
 import {
   buildShareUrl,
   createSharedDeck,
@@ -133,6 +134,9 @@ export default function App() {
   const [sectionEditorMessage, setSectionEditorMessage] = useState("");
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
   const [sharedDeckLink, setSharedDeckLink] = useState<SharedDeckLink | null>(null);
+  // A `?deck=<id>` link that has not landed yet — see the effects near
+  // getDeckLinkFromSearch for why it waits rather than resolving on mount.
+  const [pendingDeckLink, setPendingDeckLink] = useState<DeckLink | null>(null);
   const [isSharingDeck, setIsSharingDeck] = useState(false);
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [backupMessage, setBackupMessage] = useState("");
@@ -1190,6 +1194,51 @@ export default function App() {
     // Only restart when autoplay is toggled, the card changes, or the flip state changes.
     // Omitting other deps intentionally so unrelated re-renders (e.g. cloud sync) don't cancel the timer.
   }, [isAutoPlaying, currentCard?.id, activeProgress?.isFlipped, view.kind]);
+
+  // A `?deck=<id>` link opens that deck instead of the library — the hub's
+  // Card of the Day links here, and "open Flashcards" landing on the home
+  // screen made you find the deck it had just named.
+  //
+  // The link is held rather than resolved once on mount: at boot the library
+  // is whatever localStorage had, and on a machine that studies from the cloud
+  // the deck the link names may be seconds away. Resolving against the local
+  // copy would open the wrong deck — findDeckById misses and the app falls
+  // back to the first deck there is — so the link waits for its deck to turn
+  // up, and says so when it never does.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const link = getDeckLinkFromSearch(window.location.search);
+    if (!link) return;
+
+    // Out of the address bar straight away: opening the deck is a one-off, and
+    // a reload should land where you left off rather than back on this deck.
+    window.history.replaceState(null, "", "/");
+    setPendingDeckLink(link);
+
+    const timer = setTimeout(() => {
+      setPendingDeckLink((current) => {
+        if (current !== link) return current;
+        setToast("That deck is not in this library.");
+        return null;
+      });
+    }, DECK_LINK_WAIT_MS);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingDeckLink) return;
+    const deck = findDeckById(librarySections, pendingDeckLink.deckId);
+    if (!deck) return;
+
+    // A card id from another app is a claim about this library, so it is only
+    // honoured once the deck agrees it holds that card. Otherwise the deck
+    // opens where it was left, which is the right answer to "open this deck".
+    const { cardId } = pendingDeckLink;
+    const landOn = cardId && deck.cards.some((card) => card.id === cardId) ? cardId : undefined;
+    setPendingDeckLink(null);
+    openDeck(deck.id, landOn);
+  }, [pendingDeckLink, librarySections]);
 
   // A `/d/<shareId>` link boots the normal app (the server rewrites unknown
   // paths to index.html), so the import prompt is picked up here on mount
