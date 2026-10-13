@@ -31,7 +31,6 @@ import {
   shuffleCards,
   touchCard,
   touchDeck,
-  touchKnownCard,
   touchProgress,
   touchSection,
   updateDeckInSections,
@@ -86,7 +85,6 @@ import {
   SectionComposer,
   SectionEditor,
   SharedDeckLink,
-  StudyMode,
   SyncedPreferences,
   Theme,
   ViewState,
@@ -271,7 +269,6 @@ export default function App() {
     [selectedDeck, deckProgress],
   );
 
-  const knownSet = useMemo(() => new Set(activeProgress?.knownIds ?? []), [activeProgress]);
 
   const isShuffled = !!selectedDeck && studyOrder?.deckId === selectedDeck.id;
   const isReviewing = !!selectedDeck && reviewDeckId === selectedDeck.id;
@@ -288,10 +285,8 @@ export default function App() {
     if (isReviewing) {
       return buildReviewQueue(orderedCards, activeProgress?.reviews, reviewNow);
     }
-    return activeProgress?.studyMode === "remaining"
-      ? orderedCards.filter((card) => !knownSet.has(card.id))
-      : orderedCards;
-  }, [orderedCards, activeProgress?.studyMode, activeProgress?.reviews, knownSet, isReviewing, reviewNow]);
+    return orderedCards;
+  }, [orderedCards, activeProgress?.reviews, isReviewing, reviewNow]);
 
   const deckReviewCounts = useMemo(
     () =>
@@ -336,10 +331,6 @@ export default function App() {
   );
 
   const totalCards = selectedDeck?.cards.length ?? 0;
-  const knownCount = activeProgress?.knownIds.length ?? 0;
-  const remainingCount = totalCards - knownCount;
-  const hasRemainingCards = remainingCount > 0;
-  const currentCardIsKnown = currentCard ? knownSet.has(currentCard.id) : false;
   const isDeckEmpty = totalCards === 0;
 
   /**
@@ -505,13 +496,6 @@ export default function App() {
     setToast("Back to the deck's own order.");
   };
 
-  const handleStudyModeChange = (mode: StudyMode) => {
-    setReviewDeckId(null);
-    updateSelectedDeckProgress((progress) => ({ ...progress, studyMode: mode }), {
-      position: true,
-    });
-  };
-
   const resetProgress = () => {
     if (!selectedDeck) return;
     const now = Date.now();
@@ -526,32 +510,6 @@ export default function App() {
       );
     });
     setToast("Progress reset.");
-  };
-
-  const toggleKnown = () => {
-    if (!currentCard || !activeProgress) return;
-    updateSelectedDeckProgress(
-      (progress) => {
-        const isKnown = progress.knownIds.includes(currentCard.id);
-        let nextCurrentCardId = progress.currentCardId;
-        if (!isKnown && progress.studyMode === "remaining" && visibleCards.length > 1) {
-          const nextIndex = (cardPosition + 1) % visibleCards.length;
-          nextCurrentCardId = visibleCards[nextIndex].id;
-        }
-        return touchKnownCard(
-          {
-            ...progress,
-            currentCardId: nextCurrentCardId,
-            isFlipped: false,
-            knownIds: isKnown
-              ? progress.knownIds.filter((id) => id !== currentCard.id)
-              : [...progress.knownIds, currentCard.id],
-          },
-          currentCard.id,
-        );
-      },
-      { position: true },
-    );
   };
 
   const handleCreateDeck = (sectionId: string) => {
@@ -671,14 +629,12 @@ export default function App() {
     setSelectedDeckId(deckId);
     setView({ kind: "study", deckId });
     // Opening a search hit lands on that card rather than wherever the deck
-    // was left. A card already marked known is invisible in "remaining", so
-    // that deck switches back to the full deck for this visit.
+    // was left.
     if (cardId) {
       setDeckProgress((currentProgress) => {
         const deck = findDeckById(librarySections, deckId);
         if (!deck || !deck.cards.some((card) => card.id === cardId)) return currentProgress;
         const progress = currentProgress[deckId] ?? createDeckProgress(deck);
-        const isHidden = progress.studyMode === "remaining" && progress.knownIds.includes(cardId);
         return {
           ...currentProgress,
           [deckId]: touchProgress(
@@ -686,7 +642,6 @@ export default function App() {
               ...progress,
               currentCardId: cardId,
               isFlipped: false,
-              studyMode: isHidden ? "all" : progress.studyMode,
             },
             { position: true },
           ),
@@ -1204,7 +1159,6 @@ export default function App() {
     onFlip: handleFlip,
     onNext: () => moveToCard(1),
     onPrev: () => moveToCard(-1),
-    onToggleKnown: toggleKnown,
     onShuffle: handleShuffle,
     onGrade: isReviewing ? handleGrade : null,
   });
@@ -1432,8 +1386,6 @@ export default function App() {
         visibleCards={visibleCards}
         cardPosition={cardPosition}
         pinnedDeckIds={pinnedDeckIds}
-        currentCardIsKnown={currentCardIsKnown}
-        hasRemainingCards={hasRemainingCards}
         isDeckEmpty={isDeckEmpty}
         isAutoPlaying={isAutoPlaying}
         setIsAutoPlaying={setIsAutoPlaying}
@@ -1458,7 +1410,6 @@ export default function App() {
         setShowCardList={setShowCardList}
         setView={setView}
         togglePinDeck={togglePinDeck}
-        onStudyModeChange={handleStudyModeChange}
         onFlip={handleFlip}
         isShuffled={isShuffled}
         onShuffle={handleShuffle}
@@ -1471,7 +1422,6 @@ export default function App() {
         onStartReview={() => handleStartReview()}
         onExitReview={handleExitReview}
         onGrade={handleGrade}
-        onToggleKnown={toggleKnown}
         onMoveToCard={moveToCard}
         onGoogleSearch={googleSearch}
         onShowAiModal={showAiModalFn}

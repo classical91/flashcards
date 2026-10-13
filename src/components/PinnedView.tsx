@@ -1,6 +1,6 @@
 import { Deck, DeckSection } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
-import { createDeckProgress, findDeckById, findSectionForDeck } from "../lib/deckUtils";
+import { countLearnedCards, createDeckProgress, findDeckById, findSectionForDeck } from "../lib/deckUtils";
 import { ViewState } from "../lib/types";
 
 type PinnedViewProps = {
@@ -62,9 +62,9 @@ export function PinnedView({
           <div className="decks-list">
             {pinnedDecks.map(({ deck, section }) => {
               const progress = deckProgress[deck.id] ?? createDeckProgress(deck);
-              const known = progress.knownIds.length;
+              const learned = countLearnedCards(deck, progress);
               const total = deck.cards.length;
-              const ratio = total ? known / total : 0;
+              const ratio = total ? learned / total : 0;
               return (
                 <div key={deck.id} className="deck-card-row">
                   <button
@@ -85,7 +85,7 @@ export function PinnedView({
                     </div>
                     <div className="deck-card-stats">
                       <span>{total} cards</span>
-                      <span>{known} known</span>
+                      <span>{learned} learned</span>
                       <span className="section-card-arrow">›</span>
                     </div>
                   </button>

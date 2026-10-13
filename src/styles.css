@@ -1325,11 +1325,11 @@ button {
   overflow-wrap: anywhere;
 }
 
-/* Study toolbar: Shuffle | Known | ‹ | n / N | › | Play | Flip */
+/* Study toolbar: Shuffle | ‹ | n / N | › | Play | Flip */
 
 .study-toolbar {
   display: grid;
-  grid-template-columns: repeat(3, var(--control-height)) minmax(72px, auto) repeat(
+  grid-template-columns: repeat(2, var(--control-height)) minmax(72px, auto) repeat(
       3,
       var(--control-height)
     );
@@ -1375,12 +1375,6 @@ button {
   color: var(--accent);
 }
 
-.tool-btn.tool-known.known {
-  background: rgba(var(--success-rgb), 0.12);
-  border-color: rgba(var(--success-rgb), 0.4);
-  color: var(--success);
-}
-
 @media (hover: hover) {
   .tool-btn:hover {
     background: var(--accent-subtle);
@@ -1393,11 +1387,6 @@ button {
 
   .tool-btn.active:hover {
     color: var(--accent);
-  }
-
-  .tool-btn.tool-known.known:hover {
-    background: rgba(var(--success-rgb), 0.18);
-    color: var(--success);
   }
 }
 
@@ -2179,7 +2168,7 @@ button {
 
   .study-topbar .study-mode-toggle {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .study-topbar .study-mode-btn {
@@ -2208,7 +2197,7 @@ button {
   .study-toolbar {
     width: 100%;
     grid-template-columns:
-      repeat(3, minmax(0, 1fr))
+      repeat(2, minmax(0, 1fr))
       auto
       repeat(3, minmax(0, 1fr));
     gap: 4px;
@@ -2237,14 +2226,14 @@ button {
   }
 }
 
-/* Narrowest phones: the counter takes its own row above the six buttons so
+/* Narrowest phones: the counter takes its own row above the five buttons so
    each button keeps a ~44px target. */
 @media (max-width: 359px) {
   .study-toolbar {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     grid-template-areas:
-      "count count count count count count"
-      "shuffle known prev next play flip";
+      "count count count count count"
+      "shuffle prev next play flip";
     row-gap: 2px;
   }
 
@@ -2255,9 +2244,6 @@ button {
 
   .tool-shuffle {
     grid-area: shuffle;
-  }
-  .tool-known {
-    grid-area: known;
   }
   .tool-prev {
     grid-area: prev;

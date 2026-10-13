@@ -2,7 +2,7 @@ import { ChangeEvent, Dispatch, MutableRefObject, SetStateAction, useRef, useSta
 import { Deck, DeckSection, Flashcard } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
 import { ACCENT_COLORS } from "../lib/constants";
-import { findDeckById, findSectionForDeck } from "../lib/deckUtils";
+import { countLearnedCards, findDeckById, findSectionForDeck } from "../lib/deckUtils";
 import { MAX_SEARCH_RESULTS, searchLibrary } from "../lib/search";
 import { formatRelativeTime } from "../lib/format";
 import {
@@ -559,9 +559,10 @@ export function HomeView({
           <div className="sections-grid">
             {librarySections.map((section) => {
               const cardCount = section.decks.reduce((sum, d) => sum + d.cards.length, 0);
-              const sectionKnown = section.decks.reduce((sum, d) => {
-                return sum + (deckProgress[d.id]?.knownIds.length ?? 0);
-              }, 0);
+              const sectionLearned = section.decks.reduce(
+                (sum, d) => sum + countLearnedCards(d, deckProgress[d.id]),
+                0,
+              );
               return (
                 <button
                   key={section.id}
@@ -575,7 +576,7 @@ export function HomeView({
                       <div className="section-card-meta">
                         {section.decks.length} deck{section.decks.length !== 1 ? "s" : ""} ·{" "}
                         {cardCount} card{cardCount !== 1 ? "s" : ""}
-                        {sectionKnown > 0 ? ` · ${sectionKnown} known` : ""}
+                        {sectionLearned > 0 ? ` · ${sectionLearned} learned` : ""}
                       </div>
                       {section.description && (
                         <div className="section-card-desc">{section.description}</div>

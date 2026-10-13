@@ -68,6 +68,13 @@ export const findSectionForDeck = (sections: DeckSection[], deckId: string) =>
   sections[0] ??
   null;
 
+/**
+ * Cards in a deck answered correctly in Review and not forgotten since — what
+ * the deck lists show as progress.
+ */
+export const countLearnedCards = (deck: Deck, progress: DeckProgress | undefined) =>
+  deck.cards.filter((card) => (progress?.reviews?.[card.id]?.reps ?? 0) > 0).length;
+
 export const createDeckProgress = (deck: Deck): DeckProgress => ({
   currentCardId: deck.cards[0]?.id ?? "",
   knownIds: [],
