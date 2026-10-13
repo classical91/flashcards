@@ -112,6 +112,9 @@ import { HomeView } from "./components/HomeView";
 import { PinnedView } from "./components/PinnedView";
 import { SectionView } from "./components/SectionView";
 import { StudyView } from "./components/StudyView";
+import { AUTOPLAY_SECONDS_OPTIONS } from "./lib/autoplay";
+
+const AUTOPLAY_SECONDS_KEY = "flashcards.autoplaySeconds.v1";
 
 export default function App() {
   const [librarySections, setLibrarySections] = useState(loadLibrarySections);
@@ -128,6 +131,21 @@ export default function App() {
     {},
   );
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
+  // Autoplay speed is a per-device preference, like the collapsible sections.
+  const [autoplaySeconds, setAutoplaySeconds] = useState(() => {
+    try {
+      const saved = Number(window.localStorage.getItem(AUTOPLAY_SECONDS_KEY));
+      return (AUTOPLAY_SECONDS_OPTIONS as readonly number[]).includes(saved) ? saved : 5;
+    } catch {
+      return 5;
+    }
+  });
+  const changeAutoplaySeconds = (seconds: number) => {
+    setAutoplaySeconds(seconds);
+    try {
+      window.localStorage.setItem(AUTOPLAY_SECONDS_KEY, String(seconds));
+    } catch {}
+  };
   const [sectionComposer, setSectionComposer] = useState<SectionComposer | null>(null);
   const [sectionComposerMessage, setSectionComposerMessage] = useState("");
   const [sectionEditor, setSectionEditor] = useState<SectionEditor | null>(null);
@@ -1185,15 +1203,15 @@ export default function App() {
   useEffect(() => {
     if (!isAutoPlaying || !currentCard || !activeProgress || view.kind !== "study") return;
     const isFlipped = activeProgress.isFlipped;
-    const delay = isFlipped ? 3000 : 5000;
+    const delay = autoplaySeconds * 1000;
     const timer = setTimeout(() => {
       if (isFlipped) moveToCardRef.current(1);
       else handleFlipRef.current();
     }, delay);
     return () => clearTimeout(timer);
-    // Only restart when autoplay is toggled, the card changes, or the flip state changes.
+    // Only restart when autoplay is toggled or its speed changes, the card changes, or the flip state changes.
     // Omitting other deps intentionally so unrelated re-renders (e.g. cloud sync) don't cancel the timer.
-  }, [isAutoPlaying, currentCard?.id, activeProgress?.isFlipped, view.kind]);
+  }, [isAutoPlaying, autoplaySeconds, currentCard?.id, activeProgress?.isFlipped, view.kind]);
 
   // A `?deck=<id>` link opens that deck instead of the library — the hub's
   // Card of the Day links here, and "open Flashcards" landing on the home
@@ -1410,6 +1428,8 @@ export default function App() {
         isDeckEmpty={isDeckEmpty}
         isAutoPlaying={isAutoPlaying}
         setIsAutoPlaying={setIsAutoPlaying}
+        autoplaySeconds={autoplaySeconds}
+        onAutoplaySecondsChange={changeAutoplaySeconds}
         showCardEditor={showCardEditor}
         setShowCardEditor={setShowCardEditor}
         showCardImporter={showCardImporter}
