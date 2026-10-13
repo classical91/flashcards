@@ -14,6 +14,7 @@ const PATHS = {
   checkCircle: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM8 12.5l2.5 2.5L16 9.5",
   chevronLeft: "M15 18l-6-6 6-6",
   chevronRight: "M9 18l6-6-6-6",
+  chevronDown: "M6 9l6 6 6-6",
   play: "M7 4.5v15l12-7.5L7 4.5Z",
   pause: "M8 4.5v15M16 4.5v15",
   flip: "M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5",

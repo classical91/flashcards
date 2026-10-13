@@ -12,6 +12,17 @@ const GRADE_LABELS: Record<ReviewGrade, string> = {
   easy: "Easy",
 };
 
+// A per-device layout preference, so it stays out of the synced library.
+const DEEP_TOOLS_OPEN_KEY = "flashcards.deepToolsOpen.v1";
+
+const loadDeepToolsOpen = () => {
+  try {
+    return window.localStorage.getItem(DEEP_TOOLS_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
 type CardEdits = Record<string, { term: string; definition: string }>;
 
 type ImportPreview = {
@@ -164,6 +175,16 @@ export function StudyView({
       setShowCardImporter(false);
       setCardImportMessage("");
     }
+  };
+
+  const [showDeepTools, setShowDeepTools] = useState(loadDeepToolsOpen);
+
+  const toggleDeepTools = () => {
+    const next = !showDeepTools;
+    setShowDeepTools(next);
+    try {
+      window.localStorage.setItem(DEEP_TOOLS_OPEN_KEY, next ? "1" : "0");
+    } catch {}
   };
 
   const reviewCount = dueCount + newCount;
@@ -340,56 +361,69 @@ export function StudyView({
               </nav>
 
               <section className="study-section deep-tools" aria-labelledby="deep-tools-title">
-                <h2 className="study-section-title deep-title" id="deep-tools-title">
-                  Deeper Understanding
+                <h2 className="study-section-title deep-title">
+                  <button
+                    className="section-toggle"
+                    id="deep-tools-title"
+                    aria-expanded={showDeepTools}
+                    aria-controls="deep-tools-body"
+                    onClick={toggleDeepTools}
+                  >
+                    <span>Deeper Understanding</span>
+                    <Icon name="chevronDown" size={16} />
+                  </button>
                 </h2>
-                <div className="lookup-bar">
-                  <button
-                    className="lookup-chip"
-                    onClick={() => onGoogleSearch("definition")}
-                    title={`Search Google for the definition of "${currentCard.term}"`}
-                    aria-label="Google definition"
-                  >
-                    <Icon name="book" size={16} />
-                    <span>Definition</span>
-                  </button>
-                  <button
-                    className="lookup-chip"
-                    onClick={() => onGoogleSearch("synonyms")}
-                    title={`Search Google for synonyms of "${currentCard.term}"`}
-                    aria-label="Google synonyms"
-                  >
-                    <Icon name="equals" size={16} />
-                    <span>Synonyms</span>
-                  </button>
-                  <button
-                    className="lookup-chip"
-                    onClick={() => onGoogleSearch("antonyms")}
-                    title={`Search Google for antonyms of "${currentCard.term}"`}
-                    aria-label="Google antonyms"
-                  >
-                    <Icon name="opposite" size={16} />
-                    <span>Antonyms</span>
-                  </button>
-                  <button
-                    className="lookup-chip"
-                    onClick={() => onGoogleSearch("etymology")}
-                    title={`Search Google for the etymology of "${currentCard.term}"`}
-                    aria-label="Google etymology"
-                  >
-                    <Icon name="history" size={16} />
-                    <span>Etymology</span>
-                  </button>
-                  <button
-                    className="lookup-chip ai"
-                    onClick={onShowAiModal}
-                    title={`Ask an AI app how to use "${currentCard.term}"`}
-                  >
-                    <Icon name="sparkles" size={16} />
-                    <span>Ask AI</span>
-                  </button>
-                </div>
-                <p className="lookup-note">Lookups open a Google search in a new tab.</p>
+                {showDeepTools && (
+                  <div id="deep-tools-body" className="deep-tools-body">
+                    <div className="lookup-bar">
+                      <button
+                        className="lookup-chip"
+                        onClick={() => onGoogleSearch("definition")}
+                        title={`Search Google for the definition of "${currentCard.term}"`}
+                        aria-label="Google definition"
+                      >
+                        <Icon name="book" size={16} />
+                        <span>Definition</span>
+                      </button>
+                      <button
+                        className="lookup-chip"
+                        onClick={() => onGoogleSearch("synonyms")}
+                        title={`Search Google for synonyms of "${currentCard.term}"`}
+                        aria-label="Google synonyms"
+                      >
+                        <Icon name="equals" size={16} />
+                        <span>Synonyms</span>
+                      </button>
+                      <button
+                        className="lookup-chip"
+                        onClick={() => onGoogleSearch("antonyms")}
+                        title={`Search Google for antonyms of "${currentCard.term}"`}
+                        aria-label="Google antonyms"
+                      >
+                        <Icon name="opposite" size={16} />
+                        <span>Antonyms</span>
+                      </button>
+                      <button
+                        className="lookup-chip"
+                        onClick={() => onGoogleSearch("etymology")}
+                        title={`Search Google for the etymology of "${currentCard.term}"`}
+                        aria-label="Google etymology"
+                      >
+                        <Icon name="history" size={16} />
+                        <span>Etymology</span>
+                      </button>
+                      <button
+                        className="lookup-chip ai"
+                        onClick={onShowAiModal}
+                        title={`Ask an AI app how to use "${currentCard.term}"`}
+                      >
+                        <Icon name="sparkles" size={16} />
+                        <span>Ask AI</span>
+                      </button>
+                    </div>
+                    <p className="lookup-note">Lookups open a Google search in a new tab.</p>
+                  </div>
+                )}
               </section>
             </>
           ) : isDeckEmpty ? (
