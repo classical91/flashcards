@@ -1,7 +1,7 @@
 import { Dispatch, SetStateAction, useMemo } from "react";
 import { Deck, DeckSection } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
-import { createDeckProgress, sortDecksByLastViewed } from "../lib/deckUtils";
+import { countLearnedCards, createDeckProgress, sortDecksByLastViewed } from "../lib/deckUtils";
 import { formatRelativeTime } from "../lib/format";
 import { DeckComposer, DeckLastViewed, SectionEditor, ViewState } from "../lib/types";
 
@@ -246,9 +246,9 @@ export function SectionView({
           <div className="decks-list">
             {orderedDecks.map((deck) => {
               const progress = deckProgress[deck.id] ?? createDeckProgress(deck);
-              const known = progress.knownIds.length;
+              const learned = countLearnedCards(deck, progress);
               const total = deck.cards.length;
-              const ratio = total ? known / total : 0;
+              const ratio = total ? learned / total : 0;
               const lastViewedAt = deckLastViewed[deck.id];
               return (
                 <div key={deck.id} className="deck-card-row">
@@ -275,7 +275,7 @@ export function SectionView({
                     </div>
                     <div className="deck-card-stats">
                       <span>{total} cards</span>
-                      <span>{known} known</span>
+                      <span>{learned} learned</span>
                       <span className="section-card-arrow">›</span>
                     </div>
                   </button>

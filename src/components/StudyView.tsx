@@ -1,6 +1,6 @@
 import { Dispatch, RefObject, SetStateAction, useEffect, useRef, useState } from "react";
 import { Deck, DeckSection, Flashcard } from "../data/deckBuilder";
-import { DeckProgress, StudyMode } from "../data/librarySnapshot";
+import { DeckProgress } from "../data/librarySnapshot";
 import { REVIEW_GRADES, ReviewGrade } from "../lib/srs";
 import { ViewState } from "../lib/types";
 import { AUTOPLAY_SECONDS_OPTIONS } from "../lib/autoplay";
@@ -66,8 +66,6 @@ type StudyViewProps = {
   visibleCards: Flashcard[];
   cardPosition: number;
   pinnedDeckIds: string[];
-  currentCardIsKnown: boolean;
-  hasRemainingCards: boolean;
   isDeckEmpty: boolean;
   isAutoPlaying: boolean;
   setIsAutoPlaying: Dispatch<SetStateAction<boolean>>;
@@ -95,7 +93,6 @@ type StudyViewProps = {
   // Actions
   setView: (view: ViewState) => void;
   togglePinDeck: (deckId: string) => void;
-  onStudyModeChange: (mode: StudyMode) => void;
   onFlip: () => void;
   isShuffled: boolean;
   onShuffle: () => void;
@@ -110,7 +107,6 @@ type StudyViewProps = {
   onStartReview: () => void;
   onExitReview: () => void;
   onGrade: (grade: ReviewGrade) => void;
-  onToggleKnown: () => void;
   onMoveToCard: (direction: 1 | -1) => void;
   onGoogleSearch: (type: string) => void;
   onShowAiModal: () => void;
@@ -133,8 +129,6 @@ export function StudyView({
   visibleCards,
   cardPosition,
   pinnedDeckIds,
-  currentCardIsKnown,
-  hasRemainingCards,
   isDeckEmpty,
   isAutoPlaying,
   setIsAutoPlaying,
@@ -159,7 +153,6 @@ export function StudyView({
   setShowCardList,
   setView,
   togglePinDeck,
-  onStudyModeChange,
   onFlip,
   isShuffled,
   onShuffle,
@@ -172,7 +165,6 @@ export function StudyView({
   onStartReview,
   onExitReview,
   onGrade,
-  onToggleKnown,
   onMoveToCard,
   onGoogleSearch,
   onShowAiModal,
@@ -252,19 +244,11 @@ export function StudyView({
         </button>
         <div className="study-mode-toggle" role="group" aria-label="Study mode">
           <button
-            className={`study-mode-btn${!isReviewing && activeProgress.studyMode === "all" ? " active" : ""}`}
-            aria-pressed={!isReviewing && activeProgress.studyMode === "all"}
-            onClick={() => onStudyModeChange("all")}
+            className={`study-mode-btn${!isReviewing ? " active" : ""}`}
+            aria-pressed={!isReviewing}
+            onClick={onExitReview}
           >
             All
-          </button>
-          <button
-            className={`study-mode-btn${!isReviewing && activeProgress.studyMode === "remaining" ? " active" : ""}`}
-            aria-pressed={!isReviewing && activeProgress.studyMode === "remaining"}
-            onClick={() => onStudyModeChange("remaining")}
-            disabled={!hasRemainingCards}
-          >
-            Remaining
           </button>
           <button
             className={`study-mode-btn${isReviewing ? " active" : ""}`}
@@ -338,15 +322,6 @@ export function StudyView({
                   aria-pressed={isShuffled}
                 >
                   <Icon name="shuffle" />
-                </button>
-                <button
-                  className={`tool-btn tool-known${currentCardIsKnown ? " known" : ""}`}
-                  onClick={onToggleKnown}
-                  title={currentCardIsKnown ? "Unmark known (K)" : "Mark as known (K)"}
-                  aria-label={currentCardIsKnown ? "Unmark known" : "Mark as known"}
-                  aria-pressed={currentCardIsKnown}
-                >
-                  <Icon name={currentCardIsKnown ? "checkCircle" : "circle"} />
                 </button>
                 <button
                   className="tool-btn tool-nav tool-prev"
@@ -490,26 +465,16 @@ export function StudyView({
             </div>
           ) : (
             <div className="state-card">
-              <h3>{isReviewing && nextReviewLabel ? "Nothing ready yet" : "All done!"}</h3>
+              <h3>{nextReviewLabel ? "Nothing ready yet" : "All done!"}</h3>
               <p>
-                {isReviewing
-                  ? nextReviewLabel
-                    ? `The next card comes back ${nextReviewLabel}.`
-                    : "Nothing left to review in this deck today."
-                  : "You've worked through every remaining card."}
+                {nextReviewLabel
+                  ? `The next card comes back ${nextReviewLabel}.`
+                  : "Nothing left to review in this deck today."}
               </p>
               <div className="state-card-actions">
-                <button
-                  className="mini-btn"
-                  onClick={isReviewing ? onExitReview : () => onStudyModeChange("all")}
-                >
-                  {isReviewing ? "Back to the full deck" : "Review full deck"}
+                <button className="mini-btn" onClick={onExitReview}>
+                  Back to the full deck
                 </button>
-                {!isReviewing && (
-                  <button className="mini-btn" onClick={onResetProgress}>
-                    Reset progress
-                  </button>
-                )}
               </div>
             </div>
           )}
