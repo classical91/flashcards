@@ -2278,3 +2278,42 @@ button {
     transform: none;
   }
 }
+
+/* Collapsible section heading (Deeper Understanding). The toggle keeps a
+   44px tap target; the negative margins stop that from adding visible gap. */
+.section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--control-height);
+  margin: -12px 0 -6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.section-toggle .icon {
+  flex-shrink: 0;
+  transition: transform 200ms ease;
+}
+
+.section-toggle[aria-expanded="true"] .icon {
+  transform: rotate(180deg);
+}
+
+@media (hover: hover) {
+  .section-toggle:hover {
+    color: var(--ink);
+  }
+}
+
+.deep-tools-body {
+  padding-top: 6px;
+}
