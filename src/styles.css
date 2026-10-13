@@ -200,6 +200,9 @@ button {
   min-height: 100svh;
   display: grid;
   grid-template-rows: auto 1fr auto;
+  /* minmax(0, …) stops a wide child (the topbar's buttons) from stretching
+     the column past the viewport, which zoomed the page out on phones. */
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* ── Topbar ───────────────────────────────────────────────────────────────── */
@@ -272,6 +275,29 @@ button {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+}
+
+/* On phones the topic and pinned headers have more buttons than fit in one
+   line: put Home on the first row and let the actions scroll sideways on a
+   second row instead of widening the page. */
+@media (max-width: 640px) {
+  .topbar:not(.study-topbar) {
+    height: auto;
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding: 6px 12px;
+  }
+
+  .topbar:not(.study-topbar) .topbar-right {
+    flex: 1 1 100%;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .topbar:not(.study-topbar) .topbar-right::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* ── Study mode toggle (in topbar) ────────────────────────────────────────── */
@@ -897,6 +923,7 @@ button {
 
 .decks-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -908,6 +935,7 @@ button {
 
 .deck-card {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
