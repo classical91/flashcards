@@ -1091,6 +1091,10 @@ button {
    success/danger ones. */
 
 .study-view {
+  /* The shared .app shell stretches the middle row to fill the screen; here
+     the spare height goes below the tools, so collapsing a section never
+     leaves a gap above Deck Tools. */
+  grid-template-rows: auto auto 1fr;
   --study-radius: 18px;
   --control-radius: 12px;
   --control-height: 44px;
@@ -2307,7 +2311,7 @@ button {
   }
 }
 
-/* Collapsible section heading (Deeper Understanding). The toggle keeps a
+/* Collapsible section headings (Deeper Understanding, Deck Tools). The toggle keeps a
    44px tap target; the negative margins stop that from adding visible gap. */
 .section-toggle {
   display: flex;
@@ -2343,5 +2347,9 @@ button {
 }
 
 .deep-tools-body {
+  padding-top: 6px;
+}
+
+.deck-tools-body {
   padding-top: 6px;
 }

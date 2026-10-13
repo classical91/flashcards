@@ -12,16 +12,29 @@ const GRADE_LABELS: Record<ReviewGrade, string> = {
   easy: "Easy",
 };
 
-// A per-device layout preference, so it stays out of the synced library.
+// Whether a collapsible section is open is a per-device layout preference,
+// so it lives in localStorage rather than the synced library. Sections start
+// collapsed.
 const DEEP_TOOLS_OPEN_KEY = "flashcards.deepToolsOpen.v1";
+const DECK_TOOLS_OPEN_KEY = "flashcards.deckToolsOpen.v1";
 
-const loadDeepToolsOpen = () => {
-  try {
-    return window.localStorage.getItem(DEEP_TOOLS_OPEN_KEY) === "1";
-  } catch {
-    return false;
-  }
-};
+function usePersistedOpen(storageKey: string) {
+  const [isOpen, setIsOpen] = useState(() => {
+    try {
+      return window.localStorage.getItem(storageKey) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggle = () => {
+    const next = !isOpen;
+    setIsOpen(next);
+    try {
+      window.localStorage.setItem(storageKey, next ? "1" : "0");
+    } catch {}
+  };
+  return [isOpen, toggle] as const;
+}
 
 type CardEdits = Record<string, { term: string; definition: string }>;
 
@@ -177,15 +190,8 @@ export function StudyView({
     }
   };
 
-  const [showDeepTools, setShowDeepTools] = useState(loadDeepToolsOpen);
-
-  const toggleDeepTools = () => {
-    const next = !showDeepTools;
-    setShowDeepTools(next);
-    try {
-      window.localStorage.setItem(DEEP_TOOLS_OPEN_KEY, next ? "1" : "0");
-    } catch {}
-  };
+  const [showDeepTools, toggleDeepTools] = usePersistedOpen(DEEP_TOOLS_OPEN_KEY);
+  const [showDeckTools, toggleDeckTools] = usePersistedOpen(DECK_TOOLS_OPEN_KEY);
 
   const reviewCount = dueCount + newCount;
 
@@ -467,75 +473,89 @@ export function StudyView({
 
       <section className="bottom-panel" aria-label="Deck tools">
         <div className="study-section deck-tools">
-          <h2 className="study-section-title">Deck Tools</h2>
-          <div className="bottom-bar deck-tools-grid">
+          <h2 className="study-section-title">
             <button
-              className={`deck-tool-btn${showCardImporter ? " active" : ""}`}
-              onClick={toggleImporter}
-              aria-pressed={showCardImporter}
+              className="section-toggle"
+              aria-expanded={showDeckTools}
+              aria-controls="deck-tools-body"
+              onClick={toggleDeckTools}
             >
-              <Icon name="upload" size={16} />
-              <span>{showCardImporter ? "Hide import" : "Bulk import"}</span>
+              <span>Deck Tools</span>
+              <Icon name="chevronDown" size={16} />
             </button>
-            <button className="deck-tool-btn" onClick={onResetProgress} title="Reset progress">
-              <Icon name="reset" size={16} />
-              <span>Reset</span>
-            </button>
-            {isShuffled && (
-              <button
-                className="deck-tool-btn"
-                onClick={onRestoreOrder}
-                title="Return the deck to its own order"
-              >
-                <Icon name="sortAsc" size={16} />
-                <span>Unshuffle</span>
-              </button>
-            )}
-            <button
-              className="deck-tool-btn"
-              onClick={() => setShowCardList(true)}
-              disabled={isDeckEmpty}
-              title="View all cards"
-            >
-              <Icon name="list" size={16} />
-              <span>View all</span>
-            </button>
-            <button
-              className="deck-tool-btn"
-              onClick={onExportDeck}
-              disabled={isDeckEmpty}
-              title="Copy cards to the clipboard"
-            >
-              <Icon name="copy" size={16} />
-              <span>Copy cards</span>
-            </button>
-            <button
-              className="deck-tool-btn"
-              onClick={onShareDeck}
-              disabled={isDeckEmpty || isSharingDeck}
-              aria-busy={isSharingDeck}
-            >
-              <Icon name="share" size={16} />
-              <span>{isSharingDeck ? "Sharing…" : "Share deck"}</span>
-            </button>
-            <button
-              className={`deck-tool-btn${showCardEditor ? " active" : ""}`}
-              onClick={toggleEditor}
-              aria-pressed={showCardEditor}
-            >
-              <Icon name="edit" size={16} />
-              <span>{showCardEditor ? "Hide editor" : "Edit list"}</span>
-            </button>
-            <button
-              className="deck-tool-btn danger"
-              onClick={() => currentCard && onDeleteCard(currentCard.id)}
-              disabled={!currentCard}
-              title={currentCard ? `Delete "${currentCard.term}"` : "No card is showing"}
-            >
-              <Icon name="trash" size={16} />
-              <span>Delete card</span>
-            </button>
-          </div>
+          </h2>
+          {showDeckTools && (
+            <div id="deck-tools-body" className="deck-tools-body">
+              <div className="bottom-bar deck-tools-grid">
+                <button
+                  className={`deck-tool-btn${showCardImporter ? " active" : ""}`}
+                  onClick={toggleImporter}
+                  aria-pressed={showCardImporter}
+                >
+                  <Icon name="upload" size={16} />
+                  <span>{showCardImporter ? "Hide import" : "Bulk import"}</span>
+                </button>
+                <button className="deck-tool-btn" onClick={onResetProgress} title="Reset progress">
+                  <Icon name="reset" size={16} />
+                  <span>Reset</span>
+                </button>
+                {isShuffled && (
+                  <button
+                    className="deck-tool-btn"
+                    onClick={onRestoreOrder}
+                    title="Return the deck to its own order"
+                  >
+                    <Icon name="sortAsc" size={16} />
+                    <span>Unshuffle</span>
+                  </button>
+                )}
+                <button
+                  className="deck-tool-btn"
+                  onClick={() => setShowCardList(true)}
+                  disabled={isDeckEmpty}
+                  title="View all cards"
+                >
+                  <Icon name="list" size={16} />
+                  <span>View all</span>
+                </button>
+                <button
+                  className="deck-tool-btn"
+                  onClick={onExportDeck}
+                  disabled={isDeckEmpty}
+                  title="Copy cards to the clipboard"
+                >
+                  <Icon name="copy" size={16} />
+                  <span>Copy cards</span>
+                </button>
+                <button
+                  className="deck-tool-btn"
+                  onClick={onShareDeck}
+                  disabled={isDeckEmpty || isSharingDeck}
+                  aria-busy={isSharingDeck}
+                >
+                  <Icon name="share" size={16} />
+                  <span>{isSharingDeck ? "Sharing…" : "Share deck"}</span>
+                </button>
+                <button
+                  className={`deck-tool-btn${showCardEditor ? " active" : ""}`}
+                  onClick={toggleEditor}
+                  aria-pressed={showCardEditor}
+                >
+                  <Icon name="edit" size={16} />
+                  <span>{showCardEditor ? "Hide editor" : "Edit list"}</span>
+                </button>
+                <button
+                  className="deck-tool-btn danger"
+                  onClick={() => currentCard && onDeleteCard(currentCard.id)}
+                  disabled={!currentCard}
+                  title={currentCard ? `Delete "${currentCard.term}"` : "No card is showing"}
+                >
+                  <Icon name="trash" size={16} />
+                  <span>Delete card</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {showCardEditor && (
