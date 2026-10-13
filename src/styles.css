@@ -1056,41 +1056,149 @@ button {
   transition: width 260ms ease;
 }
 
-/* ── Study view stage ─────────────────────────────────────────────────────── */
+/* ── Study view ───────────────────────────────────────────────────────────────
+   Five stacked sections: header, card, toolbar, Deeper Understanding, Deck
+   Tools. Everything is drawn from the theme tokens above so light/dark and
+   every accent keep working; the only fixed colours are the semantic
+   success/danger ones. */
+
+.study-view {
+  --study-radius: 18px;
+  --control-radius: 12px;
+  --control-height: 44px;
+  --study-max: 760px;
+  --surface-raised: color-mix(in srgb, var(--surface) 92%, var(--ink) 8%);
+}
+
+.study-view button:focus-visible,
+.study-view input:focus-visible,
+.study-view textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Header: nav · title · pin · study mode. The shared .topbar is a fixed
+   44px flex row; the study header has more in it, so it becomes a grid that
+   can drop the mode switch onto its own row on phones. */
+.study-topbar {
+  height: auto;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "nav title pin modes";
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 6px;
+  padding: max(6px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 6px
+    max(12px, env(safe-area-inset-left));
+}
+
+.study-topbar-nav {
+  grid-area: nav;
+}
+
+.study-topbar .top-title {
+  grid-area: title;
+  position: static;
+  transform: none;
+  max-width: none;
+  text-align: center;
+  font-size: 12px;
+}
+
+.study-topbar .topbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.study-topbar-pin {
+  grid-area: pin;
+}
+
+.study-topbar .study-mode-toggle {
+  grid-area: modes;
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.study-topbar .study-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 12px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.study-mode-count {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+}
+
+.study-mode-btn.active .study-mode-count {
+  background: color-mix(in srgb, var(--on-accent) 22%, transparent);
+  color: var(--on-accent);
+}
+
+/* Stage */
 
 .stage {
   display: grid;
-  place-items: center;
-  padding: 24px 18px 6px;
+  justify-items: center;
+  align-content: start;
+  padding: 20px max(16px, env(safe-area-inset-right)) 4px max(16px, env(safe-area-inset-left));
 }
 
 .study-wrap {
-  width: min(760px, 100%);
+  width: min(var(--study-max), 100%);
+  min-width: 0;
 }
 
-.deck-study-title {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--ink-soft);
+.study-heading {
   text-align: center;
-  margin-bottom: 0.2rem;
+  margin-bottom: 14px;
 }
 
 .deck-study-topic {
-  font-size: 0.82rem;
+  font-size: 11px;
   font-weight: 700;
-  color: var(--ink);
-  text-align: center;
+  color: var(--accent);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 0.75rem;
+  letter-spacing: 0.1em;
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+
+.deck-study-title {
+  margin: 0;
+  font-size: clamp(18px, 2.4vw, 22px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 /* 3-D flip card */
 .card-shell-new {
   perspective: 1400px;
   width: 100%;
-  height: clamp(240px, 44vh, 400px);
+  height: clamp(240px, 42svh, 380px);
 }
 
 .card-3d {
@@ -1098,8 +1206,9 @@ button {
   width: 100%;
   height: 100%;
   transform-style: preserve-3d;
-  transition: transform 0.38s ease;
+  transition: transform 0.42s cubic-bezier(0.2, 0.7, 0.2, 1);
   cursor: pointer;
+  border-radius: var(--study-radius);
 }
 
 .card-3d.flipped {
@@ -1109,169 +1218,324 @@ button {
 .face {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
-  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  background:
+    linear-gradient(180deg, rgba(var(--accent-rgb), 0.06), transparent 42%),
+    var(--surface);
   border: 1px solid var(--line);
-  border-radius: 4px;
-  box-shadow: var(--shadow);
+  border-radius: var(--study-radius);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--surface-base) 60%, transparent) inset,
+    var(--shadow);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  padding: 32px;
+  padding: 40px 28px 34px;
   text-align: center;
   overflow: hidden;
 }
 
 .face.back {
   transform: rotateY(180deg);
-  overflow: auto;
+}
+
+/* Scrolls when a long definition does not fit. Centring with auto margins
+   (rather than place-items) keeps the top of overflowing text reachable. */
+.face-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.face-content > * {
+  margin: auto;
+}
+
+.face-label {
+  position: absolute;
+  top: 14px;
+  left: 18px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.face-hint {
+  position: absolute;
+  bottom: 12px;
+  left: 0;
+  right: 0;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.8;
 }
 
 .card-word {
-  font-size: clamp(22px, 5vw, 36px);
-  font-weight: 500;
+  font-size: clamp(24px, 5vw, 40px);
+  font-weight: 600;
   color: var(--ink);
   letter-spacing: -0.02em;
   line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .card-definition {
   max-width: 560px;
-  margin: 0 auto;
+  margin: auto;
   color: var(--ink);
-  font-size: clamp(14px, 2.5vw, 18px);
+  font-size: clamp(15px, 2.4vw, 19px);
   font-weight: 400;
   line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
-/* ── Player controls ──────────────────────────────────────────────────────── */
+/* Study toolbar: Shuffle | Known | ‹ | n / N | › | Play | Flip */
 
-.player {
-  display: flex;
+.study-toolbar {
+  display: grid;
+  grid-template-columns: repeat(3, var(--control-height)) minmax(72px, auto) repeat(
+      3,
+      var(--control-height)
+    );
   align-items: center;
   justify-content: center;
-  gap: 14px;
-  padding: 12px 0 6px;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 16px auto 0;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
 }
 
-.icon-btn {
-  width: 32px;
-  height: 32px;
+.tool-btn {
+  width: 100%;
+  height: var(--control-height);
   display: grid;
   place-items: center;
-  border: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
   background: transparent;
   color: var(--ink-soft);
-  border-radius: 999px;
   cursor: pointer;
-  font-size: 15px;
-  transition: background 150ms ease;
 }
 
-.icon-btn:hover {
-  background: var(--accent-subtle);
+.tool-btn .icon {
+  display: block;
 }
 
-/* Marks a session-only shuffle as active, so it's clear the deck is not in
-   its own order right now. */
-.icon-btn.active {
+.tool-btn.tool-nav {
+  background: var(--surface-raised);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.tool-btn.active {
   background: var(--accent-subtle);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   color: var(--accent);
 }
 
-.circle-btn {
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--ink-soft);
-  border-radius: 999px;
-  box-shadow: var(--shadow-sm);
-  cursor: pointer;
-  font-size: 18px;
-  transition: border-color 150ms ease;
+.tool-btn.tool-known.known {
+  background: rgba(var(--success-rgb), 0.12);
+  border-color: rgba(var(--success-rgb), 0.4);
+  color: var(--success);
 }
 
-.circle-btn:hover {
-  border-color: var(--line-strong);
+@media (hover: hover) {
+  .tool-btn:hover {
+    background: var(--accent-subtle);
+    color: var(--ink);
+  }
+
+  .tool-btn.tool-nav:hover {
+    border-color: var(--line-strong);
+  }
+
+  .tool-btn.active:hover {
+    color: var(--accent);
+  }
+
+  .tool-btn.tool-known.known:hover {
+    background: rgba(var(--success-rgb), 0.18);
+    color: var(--success);
+  }
+}
+
+.tool-btn:active {
+  transform: scale(0.96);
 }
 
 .counter {
-  min-width: 48px;
-  text-align: center;
-  color: var(--ink-soft);
-  font-size: 12px;
-}
-
-/* ── Deeper understanding tools ───────────────────────────────────────────── */
-
-.deep-tools {
-  margin: 10px auto 0;
-  text-align: center;
-}
-
-.deep-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 6px;
   color: var(--muted);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  margin-bottom: 8px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
+
+.counter-current {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* Section headings shared by Deeper Understanding and Deck Tools */
+
+.study-section {
+  width: 100%;
+  max-width: var(--study-max);
+  margin: 28px auto 0;
+}
+
+.study-section-title {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Deeper Understanding */
 
 .lookup-bar {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.lookup-chip,
+.deck-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+
+.lookup-chip span,
+.deck-tool-btn span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lookup-chip {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-translucent);
-  color: var(--ink-soft);
-  cursor: pointer;
-  padding: 6px 12px;
-  font-size: 11px;
-  font-family: inherit;
-  transition:
-    border-color 150ms ease,
-    background 150ms ease;
+  justify-content: center;
 }
 
-.lookup-chip:hover {
-  background: var(--surface);
-  border-color: var(--line-strong);
+.lookup-chip .icon {
+  flex-shrink: 0;
+  color: var(--accent);
 }
 
 .lookup-chip.ai {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
+  background: var(--accent-subtle);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+  font-weight: 600;
 }
 
-.lookup-chip.ai:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+.lookup-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--muted);
 }
 
-/* ── Bottom panel ─────────────────────────────────────────────────────────── */
+/* Deck Tools */
 
 .bottom-panel {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 8px 18px 18px;
+  gap: 12px;
+  padding: 0 max(16px, env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
 }
 
-.bottom-bar {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+.deck-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+}
+
+.deck-tool-btn .icon {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.deck-tool-btn.active {
+  background: var(--accent-subtle);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.deck-tool-btn.active .icon {
+  color: var(--accent);
+}
+
+.deck-tool-btn.danger {
+  color: var(--danger);
+  border-color: rgba(var(--danger-rgb), 0.35);
+}
+
+.deck-tool-btn.danger .icon {
+  color: var(--danger);
+}
+
+.lookup-chip:disabled,
+.deck-tool-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.deck-tool-btn[aria-busy="true"] {
+  cursor: progress;
+}
+
+@media (hover: hover) {
+  .lookup-chip:hover:not(:disabled),
+  .deck-tool-btn:hover:not(:disabled) {
+    border-color: var(--line-strong);
+    background: var(--surface-raised);
+  }
+
+  .lookup-chip.ai:hover {
+    background: rgba(var(--accent-rgb), 0.16);
+    border-color: var(--accent);
+  }
+
+  .deck-tool-btn.danger:hover:not(:disabled) {
+    background: rgba(var(--danger-rgb), 0.08);
+    border-color: var(--danger);
+  }
+}
+
+.study-view .card-editor-panel,
+.study-view .bulk-import-panel {
+  border-radius: 16px;
 }
 
 .add-card-form {
@@ -1308,6 +1572,33 @@ button {
 
 .add-card-form input::placeholder {
   color: var(--muted);
+}
+
+/* Inputs and small buttons inside the study panels get phone-sized hit areas
+   (and 16px text so iOS Safari does not zoom on focus). */
+@media (max-width: 640px) {
+  .study-view .add-card-form input,
+  .study-view .deck-info-edit-input,
+  .study-view .card-editor-term,
+  .study-view .card-editor-def,
+  .study-view .field textarea {
+    min-height: 40px;
+    font-size: 16px;
+  }
+
+  .study-view .mini-btn {
+    min-height: 40px;
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+
+  .study-view .card-editor-row {
+    flex-wrap: wrap;
+  }
+
+  .study-view .card-editor-term {
+    flex: 1 1 100%;
+  }
 }
 
 /* ── Shared button: mini-btn ──────────────────────────────────────────────── */
@@ -1740,14 +2031,6 @@ button {
     padding-top: 18px;
   }
 
-  .face {
-    padding: 20px;
-  }
-
-  .player {
-    gap: 8px;
-  }
-
   .sections-grid {
     grid-template-columns: 1fr;
   }
@@ -1822,4 +2105,176 @@ button {
 .shared-deck-more {
   grid-template-columns: 1fr;
   font-style: italic;
+}
+
+/* ── Study view: states, responsive, motion ──────────────────────────────── */
+
+.study-view .state-card {
+  min-height: clamp(220px, 36svh, 340px);
+  height: auto;
+  border-radius: var(--study-radius);
+}
+
+.study-view .grade-row {
+  max-width: 480px;
+  gap: 8px;
+}
+
+.study-view .grade-btn {
+  min-height: 52px;
+  border-radius: var(--control-radius);
+}
+
+@media (min-width: 641px) and (max-width: 860px) {
+  .deck-tools-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  /* Row 1: Home · Decks … Pin. Row 2: the study mode switch, full width. */
+  .study-topbar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "nav . pin"
+      "modes modes modes";
+    padding-bottom: 8px;
+  }
+
+  .study-topbar .topbar-btn {
+    min-height: 40px;
+  }
+
+  .study-topbar .study-mode-toggle {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .study-topbar .study-mode-btn {
+    min-height: 36px;
+    padding: 4px 6px;
+    font-size: 13px;
+  }
+
+  .stage {
+    padding-top: 14px;
+  }
+
+  .study-heading {
+    margin-bottom: 10px;
+  }
+
+  .card-shell-new {
+    height: clamp(210px, 34svh, 300px);
+  }
+
+  .face {
+    padding: 36px 18px 30px;
+  }
+
+  /* The toolbar stretches to the column and its buttons share the width. */
+  .study-toolbar {
+    width: 100%;
+    grid-template-columns:
+      repeat(3, minmax(0, 1fr))
+      auto
+      repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    margin-top: 12px;
+  }
+
+  .study-section {
+    margin-top: 22px;
+  }
+
+  .lookup-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lookup-chip {
+    justify-content: flex-start;
+  }
+
+  .lookup-chip.ai {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+
+  .deck-tools-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Narrowest phones: the counter takes its own row above the six buttons so
+   each button keeps a ~44px target. */
+@media (max-width: 359px) {
+  .study-toolbar {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-areas:
+      "count count count count count count"
+      "shuffle known prev next play flip";
+    row-gap: 2px;
+  }
+
+  .study-toolbar .counter {
+    grid-area: count;
+    padding: 4px 0 0;
+  }
+
+  .tool-shuffle {
+    grid-area: shuffle;
+  }
+  .tool-known {
+    grid-area: known;
+  }
+  .tool-prev {
+    grid-area: prev;
+  }
+  .tool-next {
+    grid-area: next;
+  }
+  .tool-play {
+    grid-area: play;
+  }
+  .tool-flip {
+    grid-area: flip;
+  }
+
+  .study-topbar .topbar-btn {
+    padding: 6px 8px;
+  }
+
+  .lookup-chip,
+  .deck-tool-btn {
+    gap: 6px;
+    padding: 0 10px;
+  }
+}
+
+/* Phones in landscape: keep the card short enough that the toolbar is still
+   on screen beneath it. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .card-shell-new {
+    height: clamp(140px, 42svh, 240px);
+  }
+
+  .study-heading {
+    margin-bottom: 8px;
+  }
+
+  .stage {
+    padding-top: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .study-view *,
+  .study-view *::before,
+  .study-view *::after {
+    transition-duration: 0ms !important;
+  }
+
+  .tool-btn:active {
+    transform: none;
+  }
 }
