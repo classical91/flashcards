@@ -113,13 +113,18 @@ import { PinnedView } from "./components/PinnedView";
 import { SectionView } from "./components/SectionView";
 import { StudyView } from "./components/StudyView";
 import { AUTOPLAY_SECONDS_OPTIONS } from "./lib/autoplay";
+import { loadSavedView, saveView } from "./lib/savedView";
 
 const AUTOPLAY_SECONDS_KEY = "flashcards.autoplaySeconds.v1";
 
 export default function App() {
   const [librarySections, setLibrarySections] = useState(loadLibrarySections);
   const [deckProgress, setDeckProgress] = useState(() => loadProgressState(librarySections));
-  const [selectedDeckId, setSelectedDeckId] = useState(loadSelectedDeckId);
+  // A reload lands back on the screen you were on (see savedView).
+  const [initialView] = useState(() => loadSavedView(librarySections));
+  const [selectedDeckId, setSelectedDeckId] = useState(() =>
+    initialView.kind === "study" ? initialView.deckId : loadSelectedDeckId(),
+  );
   const [deckComposer, setDeckComposer] = useState<DeckComposer | null>(null);
   const [deckComposerMessage, setDeckComposerMessage] = useState("");
   const [showCardImporter, setShowCardImporter] = useState(false);
@@ -159,7 +164,7 @@ export default function App() {
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [backupMessage, setBackupMessage] = useState("");
   const [showThemesPanel, setShowThemesPanel] = useState(false);
-  const [view, setView] = useState<ViewState>({ kind: "home" });
+  const [view, setView] = useState<ViewState>(initialView);
   const [toast, setToast] = useState(
     "Flashcard = word on the front, definition on the back. Google/AI tools are separate for deeper understanding.",
   );
@@ -1190,6 +1195,10 @@ export default function App() {
       setIsAutoPlaying(false);
     }
   }, [view.kind]);
+
+  useEffect(() => {
+    saveView(view);
+  }, [view]);
 
   useStudyKeyboard(view.kind === "study", {
     onFlip: handleFlip,
