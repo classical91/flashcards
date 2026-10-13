@@ -2353,3 +2353,44 @@ button {
 .deck-tools-body {
   padding-top: 6px;
 }
+
+/* Autoplay speed picker, shown under the toolbar while autoplay runs */
+.autoplay-speed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 12px;
+  margin: 12px auto 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.autoplay-speed-options {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.autoplay-speed-btn {
+  min-width: 40px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.autoplay-speed-btn.active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}

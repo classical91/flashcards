@@ -1,8 +1,9 @@
-import { Dispatch, SetStateAction, useEffect, useState } from "react";
+import { Dispatch, RefObject, SetStateAction, useEffect, useRef, useState } from "react";
 import { Deck, DeckSection, Flashcard } from "../data/deckBuilder";
 import { DeckProgress, StudyMode } from "../data/librarySnapshot";
 import { REVIEW_GRADES, ReviewGrade } from "../lib/srs";
 import { ViewState } from "../lib/types";
+import { AUTOPLAY_SECONDS_OPTIONS } from "../lib/autoplay";
 import { Icon } from "./Icons";
 
 const GRADE_LABELS: Record<ReviewGrade, string> = {
@@ -18,7 +19,11 @@ const GRADE_LABELS: Record<ReviewGrade, string> = {
 const DEEP_TOOLS_OPEN_KEY = "flashcards.deepToolsOpen.v1";
 const DECK_TOOLS_OPEN_KEY = "flashcards.deckToolsOpen.v1";
 
-function usePersistedOpen(storageKey: string) {
+// Opening a section scrolls it to the middle of the screen so its buttons are
+// in view instead of hidden below the fold. Only a tap scrolls — a section that
+// was already open when the page loaded stays where it is.
+function usePersistedOpen(storageKey: string, sectionRef: RefObject<HTMLElement>) {
+  const justOpened = useRef(false);
   const [isOpen, setIsOpen] = useState(() => {
     try {
       return window.localStorage.getItem(storageKey) === "1";
@@ -28,11 +33,21 @@ function usePersistedOpen(storageKey: string) {
   });
   const toggle = () => {
     const next = !isOpen;
+    justOpened.current = next;
     setIsOpen(next);
     try {
       window.localStorage.setItem(storageKey, next ? "1" : "0");
     } catch {}
   };
+  useEffect(() => {
+    if (!isOpen || !justOpened.current) return;
+    justOpened.current = false;
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    sectionRef.current?.scrollIntoView({
+      block: "center",
+      behavior: reduceMotion ? "auto" : "smooth",
+    });
+  }, [isOpen]);
   return [isOpen, toggle] as const;
 }
 
@@ -56,6 +71,9 @@ type StudyViewProps = {
   isDeckEmpty: boolean;
   isAutoPlaying: boolean;
   setIsAutoPlaying: Dispatch<SetStateAction<boolean>>;
+  /** Seconds autoplay spends on each side of a card. */
+  autoplaySeconds: number;
+  onAutoplaySecondsChange: (seconds: number) => void;
   // Card editor / importer panels
   showCardEditor: boolean;
   setShowCardEditor: Dispatch<SetStateAction<boolean>>;
@@ -120,6 +138,8 @@ export function StudyView({
   isDeckEmpty,
   isAutoPlaying,
   setIsAutoPlaying,
+  autoplaySeconds,
+  onAutoplaySecondsChange,
   showCardEditor,
   setShowCardEditor,
   showCardImporter,
@@ -190,8 +210,10 @@ export function StudyView({
     }
   };
 
-  const [showDeepTools, toggleDeepTools] = usePersistedOpen(DEEP_TOOLS_OPEN_KEY);
-  const [showDeckTools, toggleDeckTools] = usePersistedOpen(DECK_TOOLS_OPEN_KEY);
+  const deepToolsRef = useRef<HTMLElement>(null);
+  const deckToolsRef = useRef<HTMLDivElement>(null);
+  const [showDeepTools, toggleDeepTools] = usePersistedOpen(DEEP_TOOLS_OPEN_KEY, deepToolsRef);
+  const [showDeckTools, toggleDeckTools] = usePersistedOpen(DECK_TOOLS_OPEN_KEY, deckToolsRef);
 
   const reviewCount = dueCount + newCount;
 
@@ -366,7 +388,30 @@ export function StudyView({
                 </button>
               </nav>
 
-              <section className="study-section deep-tools" aria-labelledby="deep-tools-title">
+              {isAutoPlaying && (
+                <div className="autoplay-speed" role="group" aria-label="Autoplay seconds per side">
+                  <span className="autoplay-speed-label">Seconds per side</span>
+                  <div className="autoplay-speed-options">
+                    {AUTOPLAY_SECONDS_OPTIONS.map((seconds) => (
+                      <button
+                        key={seconds}
+                        className={`autoplay-speed-btn${seconds === autoplaySeconds ? " active" : ""}`}
+                        onClick={() => onAutoplaySecondsChange(seconds)}
+                        aria-pressed={seconds === autoplaySeconds}
+                        aria-label={`${seconds} seconds per side`}
+                      >
+                        {seconds}s
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <section
+                ref={deepToolsRef}
+                className="study-section deep-tools"
+                aria-labelledby="deep-tools-title"
+              >
                 <h2 className="study-section-title deep-title">
                   <button
                     className="section-toggle"
@@ -472,7 +517,7 @@ export function StudyView({
       </main>
 
       <section className="bottom-panel" aria-label="Deck tools">
-        <div className="study-section deck-tools">
+        <div ref={deckToolsRef} className="study-section deck-tools">
           <h2 className="study-section-title">
             <button
               className="section-toggle"
