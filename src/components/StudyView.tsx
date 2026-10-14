@@ -1,4 +1,4 @@
-import { Dispatch, RefObject, SetStateAction, useEffect, useRef, useState } from "react";
+import { ComponentPropsWithoutRef, Dispatch, RefObject, SetStateAction, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Deck, DeckSection, Flashcard } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
 import { REVIEW_GRADES, ReviewGrade } from "../lib/srs";
@@ -120,6 +120,29 @@ type StudyViewProps = {
   onShareDeck: () => void;
   isSharingDeck: boolean;
 };
+
+// A textarea that grows with its text, so a long definition in the card
+// editor is readable in full instead of scrolling sideways in a one-line box.
+function AutoGrowTextarea(props: ComponentPropsWithoutRef<"textarea">) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const { value } = props;
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`;
+    };
+    fit();
+    // The width changes on rotation or resize, which changes the line count.
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
+    observer?.observe(el);
+    return () => observer?.disconnect();
+  }, [value]);
+
+  return <textarea ref={ref} rows={1} {...props} />;
+}
 
 export function StudyView({
   selectedDeck,
@@ -647,7 +670,7 @@ export function StudyView({
                         }))
                       }
                     />
-                    <input
+                    <AutoGrowTextarea
                       className="card-editor-def"
                       value={definition}
                       placeholder="Definition"
@@ -658,7 +681,9 @@ export function StudyView({
                           [card.id]: { term: prev[card.id]?.term ?? card.term, definition: e.target.value },
                         }))
                       }
-                      onKeyDown={(e) => { if (e.key === "Enter") onUpdateCard(card.id); }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); onUpdateCard(card.id); }
+                      }}
                     />
                     <button
                       className={`mini-btn${isDirty ? " primary" : ""}`}

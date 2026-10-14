@@ -1617,8 +1617,14 @@ button {
     flex-wrap: wrap;
   }
 
-  .study-view .card-editor-term {
+  .study-view .card-editor-term,
+  .study-view .card-editor-def {
     flex: 1 1 100%;
+  }
+
+  /* Save and delete sit under the definition, right-aligned. */
+  .study-view .card-editor-def + .mini-btn {
+    margin-left: auto;
   }
 }
 
@@ -1886,7 +1892,7 @@ button {
 .card-editor-row {
   display: flex;
   gap: 6px;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .card-editor-term {
@@ -1908,7 +1914,11 @@ button {
   border-radius: 8px;
   background: var(--bg);
   color: var(--ink);
+  font: inherit;
   font-size: 13px;
+  line-height: 1.4;
+  resize: none;
+  overflow: hidden;
 }
 
 .card-editor-term:focus,
