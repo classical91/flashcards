@@ -179,3 +179,26 @@ export const toggleStarredCard = (
     starredUpdatedAt: { ...(progress.starredUpdatedAt ?? {}), [cardId]: now },
   };
 };
+
+/**
+ * Resets the progress of some cards only (the starred ones), leaving the rest
+ * of the deck alone. Known marks are stamped and review schedules carry a
+ * per-card reset time, so other devices can't merge the old progress back.
+ */
+export const resetCardsProgress = (
+  progress: DeckProgress,
+  cardIds: string[],
+  now = Date.now(),
+): DeckProgress => {
+  const ids = new Set(cardIds);
+  const stamps = Object.fromEntries(cardIds.map((id) => [id, now]));
+  return {
+    ...progress,
+    knownIds: progress.knownIds.filter((id) => !ids.has(id)),
+    knownUpdatedAt: { ...(progress.knownUpdatedAt ?? {}), ...stamps },
+    reviews: Object.fromEntries(
+      Object.entries(progress.reviews ?? {}).filter(([id]) => !ids.has(id)),
+    ),
+    cardResetAt: { ...(progress.cardResetAt ?? {}), ...stamps },
+  };
+};

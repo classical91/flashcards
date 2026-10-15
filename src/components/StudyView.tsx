@@ -102,6 +102,7 @@ type StudyViewProps = {
   // Starred cards
   isStudyingStarred: boolean;
   starredCount: number;
+  starredCardIds: Set<string>;
   isCurrentStarred: boolean;
   onToggleStar: (cardId: string) => void;
   onStudyStarred: () => void;
@@ -189,6 +190,7 @@ export function StudyView({
   isReviewing,
   isStudyingStarred,
   starredCount,
+  starredCardIds,
   isCurrentStarred,
   onToggleStar,
   onStudyStarred,
@@ -242,6 +244,11 @@ export function StudyView({
   const [showDeckTools, toggleDeckTools] = usePersistedOpen(DECK_TOOLS_OPEN_KEY, deckToolsRef);
 
   const reviewCount = dueCount + newCount;
+  // In the starred list the deck tools act on the starred cards only.
+  const editorCards = isStudyingStarred
+    ? selectedDeck.cards.filter((card) => starredCardIds.has(card.id))
+    : selectedDeck.cards;
+  const toolNoun = isStudyingStarred ? "starred" : null;
 
   return (
     <div className="app study-view">
@@ -572,9 +579,13 @@ export function StudyView({
                   <Icon name="upload" size={16} />
                   <span>{showCardImporter ? "Hide import" : "Bulk import"}</span>
                 </button>
-                <button className="deck-tool-btn" onClick={onResetProgress} title="Reset progress">
+                <button
+                  className="deck-tool-btn"
+                  onClick={onResetProgress}
+                  title={toolNoun ? "Reset progress for the starred cards only" : "Reset progress"}
+                >
                   <Icon name="reset" size={16} />
-                  <span>Reset</span>
+                  <span>{toolNoun ? "Reset starred" : "Reset"}</span>
                 </button>
                 {isShuffled && (
                   <button
@@ -590,28 +601,29 @@ export function StudyView({
                   className="deck-tool-btn"
                   onClick={() => setShowCardList(true)}
                   disabled={isDeckEmpty}
-                  title="View all cards"
+                  title={toolNoun ? "View the starred cards" : "View all cards"}
                 >
                   <Icon name="list" size={16} />
-                  <span>View all</span>
+                  <span>{toolNoun ? "View starred" : "View all"}</span>
                 </button>
                 <button
                   className="deck-tool-btn"
                   onClick={onExportDeck}
-                  disabled={isDeckEmpty}
-                  title="Copy cards to the clipboard"
+                  disabled={isDeckEmpty || !editorCards.length}
+                  title={toolNoun ? "Copy the starred cards to the clipboard" : "Copy cards to the clipboard"}
                 >
                   <Icon name="copy" size={16} />
-                  <span>Copy cards</span>
+                  <span>{toolNoun ? "Copy starred" : "Copy cards"}</span>
                 </button>
                 <button
                   className="deck-tool-btn"
                   onClick={onShareDeck}
-                  disabled={isDeckEmpty || isSharingDeck}
+                  disabled={isDeckEmpty || !editorCards.length || isSharingDeck}
                   aria-busy={isSharingDeck}
+                  title={toolNoun ? "Share the starred cards as their own deck" : "Share this deck"}
                 >
                   <Icon name="share" size={16} />
-                  <span>{isSharingDeck ? "Sharing…" : "Share deck"}</span>
+                  <span>{isSharingDeck ? "Sharing…" : toolNoun ? "Share starred" : "Share deck"}</span>
                 </button>
                 <button
                   className={`deck-tool-btn${showCardEditor ? " active" : ""}`}
@@ -619,7 +631,7 @@ export function StudyView({
                   aria-pressed={showCardEditor}
                 >
                   <Icon name="edit" size={16} />
-                  <span>{showCardEditor ? "Hide editor" : "Edit list"}</span>
+                  <span>{showCardEditor ? "Hide editor" : toolNoun ? "Edit starred" : "Edit list"}</span>
                 </button>
                 <button
                   className="deck-tool-btn danger"
@@ -638,7 +650,9 @@ export function StudyView({
         {showCardEditor && (
           <div className="card-editor-panel">
             <div className="panel-card-head">
-              <strong>Edit cards ({selectedDeck.cards.length})</strong>
+              <strong>
+                {toolNoun ? "Edit starred cards" : "Edit cards"} ({editorCards.length})
+              </strong>
               <button
                 className="link-btn"
                 onClick={() => { setShowCardEditor(false); setCardEdits({}); }}
@@ -695,7 +709,7 @@ export function StudyView({
               <button className="mini-btn" onClick={onAddSingleCard}>Add</button>
             </div>
             <div className="card-editor-list">
-              {selectedDeck.cards.map((card) => {
+              {editorCards.map((card) => {
                 const edit = cardEdits[card.id];
                 const term = edit ? edit.term : card.term;
                 const definition = edit ? edit.definition : card.definition;
@@ -755,7 +769,7 @@ export function StudyView({
         {showCardImporter && (
           <div className="bulk-import-panel">
             <div className="panel-card-head">
-              <strong>Bulk import cards</strong>
+              <strong>{toolNoun ? "Bulk import starred cards" : "Bulk import cards"}</strong>
               <button
                 className="link-btn"
                 onClick={() => { setShowCardImporter(false); setCardImportMessage(""); }}

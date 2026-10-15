@@ -25,6 +25,7 @@ import {
   createDeckProgress,
   resetDeckProgress,
   toggleStarredCard,
+  resetCardsProgress,
   findDeckById,
   findSectionForDeck,
   applyStudyOrder,
@@ -278,6 +279,17 @@ export default function App() {
   const isStudyingStarred = !!selectedDeck && starredDeckId === selectedDeck.id && !isReviewing;
   const starredIds = activeProgress?.starredIds;
   const starredCardIds = useMemo(() => new Set(starredIds ?? []), [starredIds]);
+  // What the deck tools act on: just the starred cards while studying them,
+  // otherwise the whole deck. Kept in the deck's own order.
+  const toolCards = useMemo(
+    () =>
+      !selectedDeck
+        ? []
+        : isStudyingStarred
+          ? selectedDeck.cards.filter((card) => starredCardIds.has(card.id))
+          : selectedDeck.cards,
+    [selectedDeck, isStudyingStarred, starredCardIds],
+  );
 
   const orderedCards = useMemo(
     () =>
@@ -562,13 +574,20 @@ export default function App() {
         // Back to the first card in the order being studied: on a shuffled
         // deck the deck's own first card sits somewhere in the middle.
         (progress) => ({
-          ...resetDeckProgress(selectedDeck, now, progress),
+          ...(isStudyingStarred
+            ? resetCardsProgress(progress, toolCards.map((card) => card.id), now)
+            : resetDeckProgress(selectedDeck, now, progress)),
           currentCardId: (isStudyingStarred ? visibleCards : orderedCards)[0]?.id ?? "",
+          isFlipped: false,
         }),
         { position: true },
       );
     });
-    setToast("Progress reset.");
+    setToast(
+      isStudyingStarred
+        ? `Progress reset for ${toolCards.length} starred card${toolCards.length === 1 ? "" : "s"}.`
+        : "Progress reset.",
+    );
   };
 
   const handleCreateDeck = (sectionId: string) => {
@@ -609,6 +628,13 @@ export default function App() {
     setDeckComposerMessage("");
   };
 
+  // A card added while studying the starred list is starred straight away,
+  // so it shows up in the list it was added to.
+  const starIfStudyingStarred = (progress: DeckProgress, cardIds: string[]) =>
+    isStudyingStarred
+      ? cardIds.reduce((next, cardId) => toggleStarredCard(next, cardId), progress)
+      : progress;
+
   const handleAddCards = () => {
     if (!selectedDeck) return;
     const parsed = parsePastedFlashcards(cardPaste);
@@ -633,16 +659,19 @@ export default function App() {
           currentProgress[selectedDeck.id] ?? createDeckProgress(selectedDeck);
         return {
           ...currentProgress,
-          [selectedDeck.id]: {
-            ...currentDeckProgress,
-            currentCardId: currentDeckProgress.currentCardId || newCards[0]?.id || "",
-          },
+          [selectedDeck.id]: starIfStudyingStarred(
+            {
+              ...currentDeckProgress,
+              currentCardId: currentDeckProgress.currentCardId || newCards[0]?.id || "",
+            },
+            newCards.map((card) => card.id),
+          ),
         };
       });
     });
     setCardPaste("");
     setCardImportMessage(
-      `Added ${newCards.length} card${newCards.length === 1 ? "" : "s"} to ${selectedDeck.title}.`,
+      `Added ${newCards.length}${isStudyingStarred ? " starred" : ""} card${newCards.length === 1 ? "" : "s"} to ${selectedDeck.title}.`,
     );
   };
 
@@ -671,10 +700,10 @@ export default function App() {
         const progress = curr[selectedDeck.id] ?? createDeckProgress(selectedDeck);
         return {
           ...curr,
-          [selectedDeck.id]: {
-            ...progress,
-            currentCardId: progress.currentCardId || newCard.id,
-          },
+          [selectedDeck.id]: starIfStudyingStarred(
+            { ...progress, currentCardId: progress.currentCardId || newCard.id },
+            [newCard.id],
+          ),
         };
       });
     });
@@ -802,12 +831,12 @@ export default function App() {
 
   const handleExportDeck = async () => {
     if (!selectedDeck) return;
-    const lines = selectedDeck.cards.map((card) => `${card.term}\t${card.definition}`);
+    const lines = toolCards.map((card) => `${card.term}\t${card.definition}`);
     const content = lines.join("\n");
     try {
       await navigator.clipboard.writeText(content);
       setToast(
-        `Copied ${selectedDeck.cards.length} card${selectedDeck.cards.length === 1 ? "" : "s"} from "${selectedDeck.title}" to clipboard.`,
+        `Copied ${toolCards.length}${isStudyingStarred ? " starred" : ""} card${toolCards.length === 1 ? "" : "s"} from "${selectedDeck.title}" to clipboard.`,
       );
     } catch {
       setToast("Could not copy to clipboard.");
@@ -888,11 +917,15 @@ export default function App() {
     setIsSharingDeck(true);
     setToast("Creating a share link…");
     try {
-      const shareId = await createSharedDeck(selectedDeck, selectedSection);
+      // Sharing from the starred list shares just those cards, as their own deck.
+      const deckToShare = isStudyingStarred
+        ? { ...selectedDeck, title: `${selectedDeck.title} (starred)`, cards: toolCards }
+        : selectedDeck;
+      const shareId = await createSharedDeck(deckToShare, selectedSection);
       const shareUrl = buildShareUrl(shareId, window.location.origin);
       try {
         await navigator.clipboard.writeText(shareUrl);
-        setToast(`Share link copied — anyone with it can add "${selectedDeck.title}".`);
+        setToast(`Share link copied — anyone with it can add "${deckToShare.title}".`);
       } catch {
         // Clipboard permission can be denied. The link is already saved, so
         // show it rather than losing it to a failed copy.
@@ -1482,6 +1515,7 @@ export default function App() {
         isReviewing={isReviewing}
         isStudyingStarred={isStudyingStarred}
         starredCount={starredCardIds.size}
+        starredCardIds={starredCardIds}
         isCurrentStarred={!!currentCard && starredCardIds.has(currentCard.id)}
         onToggleStar={handleToggleStar}
         onStudyStarred={handleStudyStarred}
@@ -1508,6 +1542,9 @@ export default function App() {
       <AiOverlay aiModal={aiModal} onClose={() => setAiModal(null)} onOpenAI={openAI} />
       {globalOverlays}
       <CardListOverlay
+        // Remounted on open so it starts on the list being studied.
+        key={`${showCardList}-${isStudyingStarred}`}
+        initialStarredOnly={isStudyingStarred}
         show={showCardList}
         selectedDeck={selectedDeck}
         starredCardIds={starredCardIds}

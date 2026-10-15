@@ -53,6 +53,11 @@ export type DeckProgress = {
    * by whichever one still holds the old schedules.
    */
   resetAt?: number;
+  /**
+   * Card id -> when only that card's progress was reset (resetting just the
+   * starred cards). Works like resetAt, one card at a time.
+   */
+  cardResetAt?: Record<string, number>;
 };
 
 export type RecentDeckEntry = { id: string; viewedAt: number };
@@ -327,6 +332,16 @@ const remapById = (
                 Object.entries(parseTimestampsById(progress.starredUpdatedAt)).map(
                   ([card, at]) => [cardId(card), at],
                 ),
+              ),
+            }
+          : {}),
+        ...(progress.cardResetAt
+          ? {
+              cardResetAt: Object.fromEntries(
+                Object.entries(parseTimestampsById(progress.cardResetAt)).map(([card, at]) => [
+                  cardId(card),
+                  at,
+                ]),
               ),
             }
           : {}),
