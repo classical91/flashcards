@@ -65,6 +65,8 @@ type CardListOverlayProps = {
   show: boolean;
   selectedDeck: Deck | null;
   starredCardIds: Set<string>;
+  /** Opens on the starred filter, e.g. when the starred list is being studied. */
+  initialStarredOnly: boolean;
   onToggleStar: (cardId: string) => void;
   onStudyStarred: () => void;
   onClose: () => void;
@@ -74,11 +76,12 @@ export function CardListOverlay({
   show,
   selectedDeck,
   starredCardIds,
+  initialStarredOnly,
   onToggleStar,
   onStudyStarred,
   onClose,
 }: CardListOverlayProps) {
-  const [starredOnly, setStarredOnly] = useState(false);
+  const [starredOnly, setStarredOnly] = useState(initialStarredOnly);
   if (!show || !selectedDeck) return null;
   // Numbers stay the card's place in the deck, so the starred list still says
   // where each word lives.
@@ -115,7 +118,7 @@ export function CardListOverlay({
               Starred ({starredCardIds.size})
             </button>
           </div>
-          {starredOnly && starredCardIds.size > 0 && (
+          {starredOnly && !initialStarredOnly && starredCardIds.size > 0 && (
             <button className="mini-btn" onClick={onStudyStarred}>
               Study starred
             </button>

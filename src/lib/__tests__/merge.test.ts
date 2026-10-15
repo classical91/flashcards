@@ -659,3 +659,28 @@ describe("mergeLibraryState — starred cards", () => {
     expect(mergeLibraryState(local, local, NOW).deckProgress.d1).not.toHaveProperty("starredIds");
   });
 });
+
+describe("mergeLibraryState — resetting some cards", () => {
+  it("drops older schedules for reset cards only", () => {
+    const review = (at: number) => ({
+      due: at + 1000,
+      interval: 1,
+      ease: 2.5,
+      reps: 1,
+      lapses: 0,
+      lastReviewedAt: at,
+    });
+    const local = state({
+      librarySections: [section("topic", [deck("d1", ["a", "b"])])],
+      deckProgress: { d1: progress({ reviews: {}, cardResetAt: { a: NOW } }) },
+    });
+    const remote = state({
+      librarySections: [section("topic", [deck("d1", ["a", "b"])])],
+      deckProgress: { d1: progress({ reviews: { a: review(NOW - 10), b: review(NOW - 10) } }) },
+    });
+
+    expect(
+      Object.keys(mergeLibraryState(local, remote, NOW).deckProgress.d1.reviews ?? {}),
+    ).toEqual(["b"]);
+  });
+});

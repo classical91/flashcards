@@ -204,6 +204,7 @@ const mergeReviews = (
   remote: DeckProgress | undefined,
   validCardIds: Set<string>,
   resetAt: number,
+  cardResetAt: Record<string, number>,
 ) => {
   const merged: Record<string, ReviewState> = {};
   const cardIds = new Set([
@@ -221,7 +222,7 @@ const mergeReviews = (
           ? remoteReview
           : localReview
         : (localReview ?? remoteReview);
-    if (!winner || winner.lastReviewedAt <= resetAt) return;
+    if (!winner || winner.lastReviewedAt <= Math.max(resetAt, cardResetAt[cardId] ?? 0)) return;
     merged[cardId] = winner;
   });
 
@@ -281,6 +282,7 @@ const mergeOneDeckProgress = (
 ): DeckProgress => {
   const validCardIds = new Set(deck.cards.map((card) => card.id));
   const resetAt = Math.max(local?.resetAt ?? 0, remote?.resetAt ?? 0);
+  const cardResetAt = mergeStampsByCard(local?.cardResetAt, remote?.cardResetAt, validCardIds);
   const knownUpdatedAt = mergeStampsByCard(
     local?.knownUpdatedAt,
     remote?.knownUpdatedAt,
@@ -320,7 +322,7 @@ const mergeOneDeckProgress = (
     // now, not about the library, so it is never taken from the other device.
     isFlipped: local?.isFlipped ?? false,
     studyMode: position?.studyMode ?? "all",
-    reviews: mergeReviews(local, remote, validCardIds, resetAt),
+    reviews: mergeReviews(local, remote, validCardIds, resetAt, cardResetAt),
     knownUpdatedAt,
     // Left off entirely until a card is starred, so decks nobody has starred
     // keep the shape older clients wrote.
@@ -329,6 +331,7 @@ const mergeOneDeckProgress = (
       : {}),
     positionUpdatedAt: Math.max(positionStamp(local), positionStamp(remote)),
     ...(resetAt > 0 ? { resetAt } : {}),
+    ...(Object.keys(cardResetAt).length ? { cardResetAt } : {}),
     ...(updatedAt > 0 ? { updatedAt } : {}),
   };
 };

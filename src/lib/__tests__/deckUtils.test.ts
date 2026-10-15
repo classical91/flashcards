@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyStudyOrder,
   createDeckProgress,
+  resetCardsProgress,
   resetDeckProgress,
   shuffleCards,
   sortDecksByLastViewed,
@@ -109,5 +110,24 @@ describe("starred cards", () => {
     expect(reset.starredIds).toEqual(["b"]);
     expect(reset.starredUpdatedAt).toEqual({ b: 100 });
     expect(reset.resetAt).toBe(500);
+  });
+});
+
+describe("resetCardsProgress", () => {
+  it("clears only the given cards' marks and schedules", () => {
+    const review = { due: 900, interval: 3, ease: 2.5, reps: 2, lapses: 0, lastReviewedAt: 100 };
+    const progress = {
+      currentCardId: "a",
+      knownIds: ["a", "b"],
+      isFlipped: false,
+      studyMode: "all" as const,
+      reviews: { a: review, b: review },
+    };
+
+    const reset = resetCardsProgress(progress, ["a"], 500);
+    expect(reset.knownIds).toEqual(["b"]);
+    expect(Object.keys(reset.reviews ?? {})).toEqual(["b"]);
+    expect(reset.knownUpdatedAt).toEqual({ a: 500 });
+    expect(reset.cardResetAt).toEqual({ a: 500 });
   });
 });
