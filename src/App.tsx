@@ -454,10 +454,21 @@ export default function App() {
 
   const handleShuffle = () => {
     if (!selectedDeck) return;
-    setStudyOrder({
-      deckId: selectedDeck.id,
-      cardIds: shuffleCards(selectedDeck.cards).map((card) => card.id),
-    });
+    const cardIds = shuffleCards(selectedDeck.cards).map((card) => card.id);
+    // Keeping the current card would only change its position number, so the
+    // shuffle looked like it did nothing. Start from the top of the new order,
+    // and never on the card that was already showing.
+    if (cardIds.length > 1 && cardIds[0] === currentCard?.id) {
+      [cardIds[0], cardIds[1]] = [cardIds[1], cardIds[0]];
+    }
+    setStudyOrder({ deckId: selectedDeck.id, cardIds });
+    // A review session orders cards by due date, so its position stays put.
+    if (!isReviewing && cardIds.length) {
+      updateSelectedDeckProgress(
+        (progress) => ({ ...progress, currentCardId: cardIds[0], isFlipped: false }),
+        { position: true },
+      );
+    }
     setToast("Shuffled for this session. The deck's own order is unchanged.");
   };
 
