@@ -516,7 +516,12 @@ export default function App() {
       // Stamp every live card, including marks this device has not received;
       // resetAt covers the review schedules.
       updateSelectedDeckProgress(
-        () => resetDeckProgress(selectedDeck, now),
+        // Back to the first card in the order being studied: on a shuffled
+        // deck the deck's own first card sits somewhere in the middle.
+        () => ({
+          ...resetDeckProgress(selectedDeck, now),
+          currentCardId: orderedCards[0]?.id ?? "",
+        }),
         { position: true },
       );
     });
