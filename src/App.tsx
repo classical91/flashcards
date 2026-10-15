@@ -114,6 +114,7 @@ import { SectionView } from "./components/SectionView";
 import { StudyView } from "./components/StudyView";
 import { AUTOPLAY_SECONDS_OPTIONS } from "./lib/autoplay";
 import { loadSavedView, saveView } from "./lib/savedView";
+import { copyText } from "./lib/clipboard";
 
 const AUTOPLAY_SECONDS_KEY = "flashcards.autoplaySeconds.v1";
 
@@ -834,7 +835,7 @@ export default function App() {
     const lines = toolCards.map((card) => `${card.term}\t${card.definition}`);
     const content = lines.join("\n");
     try {
-      await navigator.clipboard.writeText(content);
+      await copyText(content);
       setToast(
         `Copied ${toolCards.length}${isStudyingStarred ? " starred" : ""} card${toolCards.length === 1 ? "" : "s"} from "${selectedDeck.title}" to clipboard.`,
       );
@@ -924,7 +925,7 @@ export default function App() {
       const shareId = await createSharedDeck(deckToShare, selectedSection);
       const shareUrl = buildShareUrl(shareId, window.location.origin);
       try {
-        await navigator.clipboard.writeText(shareUrl);
+        await copyText(shareUrl);
         setToast(`Share link copied — anyone with it can add "${deckToShare.title}".`);
       } catch {
         // Clipboard permission can be denied. The link is already saved, so
@@ -1097,7 +1098,7 @@ export default function App() {
     if (!aiModal) return;
     const { word, prompt } = aiModal;
     try {
-      await navigator.clipboard.writeText(prompt);
+      await copyText(prompt);
     } catch {
       // silent fallback
     }

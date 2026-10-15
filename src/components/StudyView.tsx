@@ -572,6 +572,15 @@ export function StudyView({
             <div id="deck-tools-body" className="deck-tools-body">
               <div className="bottom-bar deck-tools-grid">
                 <button
+                  className="deck-tool-btn"
+                  onClick={onExportDeck}
+                  disabled={isDeckEmpty || !editorCards.length}
+                  title={toolNoun ? "Copy the starred cards to the clipboard" : "Copy cards to the clipboard"}
+                >
+                  <Icon name="copy" size={16} />
+                  <span>{toolNoun ? "Copy starred" : "Copy cards"}</span>
+                </button>
+                <button
                   className={`deck-tool-btn${showCardImporter ? " active" : ""}`}
                   onClick={toggleImporter}
                   aria-pressed={showCardImporter}
@@ -605,15 +614,6 @@ export function StudyView({
                 >
                   <Icon name="list" size={16} />
                   <span>{toolNoun ? "View starred" : "View all"}</span>
-                </button>
-                <button
-                  className="deck-tool-btn"
-                  onClick={onExportDeck}
-                  disabled={isDeckEmpty || !editorCards.length}
-                  title={toolNoun ? "Copy the starred cards to the clipboard" : "Copy cards to the clipboard"}
-                >
-                  <Icon name="copy" size={16} />
-                  <span>{toolNoun ? "Copy starred" : "Copy cards"}</span>
                 </button>
                 <button
                   className="deck-tool-btn"
