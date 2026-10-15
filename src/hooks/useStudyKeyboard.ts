@@ -7,6 +7,7 @@ export type StudyKeyboardHandlers = {
   onNext: () => void;
   onPrev: () => void;
   onShuffle: () => void;
+  onStar: () => void;
   /** Only called while a review session is running; 1-4 grade the card. */
   onGrade: ((grade: ReviewGrade) => void) | null;
 };
@@ -42,6 +43,10 @@ export function useStudyKeyboard(active: boolean, handlers: StudyKeyboardHandler
       if (event.key.toLowerCase() === "s") {
         event.preventDefault();
         current.onShuffle();
+      }
+      if (event.key === "*") {
+        event.preventDefault();
+        current.onStar();
       }
       if (current.onGrade && event.key >= "1" && event.key <= "4") {
         event.preventDefault();

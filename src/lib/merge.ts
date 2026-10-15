@@ -228,8 +228,10 @@ const mergeReviews = (
   return merged;
 };
 
+type CardMarks = { ids?: string[]; stamps?: Record<string, number> };
+
 /**
- * Merges known marks one card at a time.
+ * Merges a per-card mark (known, starred) one card at a time.
  *
  * A card's membership is decided by whichever side last changed it. A side
  * that has a stamp for the card beats one that doesn't, so an explicit unmark
@@ -237,35 +239,35 @@ const mergeReviews = (
  * neither side has ever stamped the card the marks are unioned, which is how
  * this worked before stamps existed — an upgrade shouldn't drop progress.
  */
-const mergeKnownIds = (
-  local: DeckProgress | undefined,
-  remote: DeckProgress | undefined,
+const mergeMarkedIds = (
+  local: CardMarks,
+  remote: CardMarks,
   validCardIds: Set<string>,
-  knownUpdatedAt: Record<string, number>,
+  mergedStamps: Record<string, number>,
 ) => {
-  const localKnown = new Set(local?.knownIds ?? []);
-  const remoteKnown = new Set(remote?.knownIds ?? []);
-  const candidates = new Set([...localKnown, ...remoteKnown, ...Object.keys(knownUpdatedAt)]);
-  const known: string[] = [];
+  const localMarked = new Set(local.ids ?? []);
+  const remoteMarked = new Set(remote.ids ?? []);
+  const candidates = new Set([...localMarked, ...remoteMarked, ...Object.keys(mergedStamps)]);
+  const marked: string[] = [];
 
   candidates.forEach((cardId) => {
     if (!validCardIds.has(cardId)) return;
-    const localStamp = local?.knownUpdatedAt?.[cardId];
-    const remoteStamp = remote?.knownUpdatedAt?.[cardId];
-    const isKnown =
+    const localStamp = local.stamps?.[cardId];
+    const remoteStamp = remote.stamps?.[cardId];
+    const isMarked =
       localStamp === undefined && remoteStamp === undefined
-        ? localKnown.has(cardId) || remoteKnown.has(cardId)
+        ? localMarked.has(cardId) || remoteMarked.has(cardId)
         : remoteStamp === undefined
-          ? localKnown.has(cardId)
+          ? localMarked.has(cardId)
           : localStamp === undefined
-            ? remoteKnown.has(cardId)
+            ? remoteMarked.has(cardId)
             : remoteStamp > localStamp
-              ? remoteKnown.has(cardId)
-              : localKnown.has(cardId);
-    if (isKnown) known.push(cardId);
+              ? remoteMarked.has(cardId)
+              : localMarked.has(cardId);
+    if (isMarked) marked.push(cardId);
   });
 
-  return known;
+  return marked;
 };
 
 /** Where the user was in the deck. Flipping deliberately doesn't count. */
@@ -284,7 +286,23 @@ const mergeOneDeckProgress = (
     remote?.knownUpdatedAt,
     validCardIds,
   );
-  const knownIds = mergeKnownIds(local, remote, validCardIds, knownUpdatedAt);
+  const knownIds = mergeMarkedIds(
+    { ids: local?.knownIds, stamps: local?.knownUpdatedAt },
+    { ids: remote?.knownIds, stamps: remote?.knownUpdatedAt },
+    validCardIds,
+    knownUpdatedAt,
+  );
+  const starredUpdatedAt = mergeStampsByCard(
+    local?.starredUpdatedAt,
+    remote?.starredUpdatedAt,
+    validCardIds,
+  );
+  const starredIds = mergeMarkedIds(
+    { ids: local?.starredIds, stamps: local?.starredUpdatedAt },
+    { ids: remote?.starredIds, stamps: remote?.starredUpdatedAt },
+    validCardIds,
+    starredUpdatedAt,
+  );
   const position =
     local && remote
       ? positionStamp(remote) > positionStamp(local)
@@ -304,6 +322,11 @@ const mergeOneDeckProgress = (
     studyMode: position?.studyMode ?? "all",
     reviews: mergeReviews(local, remote, validCardIds, resetAt),
     knownUpdatedAt,
+    // Left off entirely until a card is starred, so decks nobody has starred
+    // keep the shape older clients wrote.
+    ...(starredIds.length || Object.keys(starredUpdatedAt).length
+      ? { starredIds, starredUpdatedAt }
+      : {}),
     positionUpdatedAt: Math.max(positionStamp(local), positionStamp(remote)),
     ...(resetAt > 0 ? { resetAt } : {}),
     ...(updatedAt > 0 ? { updatedAt } : {}),

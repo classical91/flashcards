@@ -40,6 +40,14 @@ export type DeckProgress = {
   /** When currentCardId or studyMode last changed. Flipping is not a change. */
   positionUpdatedAt?: number;
   /**
+   * Cards starred with the gold star. Optional so progress saved before stars
+   * existed still loads. Starring is curation rather than progress, so a
+   * reset keeps it.
+   */
+  starredIds?: string[];
+  /** Card id -> when its star last changed, merged the same way as knownUpdatedAt. */
+  starredUpdatedAt?: Record<string, number>;
+  /**
    * When this deck's progress was last reset. Review schedules older than it
    * are dropped, so a reset reaches other devices instead of being refilled
    * by whichever one still holds the old schedules.
@@ -221,6 +229,10 @@ export const parseRecentDecks = (value: unknown): RecentDeckEntry[] => {
   return entries;
 };
 
+/** Reads a list of ids, dropping anything that isn't a string. */
+export const parseIdList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+
 /** Reads an `id -> epoch ms` map, dropping anything that isn't a real number. */
 export const parseTimestampsById = (value: unknown): Record<string, number> => {
   if (!isRecord(value)) return {};
@@ -308,6 +320,16 @@ const remapById = (
             at,
           ]),
         ),
+        ...(progress.starredIds || progress.starredUpdatedAt
+          ? {
+              starredIds: parseIdList(progress.starredIds).map(cardId),
+              starredUpdatedAt: Object.fromEntries(
+                Object.entries(parseTimestampsById(progress.starredUpdatedAt)).map(
+                  ([card, at]) => [cardId(card), at],
+                ),
+              ),
+            }
+          : {}),
       },
     ]),
   );

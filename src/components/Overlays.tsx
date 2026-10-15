@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Deck } from "../data/deckBuilder";
 import { AiModal, ConfirmDialog, SharedDeckLink } from "../lib/types";
+import { Icon } from "./Icons";
 
 type ConfirmOverlayProps = {
   confirmDialog: ConfirmDialog | null;
@@ -62,11 +64,27 @@ export function AiOverlay({ aiModal, onClose, onOpenAI }: AiOverlayProps) {
 type CardListOverlayProps = {
   show: boolean;
   selectedDeck: Deck | null;
+  starredCardIds: Set<string>;
+  onToggleStar: (cardId: string) => void;
+  onStudyStarred: () => void;
   onClose: () => void;
 };
 
-export function CardListOverlay({ show, selectedDeck, onClose }: CardListOverlayProps) {
+export function CardListOverlay({
+  show,
+  selectedDeck,
+  starredCardIds,
+  onToggleStar,
+  onStudyStarred,
+  onClose,
+}: CardListOverlayProps) {
+  const [starredOnly, setStarredOnly] = useState(false);
   if (!show || !selectedDeck) return null;
+  // Numbers stay the card's place in the deck, so the starred list still says
+  // where each word lives.
+  const rows = selectedDeck.cards
+    .map((card, index) => ({ card, index }))
+    .filter(({ card }) => !starredOnly || starredCardIds.has(card.id));
   return (
     <div
       className="modal-overlay"
@@ -79,14 +97,55 @@ export function CardListOverlay({ show, selectedDeck, onClose }: CardListOverlay
           <strong>{selectedDeck.title} &mdash; {selectedDeck.cards.length} card{selectedDeck.cards.length !== 1 ? "s" : ""}</strong>
           <button className="link-btn" onClick={onClose}>Close</button>
         </div>
+        <div className="card-list-filters">
+          <div className="card-list-tabs" role="group" aria-label="Which cards to list">
+            <button
+              className={`card-list-tab${!starredOnly ? " active" : ""}`}
+              aria-pressed={!starredOnly}
+              onClick={() => setStarredOnly(false)}
+            >
+              All
+            </button>
+            <button
+              className={`card-list-tab${starredOnly ? " active" : ""}`}
+              aria-pressed={starredOnly}
+              onClick={() => setStarredOnly(true)}
+            >
+              <Icon name="star" size={13} filled />
+              Starred ({starredCardIds.size})
+            </button>
+          </div>
+          {starredOnly && starredCardIds.size > 0 && (
+            <button className="mini-btn" onClick={onStudyStarred}>
+              Study starred
+            </button>
+          )}
+        </div>
         <div className="card-list-scroll">
-          {selectedDeck.cards.map((card, i) => (
-            <div key={card.id} className="card-list-row">
-              <span className="card-list-index">{i + 1}</span>
-              <span className="card-list-term">{card.term}</span>
-              <span className="card-list-def">{card.definition}</span>
-            </div>
-          ))}
+          {rows.length === 0 && (
+            <p className="card-list-empty">
+              No starred cards yet. Tap a star beside a word to add it here.
+            </p>
+          )}
+          {rows.map(({ card, index }) => {
+            const isStarred = starredCardIds.has(card.id);
+            return (
+              <div key={card.id} className="card-list-row">
+                <span className="card-list-index">{index + 1}</span>
+                <span className="card-list-term">{card.term}</span>
+                <span className="card-list-def">{card.definition}</span>
+                <button
+                  className={`card-list-star${isStarred ? " starred" : ""}`}
+                  onClick={() => onToggleStar(card.id)}
+                  title={isStarred ? "Remove from starred" : "Add to starred"}
+                  aria-label={`${isStarred ? "Remove" : "Add"} ${card.term} ${isStarred ? "from" : "to"} starred`}
+                  aria-pressed={isStarred}
+                >
+                  <Icon name="star" size={16} filled={isStarred} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       </section>
     </div>

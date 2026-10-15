@@ -8,6 +8,7 @@ const PATHS = {
   home: "M3 10.5 12 3l9 7.5M5 9v11h5v-6h4v6h5V9",
   decks: "M12 3 2 8l10 5 10-5-10-5ZM2 13l10 5 10-5M2 17.5l10 5 10-5",
   pin: "M9 3h6l-1 6 4 4H6l4-4-1-6ZM12 13v8",
+  star: "M12 3l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9L12 3Z",
   shuffle: "M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5",
   check: "M20 6 9 17l-5-5",
   circle: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z",
@@ -29,21 +30,31 @@ const PATHS = {
   sortAsc: "M4 6h9M4 12h7M4 18h5M17 20V4M14 7l3-3 3 3",
   list: "M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01",
   copy: "M9 9h11v11H9zM5 15H4V4h11v1",
-  share: "M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM8.6 13.5l6.8 4M15.4 6.5l-6.8 4",
+  share:
+    "M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM8.6 13.5l6.8 4M15.4 6.5l-6.8 4",
   trash: "M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6",
   edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z",
 } as const;
 
 export type IconName = keyof typeof PATHS;
 
-export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
+export function Icon({
+  name,
+  size = 18,
+  filled = false,
+}: {
+  name: IconName;
+  size?: number;
+  /** Fills the shape with the current colour, e.g. a starred card's star. */
+  filled?: boolean;
+}) {
   return (
     <svg
       className="icon"
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill="none"
+      fill={filled ? "currentColor" : "none"}
       stroke="currentColor"
       strokeWidth={1.9}
       strokeLinecap="round"

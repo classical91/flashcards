@@ -99,6 +99,12 @@ type StudyViewProps = {
   onRestoreOrder: () => void;
   // Review session
   isReviewing: boolean;
+  // Starred cards
+  isStudyingStarred: boolean;
+  starredCount: number;
+  isCurrentStarred: boolean;
+  onToggleStar: (cardId: string) => void;
+  onStudyStarred: () => void;
   dueCount: number;
   newCount: number;
   /** How long until the next not-yet-ready card returns, e.g. "in 9 min". */
@@ -181,6 +187,11 @@ export function StudyView({
   onShuffle,
   onRestoreOrder,
   isReviewing,
+  isStudyingStarred,
+  starredCount,
+  isCurrentStarred,
+  onToggleStar,
+  onStudyStarred,
   dueCount,
   newCount,
   nextReviewLabel,
@@ -267,11 +278,22 @@ export function StudyView({
         </button>
         <div className="study-mode-toggle" role="group" aria-label="Study mode">
           <button
-            className={`study-mode-btn${!isReviewing ? " active" : ""}`}
-            aria-pressed={!isReviewing}
+            className={`study-mode-btn${!isReviewing && !isStudyingStarred ? " active" : ""}`}
+            aria-pressed={!isReviewing && !isStudyingStarred}
             onClick={onExitReview}
           >
             All
+          </button>
+          <button
+            className={`study-mode-btn study-mode-starred${isStudyingStarred ? " active" : ""}`}
+            aria-pressed={isStudyingStarred}
+            onClick={isStudyingStarred ? onExitReview : onStudyStarred}
+            disabled={isDeckEmpty}
+            title="Study only the cards you starred"
+          >
+            <Icon name="star" size={13} filled />
+            Starred
+            {starredCount > 0 && <span className="study-mode-count">{starredCount}</span>}
           </button>
           <button
             className={`study-mode-btn${isReviewing ? " active" : ""}`}
@@ -295,6 +317,15 @@ export function StudyView({
                 <h1 className="deck-study-title">{selectedDeck.title}</h1>
               </div>
               <section className="card-shell-new" aria-live="polite">
+                <button
+                  className={`card-star-btn${isCurrentStarred ? " starred" : ""}`}
+                  onClick={() => onToggleStar(currentCard.id)}
+                  title={isCurrentStarred ? "Remove from starred (*)" : "Add to starred (*)"}
+                  aria-label={isCurrentStarred ? "Remove from starred" : "Add to starred"}
+                  aria-pressed={isCurrentStarred}
+                >
+                  <Icon name="star" size={20} filled={isCurrentStarred} />
+                </button>
                 <article
                   className={`card-3d${activeProgress.isFlipped ? " flipped" : ""}`}
                   onClick={onFlip}
@@ -484,6 +515,19 @@ export function StudyView({
                     Edit list
                   </button>
                 )}
+              </div>
+            </div>
+          ) : isStudyingStarred ? (
+            <div className="state-card">
+              <h3>No starred cards yet</h3>
+              <p>
+                Tap the star in the corner of a card, or beside a word in View all, to add it
+                here.
+              </p>
+              <div className="state-card-actions">
+                <button className="mini-btn" onClick={onExitReview}>
+                  Back to the full deck
+                </button>
               </div>
             </div>
           ) : (

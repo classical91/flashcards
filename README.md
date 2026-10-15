@@ -17,12 +17,17 @@ This repository is a Vite React app with a small Node API server for cloud libra
   - `Left` / `Right`: previous/next card
   - `K`: mark/unmark current card as known
   - `S`: shuffle current deck for this session
+  - `*`: star/unstar the current card
   - `1`–`4`: grade the current card during a review session (Again/Hard/Good/Easy)
 - Track progress per deck:
   - known card count
   - remaining card count
   - progress meter
   - optional “Only remaining” study mode
+- Star cards with the gold star in the card's corner or beside each word in
+  **View all**. Stars sync with the library and survive a progress reset.
+  The **Starred** tab in the study view studies only starred cards, and
+  View all can filter to just the starred list.
 - Study with spaced repetition:
   - grade a card Again / Hard / Good / Easy; each button shows when the card
     would next come back
