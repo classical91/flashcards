@@ -90,10 +90,18 @@ export const createDeckProgress = (deck: Deck): DeckProgress => ({
  * seen marked as known. Otherwise a remote-only mark has the sole per-card
  * timestamp and wins the next merge.
  */
-export const resetDeckProgress = (deck: Deck, now = Date.now()): DeckProgress => ({
+export const resetDeckProgress = (
+  deck: Deck,
+  now = Date.now(),
+  previous?: DeckProgress,
+): DeckProgress => ({
   ...createDeckProgress(deck),
   knownUpdatedAt: Object.fromEntries(deck.cards.map((card) => [card.id, now])),
   resetAt: now,
+  // Stars are the user's own picks, not study progress, so a reset keeps them.
+  ...(previous?.starredIds || previous?.starredUpdatedAt
+    ? { starredIds: previous.starredIds ?? [], starredUpdatedAt: previous.starredUpdatedAt ?? {} }
+    : {}),
 });
 
 export const buildProgressState = (sections: DeckSection[]) =>
@@ -155,3 +163,19 @@ export const touchKnownCard = (
   ...progress,
   knownUpdatedAt: { ...(progress.knownUpdatedAt ?? {}), [cardId]: now },
 });
+
+/** Stars or unstars a card, stamping the change so it merges per card. */
+export const toggleStarredCard = (
+  progress: DeckProgress,
+  cardId: string,
+  now = Date.now(),
+): DeckProgress => {
+  const starred = progress.starredIds ?? [];
+  return {
+    ...progress,
+    starredIds: starred.includes(cardId)
+      ? starred.filter((id) => id !== cardId)
+      : [...starred, cardId],
+    starredUpdatedAt: { ...(progress.starredUpdatedAt ?? {}), [cardId]: now },
+  };
+};

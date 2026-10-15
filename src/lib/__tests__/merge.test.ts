@@ -619,3 +619,43 @@ describe("mergeLibraryState — a re-created deck id", () => {
     ]);
   });
 });
+
+describe("mergeLibraryState — starred cards", () => {
+  it("keeps stars added on two devices for different cards", () => {
+    const local = state({
+      librarySections: [section("topic", [deck("d1", ["a", "b", "c"])])],
+      deckProgress: { d1: progress({ starredIds: ["a"], starredUpdatedAt: { a: NOW } }) },
+    });
+    const remote = state({
+      librarySections: [section("topic", [deck("d1", ["a", "b", "c"])])],
+      deckProgress: { d1: progress({ starredIds: ["b"], starredUpdatedAt: { b: NOW - 10 } }) },
+    });
+
+    expect(mergeLibraryState(local, remote, NOW).deckProgress.d1.starredIds?.sort()).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("does not bring back a star removed on the newer device", () => {
+    const local = state({
+      librarySections: [section("topic", [deck("d1", ["a"])])],
+      deckProgress: { d1: progress({ starredIds: [], starredUpdatedAt: { a: NOW } }) },
+    });
+    const remote = state({
+      librarySections: [section("topic", [deck("d1", ["a"])])],
+      deckProgress: { d1: progress({ starredIds: ["a"], starredUpdatedAt: { a: NOW - 10 } }) },
+    });
+
+    expect(mergeLibraryState(local, remote, NOW).deckProgress.d1.starredIds).toEqual([]);
+  });
+
+  it("leaves star fields off decks nobody has starred", () => {
+    const local = state({
+      librarySections: [section("topic", [deck("d1", ["a"])])],
+      deckProgress: { d1: progress() },
+    });
+
+    expect(mergeLibraryState(local, local, NOW).deckProgress.d1).not.toHaveProperty("starredIds");
+  });
+});

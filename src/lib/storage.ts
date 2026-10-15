@@ -102,6 +102,9 @@ export const loadProgressState = (sections: DeckSection[]) => {
           ...progress,
           currentCardId: cardIdMap.get(progress.currentCardId) ?? progress.currentCardId,
           knownIds: progress.knownIds.map((id) => cardIdMap.get(id) ?? id),
+          ...(progress.starredIds
+            ? { starredIds: progress.starredIds.map((id) => cardIdMap.get(id) ?? id) }
+            : {}),
           reviews: Object.fromEntries(
             Object.entries(parseReviews(progress.reviews)).map(([cardId, state]) => [
               cardIdMap.get(cardId) ?? cardId,

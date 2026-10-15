@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { applyStudyOrder, shuffleCards, sortDecksByLastViewed } from "../deckUtils";
+import {
+  applyStudyOrder,
+  createDeckProgress,
+  resetDeckProgress,
+  shuffleCards,
+  sortDecksByLastViewed,
+  toggleStarredCard,
+} from "../deckUtils";
 
 const decks = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
 
@@ -72,5 +79,35 @@ describe("applyStudyOrder", () => {
     const order = shuffleCards(deckCards).map((card) => card.id);
     expect(order.slice().sort()).toEqual(["a", "b", "c"]);
     expect(deckCards).toEqual(cards);
+  });
+});
+
+describe("starred cards", () => {
+  const starDeck = {
+    id: "d1",
+    title: "d1",
+    subtitle: "",
+    cards: [
+      { id: "a", term: "a", definition: "a" },
+      { id: "b", term: "b", definition: "b" },
+    ],
+  };
+
+  it("stars and unstars a card, stamping each change", () => {
+    const starred = toggleStarredCard(createDeckProgress(starDeck), "a", 100);
+    expect(starred.starredIds).toEqual(["a"]);
+    expect(starred.starredUpdatedAt).toEqual({ a: 100 });
+
+    const unstarred = toggleStarredCard(starred, "a", 200);
+    expect(unstarred.starredIds).toEqual([]);
+    expect(unstarred.starredUpdatedAt).toEqual({ a: 200 });
+  });
+
+  it("keeps stars through a progress reset", () => {
+    const starred = toggleStarredCard(createDeckProgress(starDeck), "b", 100);
+    const reset = resetDeckProgress(starDeck, 500, starred);
+    expect(reset.starredIds).toEqual(["b"]);
+    expect(reset.starredUpdatedAt).toEqual({ b: 100 });
+    expect(reset.resetAt).toBe(500);
   });
 });

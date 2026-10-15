@@ -24,6 +24,7 @@ import {
 import {
   createDeckProgress,
   resetDeckProgress,
+  toggleStarredCard,
   findDeckById,
   findSectionForDeck,
   applyStudyOrder,
@@ -185,6 +186,8 @@ export default function App() {
   // is measured against; it ticks while a session is running so a card put off
   // for ten minutes reappears when those ten minutes are actually up.
   const [reviewDeckId, setReviewDeckId] = useState<string | null>(null);
+  // Studying only the starred cards is a session view too, like review.
+  const [starredDeckId, setStarredDeckId] = useState<string | null>(null);
   const [reviewNow, setReviewNow] = useState(() => Date.now());
   const [tombstones, setTombstones] = useState(loadTombstones);
   const [preferencesUpdatedAt, setPreferencesUpdatedAt] = useState(loadPreferencesUpdatedAt);
@@ -272,6 +275,9 @@ export default function App() {
 
   const isShuffled = !!selectedDeck && studyOrder?.deckId === selectedDeck.id;
   const isReviewing = !!selectedDeck && reviewDeckId === selectedDeck.id;
+  const isStudyingStarred = !!selectedDeck && starredDeckId === selectedDeck.id && !isReviewing;
+  const starredIds = activeProgress?.starredIds;
+  const starredCardIds = useMemo(() => new Set(starredIds ?? []), [starredIds]);
 
   const orderedCards = useMemo(
     () =>
@@ -285,8 +291,11 @@ export default function App() {
     if (isReviewing) {
       return buildReviewQueue(orderedCards, activeProgress?.reviews, reviewNow);
     }
+    if (isStudyingStarred) {
+      return orderedCards.filter((card) => starredCardIds.has(card.id));
+    }
     return orderedCards;
-  }, [orderedCards, activeProgress?.reviews, isReviewing, reviewNow]);
+  }, [orderedCards, activeProgress?.reviews, isReviewing, reviewNow, isStudyingStarred, starredCardIds]);
 
   const deckReviewCounts = useMemo(
     () =>
@@ -477,9 +486,43 @@ export default function App() {
     if (!targetDeckId) return;
     setReviewNow(Date.now());
     setReviewDeckId(targetDeckId);
+    setStarredDeckId(null);
   };
 
-  const handleExitReview = () => setReviewDeckId(null);
+  const handleExitReview = () => {
+    setReviewDeckId(null);
+    setStarredDeckId(null);
+  };
+
+  const handleStudyStarred = () => {
+    if (!selectedDeck) return;
+    setReviewDeckId(null);
+    setStarredDeckId(selectedDeck.id);
+    const firstStarred = orderedCards.find((card) => starredCardIds.has(card.id));
+    if (firstStarred && !starredCardIds.has(activeProgress?.currentCardId ?? "")) {
+      updateSelectedDeckProgress(
+        (progress) => ({ ...progress, currentCardId: firstStarred.id, isFlipped: false }),
+        { position: true },
+      );
+    }
+  };
+
+  const handleToggleStar = (cardId: string) => {
+    if (!selectedDeck) return;
+    const wasStarred = starredCardIds.has(cardId);
+    // Unstarring the card in front of you in the starred view drops it from
+    // the list, so move on to the next one rather than back to the start.
+    const unstarringCurrent = isStudyingStarred && wasStarred && cardId === currentCard?.id;
+    const remaining = visibleCards.filter((card) => card.id !== cardId);
+    const nextCard = remaining[cardPosition] ?? remaining[0] ?? null;
+    updateSelectedDeckProgress((progress) => {
+      const toggled = toggleStarredCard(progress, cardId);
+      return unstarringCurrent
+        ? { ...toggled, currentCardId: nextCard?.id ?? progress.currentCardId, isFlipped: false }
+        : toggled;
+    });
+    setToast(wasStarred ? "Removed from starred." : "Added to starred.");
+  };
 
   const handleGrade = (grade: ReviewGrade) => {
     if (!currentCard || !selectedDeck) return;
@@ -518,9 +561,9 @@ export default function App() {
       updateSelectedDeckProgress(
         // Back to the first card in the order being studied: on a shuffled
         // deck the deck's own first card sits somewhere in the middle.
-        () => ({
-          ...resetDeckProgress(selectedDeck, now),
-          currentCardId: orderedCards[0]?.id ?? "",
+        (progress) => ({
+          ...resetDeckProgress(selectedDeck, now, progress),
+          currentCardId: (isStudyingStarred ? visibleCards : orderedCards)[0]?.id ?? "",
         }),
         { position: true },
       );
@@ -1063,6 +1106,7 @@ export default function App() {
         const knownStampEntries = Object.entries(savedKnownStamps).filter(([cardId]) =>
           validCardIds.has(cardId),
         );
+        const starredIds = savedProgress.starredIds?.filter((id) => validCardIds.has(id));
         const currentCardId = validCardIds.has(savedProgress.currentCardId)
           ? savedProgress.currentCardId
           : (deck.cards[0]?.id ?? "");
@@ -1072,7 +1116,8 @@ export default function App() {
           isFlipped === savedProgress.isFlipped &&
           knownIds.length === savedProgress.knownIds.length &&
           reviewEntries.length === Object.keys(savedReviews).length &&
-          knownStampEntries.length === Object.keys(savedKnownStamps).length
+          knownStampEntries.length === Object.keys(savedKnownStamps).length &&
+          starredIds?.length === savedProgress.starredIds?.length
         ) {
           nextProgress[deck.id] = savedProgress;
           return;
@@ -1085,6 +1130,7 @@ export default function App() {
           knownIds,
           reviews: Object.fromEntries(reviewEntries),
           knownUpdatedAt: Object.fromEntries(knownStampEntries),
+          ...(starredIds ? { starredIds } : {}),
         };
       });
       return changed ? nextProgress : currentProgress;
@@ -1176,6 +1222,9 @@ export default function App() {
     onNext: () => moveToCard(1),
     onPrev: () => moveToCard(-1),
     onShuffle: handleShuffle,
+    onStar: () => {
+      if (currentCard) handleToggleStar(currentCard.id);
+    },
     onGrade: isReviewing ? handleGrade : null,
   });
 
@@ -1431,6 +1480,11 @@ export default function App() {
         onShuffle={handleShuffle}
         onRestoreOrder={handleRestoreOrder}
         isReviewing={isReviewing}
+        isStudyingStarred={isStudyingStarred}
+        starredCount={starredCardIds.size}
+        isCurrentStarred={!!currentCard && starredCardIds.has(currentCard.id)}
+        onToggleStar={handleToggleStar}
+        onStudyStarred={handleStudyStarred}
         dueCount={deckReviewCounts.due}
         newCount={deckReviewCounts.newCards}
         nextReviewLabel={nextReviewLabel}
@@ -1456,6 +1510,12 @@ export default function App() {
       <CardListOverlay
         show={showCardList}
         selectedDeck={selectedDeck}
+        starredCardIds={starredCardIds}
+        onToggleStar={handleToggleStar}
+        onStudyStarred={() => {
+          handleStudyStarred();
+          setShowCardList(false);
+        }}
         onClose={() => setShowCardList(false)}
       />
     </>

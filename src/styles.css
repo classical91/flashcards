@@ -13,6 +13,9 @@
   --accent-hover: #1d4ed8;
   --on-accent: #ffffff;
 
+  /* Gold for starred cards: the one colour that stays put across accents */
+  --star: #d99a00;
+
   /* Untinted neutrals the accent gets mixed into */
   --bg-base: #f5f6f7;
   --surface-base: #ffffff;
@@ -71,6 +74,8 @@
   --accent-rgb: 110, 168, 254;
   --accent-hover: #9cc4ff;
   --on-accent: #0b0f17;
+
+  --star: #f5c542;
 
   --bg-base: #0c0e12;
   --surface-base: #171a20;
@@ -1188,6 +1193,14 @@ button {
   color: var(--on-accent);
 }
 
+.study-mode-starred .icon {
+  color: var(--star);
+}
+
+.study-mode-starred.active .icon {
+  color: var(--on-accent);
+}
+
 /* Stage */
 
 .stage {
@@ -1228,6 +1241,7 @@ button {
 
 /* 3-D flip card */
 .card-shell-new {
+  position: relative;
   perspective: 1400px;
   width: 100%;
   height: clamp(240px, 42svh, 380px);
@@ -2079,6 +2093,41 @@ button {
   }
 }
 
+/* Gold star in the card's corner. It sits outside the flipping card so it
+   stays in the same spot on both sides and never flips the card itself. */
+.card-star-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    background 150ms ease,
+    transform 150ms ease;
+}
+
+.card-star-btn:hover {
+  background: color-mix(in srgb, var(--star) 14%, transparent);
+  color: var(--star);
+}
+
+.card-star-btn.starred {
+  color: var(--star);
+}
+
+.card-star-btn:active {
+  transform: scale(0.9);
+}
+
 /* ── Card list modal ──────────────────────────────────────────────────────── */
 
 .card-list-modal {
@@ -2097,9 +2146,81 @@ button {
   border-radius: 10px;
 }
 
+.card-list-filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.card-list-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+}
+
+.card-list-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--muted);
+}
+
+.card-list-tab .icon {
+  color: var(--star);
+}
+
+.card-list-tab.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.card-list-tab.active .icon {
+  color: var(--on-accent);
+}
+
+.card-list-empty {
+  margin: 0;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.card-list-star {
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.card-list-star:hover {
+  color: var(--star);
+}
+
+.card-list-star.starred {
+  color: var(--star);
+}
+
 .card-list-row {
   display: grid;
-  grid-template-columns: 28px 1fr 2fr;
+  grid-template-columns: 28px 1fr 2fr 28px;
   gap: 8px;
   align-items: baseline;
   padding: 8px 12px;
@@ -2178,7 +2299,7 @@ button {
 
   .study-topbar .study-mode-toggle {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .study-topbar .study-mode-btn {
