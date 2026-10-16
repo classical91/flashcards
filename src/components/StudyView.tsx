@@ -573,6 +573,15 @@ export function StudyView({
               <div className="bottom-bar deck-tools-grid">
                 <button
                   className="deck-tool-btn"
+                  onClick={() => setShowCardList(true)}
+                  disabled={isDeckEmpty}
+                  title={toolNoun ? "View the starred cards" : "View all cards"}
+                >
+                  <Icon name="list" size={16} />
+                  <span>{toolNoun ? "View starred" : "View all"}</span>
+                </button>
+                <button
+                  className="deck-tool-btn"
                   onClick={onExportDeck}
                   disabled={isDeckEmpty || !editorCards.length}
                   title={toolNoun ? "Copy the starred cards to the clipboard" : "Copy cards to the clipboard"}
@@ -606,15 +615,6 @@ export function StudyView({
                     <span>Unshuffle</span>
                   </button>
                 )}
-                <button
-                  className="deck-tool-btn"
-                  onClick={() => setShowCardList(true)}
-                  disabled={isDeckEmpty}
-                  title={toolNoun ? "View the starred cards" : "View all cards"}
-                >
-                  <Icon name="list" size={16} />
-                  <span>{toolNoun ? "View starred" : "View all"}</span>
-                </button>
                 <button
                   className="deck-tool-btn"
                   onClick={onShareDeck}

@@ -115,6 +115,7 @@ import { StudyView } from "./components/StudyView";
 import { AUTOPLAY_SECONDS_OPTIONS } from "./lib/autoplay";
 import { loadSavedView, saveView } from "./lib/savedView";
 import { copyText } from "./lib/clipboard";
+import { Icon } from "./components/Icons";
 
 const AUTOPLAY_SECONDS_KEY = "flashcards.autoplaySeconds.v1";
 
@@ -170,6 +171,8 @@ export default function App() {
     "Flashcard = word on the front, definition on the back. Google/AI tools are separate for deeper understanding.",
   );
   const [aiModal, setAiModal] = useState<AiModal>(null);
+  const [copiedPopup, setCopiedPopup] = useState("");
+  const copiedPopupTimer = useRef<number | undefined>(undefined);
   const [wordInput, setWordInput] = useState("");
   const [defInput, setDefInput] = useState("");
   const [pinnedDeckIds, setPinnedDeckIds] = useState<string[]>(loadPinnedDeckIds);
@@ -830,12 +833,21 @@ export default function App() {
     setToast("Deck updated.");
   };
 
+  const showCopiedPopup = (message: string) => {
+    window.clearTimeout(copiedPopupTimer.current);
+    setCopiedPopup(message);
+    copiedPopupTimer.current = window.setTimeout(() => setCopiedPopup(""), 1800);
+  };
+
+  useEffect(() => () => window.clearTimeout(copiedPopupTimer.current), []);
+
   const handleExportDeck = async () => {
     if (!selectedDeck) return;
     const lines = toolCards.map((card) => `${card.term}\t${card.definition}`);
     const content = lines.join("\n");
     try {
       await copyText(content);
+      showCopiedPopup(`Copied ${toolCards.length} card${toolCards.length === 1 ? "" : "s"}`);
       setToast(
         `Copied ${toolCards.length}${isStudyingStarred ? " starred" : ""} card${toolCards.length === 1 ? "" : "s"} from "${selectedDeck.title}" to clipboard.`,
       );
@@ -1354,6 +1366,12 @@ export default function App() {
 
   const globalOverlays = (
     <>
+      {copiedPopup && (
+        <div className="copied-popup" role="status" aria-live="polite">
+          <Icon name="check" size={18} />
+          <span>{copiedPopup}</span>
+        </div>
+      )}
       <ConfirmOverlay confirmDialog={confirmDialog} onCancel={() => setConfirmDialog(null)} />
       <SharedDeckOverlay
         sharedDeckLink={sharedDeckLink}
