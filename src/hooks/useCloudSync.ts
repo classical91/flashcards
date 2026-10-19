@@ -38,6 +38,14 @@ export type CloudSync = {
   onGenerateSyncKey: () => void;
   onLoadFromCloud: () => void;
   onSaveToCloud: () => void;
+  /** The sync key whose cloud library this device is connected to, if any. */
+  connectedSyncKey: string | null;
+  /**
+   * Bumps on every successful load or save, so things that read from the
+   * cloud alongside the library (the Card of the Day) know when the cloud has
+   * caught up with this device.
+   */
+  syncGeneration: number;
 };
 
 const toSnapshot = (state: LibraryState, selectedDeckId: string): LibrarySnapshot =>
@@ -68,12 +76,19 @@ export function useCloudSync({
 }: UseCloudSyncOptions): CloudSync {
   const [syncKey, setSyncKey] = useState(loadSyncKey);
   const [syncKeyInput, setSyncKeyInput] = useState(loadSyncKey);
-  const [syncState, setSyncState] = useState<SyncState>("idle");
+  // A device with a key starts out connecting — the effect below begins at
+  // once — so the very first render already says so rather than "idle". The
+  // Card of the Day reads this to avoid flashing a pick the cloud will replace.
+  const [syncState, setSyncState] = useState<SyncState>(() =>
+    isSyncKeyValid(syncKey) ? "loading" : "idle",
+  );
   const [syncMessage, setSyncMessage] = useState(
     "Cloud sync uses this private key. Anyone with the key can access or edit this cloud library.",
   );
 
   const cloudSyncReadyRef = useRef(false);
+  const [connectedSyncKey, setConnectedSyncKey] = useState<string | null>(null);
+  const [syncGeneration, setSyncGeneration] = useState(0);
   const cloudSyncLoadKeyRef = useRef("");
   const cloudRevisionRef = useRef<number | null>(null);
 
@@ -85,6 +100,14 @@ export function useCloudSync({
   selectedDeckIdRef.current = selectedDeckId;
   const applyMergedStateRef = useRef(applyMergedState);
   applyMergedStateRef.current = applyMergedState;
+
+  // The ref gates auto-save without re-rendering; the state lets the app see
+  // which library it is connected to. They change together.
+  const setCloudSyncReady = (readyKey: string | null) => {
+    cloudSyncReadyRef.current = readyKey !== null;
+    setConnectedSyncKey(readyKey);
+  };
+  const markSynced = () => setSyncGeneration((generation) => generation + 1);
 
   const mergeRemoteSnapshot = (remoteSnapshot: LibrarySnapshot, preferRemoteSelection: boolean) => {
     const merged = mergeLibraryState(libraryStateRef.current, toLibraryState(remoteSnapshot));
@@ -124,21 +147,21 @@ export function useCloudSync({
   };
 
   const onSyncKeyInputChange = (value: string) => {
-    cloudSyncReadyRef.current = false;
+    setCloudSyncReady(null);
     setSyncKeyInput(value);
   };
 
   const onApplySyncKey = () => {
     const nextSyncKey = normalizeSyncKey(syncKeyInput);
     if (!isSyncKeyValid(nextSyncKey)) {
-      cloudSyncReadyRef.current = false;
+      setCloudSyncReady(null);
       setSyncState("error");
       setSyncMessage(
         "Sync keys must be 8-120 characters and use only letters, numbers, hyphens, or underscores.",
       );
       return;
     }
-    cloudSyncReadyRef.current = false;
+    setCloudSyncReady(null);
     setSyncKey(nextSyncKey);
     setSyncKeyInput(nextSyncKey);
     setSyncState("saved");
@@ -147,7 +170,7 @@ export function useCloudSync({
 
   const onGenerateSyncKey = () => {
     const nextSyncKey = createSyncKey();
-    cloudSyncReadyRef.current = false;
+    setCloudSyncReady(null);
     setSyncKey(nextSyncKey);
     setSyncKeyInput(nextSyncKey);
     setSyncState("saved");
@@ -161,7 +184,7 @@ export function useCloudSync({
       setSyncMessage("Enter a valid sync key before loading from cloud.");
       return;
     }
-    cloudSyncReadyRef.current = false;
+    setCloudSyncReady(null);
     setSyncState("loading");
     setSyncMessage("Loading cloud library...");
     try {
@@ -180,7 +203,8 @@ export function useCloudSync({
       mergeRemoteSnapshot(snapshot, true);
       setSyncKey(activeSyncKey);
       setSyncKeyInput(activeSyncKey);
-      cloudSyncReadyRef.current = true;
+      setCloudSyncReady(activeSyncKey);
+      markSynced();
       setSyncState("saved");
       setSyncMessage("Merged the cloud library with this device. New changes will auto-save.");
     } catch (error) {
@@ -202,8 +226,9 @@ export function useCloudSync({
       const result = await saveWithConflictResolution(activeSyncKey);
       setSyncKey(activeSyncKey);
       setSyncKeyInput(activeSyncKey);
-      cloudSyncReadyRef.current = true;
+      setCloudSyncReady(activeSyncKey);
       if (result.resolved) {
+        markSynced();
         setSyncState("saved");
         setSyncMessage("Saved to cloud. Use this key on your phone or PC and load cloud.");
       } else {
@@ -227,7 +252,7 @@ export function useCloudSync({
   useEffect(() => {
     if (!syncKey || cloudSyncLoadKeyRef.current === syncKey) return;
     cloudSyncLoadKeyRef.current = syncKey;
-    cloudSyncReadyRef.current = false;
+    setCloudSyncReady(null);
     cloudRevisionRef.current = null;
     setSyncState("loading");
     setSyncMessage("Connecting this device to cloud...");
@@ -235,7 +260,7 @@ export function useCloudSync({
       .then((payload) => {
         if (!payload.exists) {
           cloudRevisionRef.current = 0;
-          cloudSyncReadyRef.current = false;
+          setCloudSyncReady(null);
           setSyncState("idle");
           setSyncMessage("This private key has no cloud library yet. Save to cloud when ready.");
           return;
@@ -244,7 +269,8 @@ export function useCloudSync({
         if (!snapshot) throw new Error("The cloud library was not in the expected format.");
         cloudRevisionRef.current = typeof payload.revision === "number" ? payload.revision : null;
         mergeRemoteSnapshot(snapshot, false);
-        cloudSyncReadyRef.current = true;
+        setCloudSyncReady(syncKey);
+        markSynced();
         setSyncState("saved");
         setSyncMessage("Cloud sync is active on this device. Changes will auto-save.");
       })
@@ -263,6 +289,7 @@ export function useCloudSync({
       saveWithConflictResolution(syncKey)
         .then((result) => {
           if (result.resolved) {
+            markSynced();
             setSyncState("saved");
             setSyncMessage("Cloud sync is up to date.");
           } else {
@@ -286,5 +313,7 @@ export function useCloudSync({
     onGenerateSyncKey,
     onLoadFromCloud,
     onSaveToCloud,
+    connectedSyncKey,
+    syncGeneration,
   };
 }

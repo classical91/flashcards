@@ -61,10 +61,9 @@ import {
   readBackup,
   serializeBackup,
 } from "./lib/backup";
-import { DailyCardRef, pickDailyCard, toDateKey } from "./lib/dailyCard";
+import { toDateKey } from "./lib/dailyCard";
 import {
   loadAccentColor,
-  loadDailyCard,
   loadDeckLastViewed,
   loadLibrarySections,
   loadPinnedDeckIds,
@@ -100,6 +99,7 @@ import {
   importSharedDeck,
 } from "./lib/share";
 import { useCloudSync } from "./hooks/useCloudSync";
+import { useDailyCard } from "./hooks/useDailyCard";
 import { useDebouncedPersist } from "./hooks/useDebouncedPersist";
 import { useStudyKeyboard } from "./hooks/useStudyKeyboard";
 import {
@@ -181,7 +181,6 @@ export default function App() {
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [accentColor, setAccentColor] = useState<AccentColor>(loadAccentColor);
-  const [dailyCardRef, setDailyCardRef] = useState<DailyCardRef | null>(loadDailyCard);
   const [todayKey, setTodayKey] = useState(() => toDateKey(new Date()));
   // Session-only: a shuffle is a way to study, not an edit to the deck, so it
   // is deliberately never persisted or synced. Keyed by deck so returning to a
@@ -386,15 +385,14 @@ export default function App() {
     // todayKey rolls the counts over at midnight on a tab left open overnight.
   }, [librarySections, deckProgress, todayKey]);
 
-  // The picked card is stored by id, so resolve it against the live library —
-  // that way a deck deleted mid-day just retires the pick instead of dangling.
-  const dailyCard = useMemo(() => {
-    if (!dailyCardRef || dailyCardRef.dateKey !== todayKey) return null;
-    const deck = findDeckById(librarySections, dailyCardRef.deckId);
-    const card = deck?.cards.find((c) => c.id === dailyCardRef.cardId);
-    if (!deck || !card) return null;
-    return { deck, card, section: findSectionForDeck(librarySections, deck.id) };
-  }, [dailyCardRef, todayKey, librarySections]);
+  const { dailyCard, dailyCardRef } = useDailyCard({
+    librarySections,
+    deckProgress,
+    todayKey,
+    connectedSyncKey: cloudSync.connectedSyncKey,
+    syncGeneration: cloudSync.syncGeneration,
+    isConnecting: cloudSync.syncState === "loading",
+  });
 
   // Only runs during a review session, and only often enough that a ten-minute
   // step feels prompt without re-rendering the card every second.
@@ -414,14 +412,6 @@ export default function App() {
     }, 60_000);
     return () => window.clearInterval(timer);
   }, []);
-
-  // Picks once per day and then leaves it alone: the effect exits early as
-  // soon as the stored pick resolves, so marking it known won't reroll it.
-  useEffect(() => {
-    if (dailyCard) return;
-    const next = pickDailyCard(librarySections, deckProgress, todayKey);
-    if (next) setDailyCardRef(next);
-  }, [dailyCard, librarySections, deckProgress, todayKey]);
 
   const deckImportPreview = useMemo(
     () =>

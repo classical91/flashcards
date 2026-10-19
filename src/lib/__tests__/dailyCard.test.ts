@@ -1,12 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { DeckSection } from "../../data/deckBuilder";
 import { DeckProgress } from "../../data/librarySnapshot";
-import { parseDailyCard, pickDailyCard, toDateKey } from "../dailyCard";
+import {
+  dailyCardExists,
+  isConfirmedFor,
+  parseCanonicalDailyCard,
+  parseDailyCard,
+  pickDailyCard,
+  reconcileDailyCard,
+  toDateKey,
+} from "../dailyCard";
 // The server's copy of this rule, checked against the app's at the bottom of
 // this file. See the header of server-daily-card.mjs for why a copy exists.
 import {
+  type DailyCardStore,
+  type StoredDailyCard,
+  isCanonicalDateKey,
+  oldestCanonicalDateKey,
   parseDateKey as serverParseDateKey,
   pickDailyCard as serverPickDailyCard,
+  resolveCanonicalDailyCard,
   resolveDailyCard as serverResolveDailyCard,
   toDateKey as serverToDateKey,
 } from "../../../server-daily-card.mjs";
@@ -115,6 +128,14 @@ describe("parseDailyCard", () => {
     expect(parseDailyCard(ref)).toEqual(ref);
   });
 
+  it("keeps the cloud's confirmation, and nothing that merely looks like one", () => {
+    const ref = { dateKey: "2026-07-27", deckId: "deck-1", cardId: "c1" };
+    expect(parseDailyCard({ ...ref, confirmed: true })).toEqual({ ...ref, confirmed: true });
+    expect(parseDailyCard({ ...ref, confirmed: "yes" })).toEqual(ref);
+    // A pin saved before the canonical pick existed loads as unconfirmed.
+    expect(parseDailyCard(ref)?.confirmed).toBeUndefined();
+  });
+
   it("rejects malformed or missing values", () => {
     expect(parseDailyCard(null)).toBeNull();
     expect(parseDailyCard("nope")).toBeNull();
@@ -207,5 +228,226 @@ describe("resolveDailyCard", () => {
   it("survives a snapshot with nothing in it", () => {
     expect(serverResolveDailyCard({}, "2026-07-27")).toBeNull();
     expect(serverResolveDailyCard({ librarySections: [] }, "2026-07-27")).toBeNull();
+  });
+});
+
+// ── Canonical Card of the Day ───────────────────────────────────────────────
+//
+// The bug these cover: the app pinned its pick in one browser's localStorage,
+// while the server re-ran pickDailyCard on every request against whatever was
+// known by then. Mark the day's card known and the two disagreed — and every
+// device that picked before its cloud merge landed could disagree too.
+
+/** The server's selection storage, as a Map with the same compare-and-swap. */
+const memoryStore = () => {
+  const rows = new Map<string, StoredDailyCard>();
+  let writes = 0;
+  const store: DailyCardStore = {
+    get: async (dateKey) => rows.get(dateKey) ?? null,
+    claim: async (dateKey, expected, next) => {
+      const current = rows.get(dateKey) ?? null;
+      const matches = expected
+        ? current?.deckId === expected.deckId && current?.cardId === expected.cardId
+        : current === null;
+      if (matches) {
+        rows.set(dateKey, next);
+        writes += 1;
+      }
+      return rows.get(dateKey) ?? null;
+    },
+  };
+  return { store, rows, writes: () => writes };
+};
+
+const snapshotOf = (
+  librarySections: DeckSection[],
+  knownByDeck: Record<string, string[]> = {},
+) => ({
+  librarySections,
+  deckProgress: progress(knownByDeck),
+});
+
+const markKnown = (cardId: string) => {
+  const deck = sections.flatMap((s) => s.decks).find((d) => d.cards.some((c) => c.id === cardId));
+  return { [deck!.id]: [cardId] };
+};
+
+describe("resolveCanonicalDailyCard", () => {
+  const day = "2026-10-19";
+
+  it("reproduces the original mismatch with the fresh pick", () => {
+    // The old server behaviour, kept here as the regression's baseline: the
+    // fresh pick moves the moment the day's card is marked known.
+    const before = serverResolveDailyCard(snapshotOf(sections), day);
+    const after = serverResolveDailyCard(snapshotOf(sections, markKnown(before!.card.id)), day);
+    expect(after?.card.id).not.toBe(before?.card.id);
+  });
+
+  it("keeps the first pick after the day's card is marked known", async () => {
+    const { store } = memoryStore();
+    const first = await resolveCanonicalDailyCard(snapshotOf(sections), day, store);
+    expect(first?.card.id).toBe(pickDailyCard(sections, {}, day)?.cardId);
+
+    const known = snapshotOf(sections, markKnown(first!.card.id));
+    const again = await resolveCanonicalDailyCard(known, day, store);
+    expect(again?.card.id).toBe(first?.card.id);
+    expect(again?.deck.id).toBe(first?.deck.id);
+  });
+
+  it("keeps the first pick through unrelated progress", async () => {
+    const { store } = memoryStore();
+    const first = await resolveCanonicalDailyCard(snapshotOf(sections), day, store);
+    const others = ["c1", "c2", "c3", "c4"].filter((id) => id !== first?.card.id);
+    for (const id of others) {
+      const later = await resolveCanonicalDailyCard(
+        snapshotOf(sections, markKnown(id)),
+        day,
+        store,
+      );
+      expect(later?.card.id).toBe(first?.card.id);
+    }
+  });
+
+  it("settles two simultaneous first requests on one card", async () => {
+    const { store, writes } = memoryStore();
+    // The second device has already marked the first device's card known, so
+    // left to itself it would pick a different one.
+    const fresh = pickDailyCard(sections, {}, day)!;
+    const [a, b] = await Promise.all([
+      resolveCanonicalDailyCard(snapshotOf(sections), day, store),
+      resolveCanonicalDailyCard(snapshotOf(sections, markKnown(fresh.cardId)), day, store),
+    ]);
+    expect(a?.card.id).toBe(b?.card.id);
+    expect(writes()).toBe(1);
+  });
+
+  it("replaces a pick whose card was deleted, with a card that exists", async () => {
+    const { store, rows } = memoryStore();
+    const first = await resolveCanonicalDailyCard(snapshotOf(sections), day, store);
+    const without = sections.map((section) => ({
+      ...section,
+      decks: section.decks.map((deck) => ({
+        ...deck,
+        cards: deck.cards.filter((c) => c.id !== first?.card.id),
+      })),
+    }));
+
+    const replaced = await resolveCanonicalDailyCard(snapshotOf(without), day, store);
+    expect(replaced).not.toBeNull();
+    expect(replaced?.card.id).not.toBe(first?.card.id);
+    expect(dailyCardExists(without, { dateKey: day, ...rows.get(day)! })).toBe(true);
+
+    // And the replacement is now the day's card in turn.
+    const again = await resolveCanonicalDailyCard(snapshotOf(without), day, store);
+    expect(again?.card.id).toBe(replaced?.card.id);
+  });
+
+  it("shows a renamed deck under its new name", async () => {
+    const { store } = memoryStore();
+    const first = await resolveCanonicalDailyCard(snapshotOf(sections), day, store);
+    const renamed = sections.map((section) => ({
+      ...section,
+      decks: section.decks.map((deck) =>
+        deck.id === first?.deck.id ? { ...deck, title: "Renamed" } : deck,
+      ),
+    }));
+    const again = await resolveCanonicalDailyCard(snapshotOf(renamed), day, store);
+    expect(again?.card.id).toBe(first?.card.id);
+    expect(again?.deck.title).toBe("Renamed");
+  });
+
+  it("gives each day its own pick", async () => {
+    const { store, rows } = memoryStore();
+    await resolveCanonicalDailyCard(snapshotOf(sections), day, store);
+    const known = markKnown(rows.get(day)!.cardId);
+    const tomorrow = await resolveCanonicalDailyCard(
+      snapshotOf(sections, known),
+      "2026-10-20",
+      store,
+    );
+    expect(tomorrow?.card.id).toBe(pickDailyCard(sections, progress(known), "2026-10-20")?.cardId);
+    expect(rows.size).toBe(2);
+  });
+
+  it("stores nothing for an empty library", async () => {
+    const { store, writes } = memoryStore();
+    expect(await resolveCanonicalDailyCard(snapshotOf([]), day, store)).toBeNull();
+    expect(await resolveCanonicalDailyCard({}, day, store)).toBeNull();
+    expect(writes()).toBe(0);
+  });
+
+  it("never touches the snapshot it reads", async () => {
+    const { store } = memoryStore();
+    const snapshot = snapshotOf(sections, { "deck-1": ["c1"] });
+    const before = JSON.stringify(snapshot);
+    await resolveCanonicalDailyCard(snapshot, day, store);
+    expect(JSON.stringify(snapshot)).toBe(before);
+  });
+});
+
+describe("isCanonicalDateKey", () => {
+  const now = new Date(Date.UTC(2026, 9, 19, 12));
+
+  it("covers every time zone's today and no further", () => {
+    expect(isCanonicalDateKey("2026-10-19", now)).toBe(true);
+    expect(isCanonicalDateKey("2026-10-18", now)).toBe(true);
+    expect(isCanonicalDateKey("2026-10-21", now)).toBe(true);
+    expect(isCanonicalDateKey("2026-10-16", now)).toBe(false);
+    expect(isCanonicalDateKey("2026-10-22", now)).toBe(false);
+    expect(isCanonicalDateKey("2020-01-01", now)).toBe(false);
+  });
+
+  it("names the oldest day still kept, across a month boundary", () => {
+    expect(oldestCanonicalDateKey(now)).toBe("2026-10-17");
+    expect(oldestCanonicalDateKey(new Date(Date.UTC(2026, 2, 1, 3)))).toBe("2026-02-27");
+  });
+});
+
+describe("reconcileDailyCard", () => {
+  const legacy = { dateKey: "2026-10-19", deckId: "deck-1", cardId: "c1" };
+  const canonical = { dateKey: "2026-10-19", deckId: "deck-3", cardId: "c4", confirmed: true };
+
+  it("lets the cloud's pick replace a pin saved before it existed", () => {
+    expect(reconcileDailyCard(legacy, canonical, sections)).toEqual(canonical);
+    expect(isConfirmedFor(reconcileDailyCard(legacy, canonical, sections), "2026-10-19")).toBe(
+      true,
+    );
+  });
+
+  it("keeps the local pick when the cloud names a card this device lacks", () => {
+    const missing = { ...canonical, cardId: "gone" };
+    expect(reconcileDailyCard(legacy, missing, sections)).toEqual(legacy);
+  });
+
+  it("keeps the local pick when the cloud has no card", () => {
+    expect(reconcileDailyCard(legacy, null, sections)).toEqual(legacy);
+  });
+});
+
+describe("parseCanonicalDailyCard", () => {
+  const payload = {
+    exists: true,
+    dateKey: "2026-10-19",
+    card: { id: "c4", term: "t", definition: "d" },
+    deck: { id: "deck-3", title: "Deck 3", subtitle: "" },
+    section: { id: "topic-b", title: "Topic B" },
+  };
+
+  it("reads the endpoint's answer as a confirmed reference", () => {
+    expect(parseCanonicalDailyCard(payload, "2026-10-19")).toEqual({
+      dateKey: "2026-10-19",
+      deckId: "deck-3",
+      cardId: "c4",
+      confirmed: true,
+    });
+  });
+
+  it("ignores an answer for another day, an empty library or no library", () => {
+    expect(parseCanonicalDailyCard(payload, "2026-10-20")).toBeNull();
+    expect(parseCanonicalDailyCard({ ...payload, card: null }, "2026-10-19")).toBeNull();
+    expect(
+      parseCanonicalDailyCard({ exists: false, dateKey: "2026-10-19", card: null }, "2026-10-19"),
+    ).toBeNull();
+    expect(parseCanonicalDailyCard(null, "2026-10-19")).toBeNull();
   });
 });
