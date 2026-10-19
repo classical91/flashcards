@@ -4,7 +4,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 import handler from "serve-handler";
-import { parseDateKey, resolveDailyCard, toDateKey } from "./server-daily-card.mjs";
+import {
+  isCanonicalDateKey,
+  oldestCanonicalDateKey,
+  parseDateKey,
+  resolveCanonicalDailyCard,
+  resolveDailyCard,
+  toDateKey,
+} from "./server-daily-card.mjs";
 
 process.on("uncaughtException", (error) => {
   console.error("Uncaught exception (kept alive):", error);
@@ -50,6 +57,8 @@ const mayCreateLibrary = (libraryId) =>
   allowCustomLibraryIds || generatedLibraryIdPattern.test(libraryId);
 const memoryStore = new Map();
 const memorySharedDeckStore = new Map();
+// libraryId -> Map(dateKey -> { deckId, cardId }). See daily_card_selections.
+const memoryDailyCardStore = new Map();
 const adminToken = process.env.ADMIN_TOKEN?.trim() || "";
 const adminUsername = process.env.ADMIN_USERNAME?.trim() || "admin";
 const adminSessionCookie = "flashcards_admin_session";
@@ -90,6 +99,21 @@ const initializeDatabase = async () => {
   await activePool.query(`
     ALTER TABLE library_snapshots
     ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1
+  `);
+
+  // The canonical Card of the Day: one row per library per date, holding only
+  // which card was picked. Kept out of library_snapshots on purpose — writing it
+  // there would bump the library's revision and turn every device's next save
+  // into a conflict, all for a value no device edits.
+  await activePool.query(`
+    CREATE TABLE IF NOT EXISTS daily_card_selections (
+      library_id TEXT NOT NULL,
+      date_key TEXT NOT NULL,
+      deck_id TEXT NOT NULL,
+      card_id TEXT NOT NULL,
+      selected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (library_id, date_key)
+    )
   `);
 
   await activePool.query(`
@@ -769,6 +793,98 @@ const saveLibrarySnapshot = async (
   }
 };
 
+const getDailyCardSelectionFromMemory = (libraryId, dateKey) =>
+  memoryDailyCardStore.get(libraryId)?.get(dateKey) ?? null;
+
+const claimDailyCardSelectionInMemory = (libraryId, dateKey, expected, next) => {
+  let byDate = memoryDailyCardStore.get(libraryId);
+  if (!byDate) {
+    byDate = new Map();
+    memoryDailyCardStore.set(libraryId, byDate);
+  }
+  const current = byDate.get(dateKey) ?? null;
+  const matches = expected
+    ? current?.deckId === expected.deckId && current?.cardId === expected.cardId
+    : current === null;
+  if (!matches) return current;
+
+  const oldest = oldestCanonicalDateKey();
+  for (const storedDateKey of byDate.keys()) {
+    if (storedDateKey < oldest) byDate.delete(storedDateKey);
+  }
+  const stored = { deckId: next.deckId, cardId: next.cardId };
+  byDate.set(dateKey, stored);
+  return stored;
+};
+
+const getDailyCardSelection = async (libraryId, dateKey) => {
+  if (!pool) return getDailyCardSelectionFromMemory(libraryId, dateKey);
+
+  await databaseReady;
+
+  if (!pool) return getDailyCardSelectionFromMemory(libraryId, dateKey);
+
+  const result = await pool.query(
+    `
+      SELECT deck_id, card_id
+      FROM daily_card_selections
+      WHERE library_id = $1 AND date_key = $2
+    `,
+    [libraryId, dateKey],
+  );
+
+  if (!result.rowCount) return null;
+  return { deckId: result.rows[0].deck_id, cardId: result.rows[0].card_id };
+};
+
+/**
+ * Compare-and-swap on one library's pick for one date: writes `next` only if
+ * what is stored still equals `expected` (null meaning nothing is stored yet),
+ * then returns whatever is stored. Two first requests racing each other both
+ * come back with the same row — one wrote it, the other read it.
+ */
+const claimDailyCardSelection = async (libraryId, dateKey, expected, next) => {
+  if (!pool) return claimDailyCardSelectionInMemory(libraryId, dateKey, expected, next);
+
+  await databaseReady;
+
+  if (!pool) return claimDailyCardSelectionInMemory(libraryId, dateKey, expected, next);
+
+  const result = expected
+    ? await pool.query(
+        `
+          UPDATE daily_card_selections
+          SET deck_id = $3, card_id = $4, selected_at = NOW()
+          WHERE library_id = $1 AND date_key = $2 AND deck_id = $5 AND card_id = $6
+          RETURNING deck_id, card_id
+        `,
+        [libraryId, dateKey, next.deckId, next.cardId, expected.deckId, expected.cardId],
+      )
+    : await pool.query(
+        `
+          INSERT INTO daily_card_selections (library_id, date_key, deck_id, card_id)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (library_id, date_key) DO NOTHING
+          RETURNING deck_id, card_id
+        `,
+        [libraryId, dateKey, next.deckId, next.cardId],
+      );
+
+  if (!result.rowCount) return getDailyCardSelection(libraryId, dateKey);
+
+  if (!expected) {
+    // A new day's row is the moment to drop the days nobody can still be on.
+    await pool
+      .query(`DELETE FROM daily_card_selections WHERE library_id = $1 AND date_key < $2`, [
+        libraryId,
+        oldestCanonicalDateKey(),
+      ])
+      .catch((error) => console.error("Failed to prune old daily card picks", error));
+  }
+
+  return { deckId: result.rows[0].deck_id, cardId: result.rows[0].card_id };
+};
+
 const getSharedDeck = async (shareId) => {
   if (!pool) {
     return memorySharedDeckStore.get(shareId) ?? null;
@@ -1020,14 +1136,18 @@ const listLibrarySummaries = async (limit) => {
 
 const deleteLibrarySnapshot = async (libraryId) => {
   if (!pool) {
+    memoryDailyCardStore.delete(libraryId);
     return memoryStore.delete(libraryId);
   }
 
   await databaseReady;
 
   if (!pool) {
+    memoryDailyCardStore.delete(libraryId);
     return memoryStore.delete(libraryId);
   }
+
+  await pool.query(`DELETE FROM daily_card_selections WHERE library_id = $1`, [libraryId]);
 
   const result = await pool.query(
     `
@@ -1326,9 +1446,17 @@ const handleApiRequest = async (
   //
   // Main Hub's Daily Dashboard shows the same card the home screen leads with,
   // and it has no business holding the library to work it out. This route
-  // resolves the pick server-side from the snapshot already stored here and
   // returns the card, its deck and its topic — nothing else. The sync key is
   // still the credential, exactly as it is for GET on the library itself.
+  //
+  // It is also the one source of truth for which card that is. The first
+  // request for a date picks with pickDailyCard and stores the pick
+  // (get-or-create: idempotent, and the only write is that one reference —
+  // never the library, never its progress). Every later request that day, from
+  // any device or from Main Hub, gets the same card back, however much has
+  // been marked known since. A pick is only replaced if its card is deleted.
+  // Days far from the server's own date (see isCanonicalDateKey) are never
+  // anyone's today, so they are resolved fresh and nothing is stored.
   const dailyCardMatch = pathname.match(/^\/api\/libraries\/([A-Za-z0-9_-]{1,200})\/daily-card$/);
 
   if (dailyCardMatch) {
@@ -1373,7 +1501,12 @@ const handleApiRequest = async (
       });
     }
 
-    const resolved = resolveDailyCard(record.snapshot, dateKey);
+    const resolved = isCanonicalDateKey(dateKey)
+      ? await resolveCanonicalDailyCard(record.snapshot, dateKey, {
+          get: (key) => getDailyCardSelection(libraryId, key),
+          claim: (key, expected, next) => claimDailyCardSelection(libraryId, key, expected, next),
+        })
+      : resolveDailyCard(record.snapshot, dateKey);
 
     if (!resolved) {
       return sendJson(response, 200, {

@@ -1,5 +1,6 @@
 import { LibrarySnapshot } from "../data/librarySnapshot";
 import { syncKeyPattern } from "./constants";
+import { DailyCardRef, parseCanonicalDailyCard } from "./dailyCard";
 
 export const normalizeSyncKey = (value: string) => value.trim();
 export const isSyncKeyValid = (value: string) => syncKeyPattern.test(value);
@@ -97,4 +98,23 @@ export const saveSnapshotToCloud = async (
     conflict: false,
     revision: typeof payload.revision === "number" ? payload.revision : null,
   };
+};
+
+/**
+ * The cloud's Card of the Day for `dateKey` — the same answer Main Hub's Daily
+ * Dashboard gets. Only ids are kept: the card is shown from this device's own
+ * copy of the library, so a renamed deck reads the way it does here.
+ */
+export const fetchCanonicalDailyCard = async (
+  activeSyncKey: string,
+  dateKey: string,
+): Promise<DailyCardRef | null> => {
+  const response = await fetch(
+    `/api/libraries/${encodeURIComponent(activeSyncKey)}/daily-card?date=${encodeURIComponent(dateKey)}`,
+    // A slow answer must not hold the card back for long; the local pick
+    // stands in until the next sync asks again.
+    typeof AbortSignal.timeout === "function" ? { signal: AbortSignal.timeout(8000) } : {},
+  );
+  if (!response.ok) throw new Error(await getFetchErrorMessage(response));
+  return parseCanonicalDailyCard(await response.json(), dateKey);
 };

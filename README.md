@@ -223,18 +223,52 @@ without holding the library.
 `date` is the **caller's** calendar day and defaults to the server's. A caller in
 another timezone must send it, or the card turns over at the wrong hour.
 
-The pick is `pickDailyCard()` — deterministic for the date, and skipping cards
+The pick is `pickDailyCard()`: it's deterministic for the date and skips cards
 already marked known while any unknown card remains. `server-daily-card.mjs`
-restates that rule in plain JS because `server.mjs` runs untranspiled;
+restates that rule in plain JS because `server.mjs` runs untranspiled.
 `src/lib/__tests__/dailyCard.test.ts` runs both implementations over the same
-fixtures so the two cannot drift.
+fixtures so the two can't drift.
 
-Two things this route deliberately does **not** do:
+### One card per library per day
+
+The server is the single source of truth for which card is today's. The first
+request for a library and a date picks with `pickDailyCard()` and stores the
+pick in `daily_card_selections` (or in memory when there's no database). Every
+later request for that date gets the same card back, whether it comes from a
+phone, a laptop or Main Hub. Marking the card known, grading other cards,
+renaming its deck or syncing from another device doesn't move it. A pick is
+replaced only when its card is deleted, and the replacement uses the same rule.
+The next date gets its own pick.
+
+That makes the route a **get-or-create**, and it's idempotent. Its only write is
+that one `{ deckId, cardId }` reference. The pick lives in its own table rather
+than the library snapshot, so asking never bumps the library's revision and
+never causes a sync conflict. Concurrent first requests go through a
+compare-and-swap on `(library_id, date_key)`, so they all end up on one card.
+
+Only dates within two days of the server's own UTC date are stored. That range
+covers every time zone's "today". Other dates are worked out fresh, as before,
+and nothing is stored for them. Stored picks older than that range are pruned,
+and deleting a library from the admin page deletes its picks too.
+
+The app asks this route for today's card once its cloud library has synced,
+and shows that card. Before then, offline, or without a cloud library, it picks
+locally with the same rule and keeps that pick in the browser. When the cloud
+answers, its pick replaces the local one, including a pin saved by a version of
+the app from before this change. The cloud always wins because it's the only
+answer every device and Main Hub can agree on. The local pick was only ever
+this one browser's guess. As a result, a device whose old pin differs switches
+once, the first time it connects after upgrading. Study progress is never part
+of this exchange, so reconnecting can't lose any.
+
+Things this route deliberately does **not** do:
 
 - It never returns anything but the one card, its deck's title, and its topic's
-  title. No other card, no progress, no tombstones, no preferences.
-- It never writes. Revealing the answer somewhere else does not mark a card
-  known or touch its review schedule.
+  title. It returns no other card, no progress, no tombstones and no preferences.
+- It never writes to the library. Revealing the answer somewhere else doesn't
+  mark a card known or touch its review schedule.
+- It never creates a library. Asking about a key with no library returns
+  `exists: false` and stores nothing.
 
 The sync key is still the credential, exactly as it is for `GET` on the library
 itself — anyone holding it can already read everything, so this route grants
