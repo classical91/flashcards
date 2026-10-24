@@ -502,10 +502,10 @@ export function StudyView({
                       <button
                         className="lookup-chip ai"
                         onClick={onShowAiModal}
-                        title={`Ask an AI app how to use "${currentCard.term}"`}
+                        title={`Ask an AI app for example sentences using "${currentCard.term}"`}
                       >
                         <Icon name="sparkles" size={16} />
-                        <span>Ask AI</span>
+                        <span>Ask AI for examples</span>
                       </button>
                     </div>
                     <p className="lookup-note">Lookups open a Google search in a new tab.</p>
