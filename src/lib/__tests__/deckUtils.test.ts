@@ -5,6 +5,7 @@ import {
   resetCardsProgress,
   resetDeckProgress,
   shuffleCards,
+  sortDecks,
   sortDecksByLastViewed,
   toggleStarredCard,
 } from "../deckUtils";
@@ -12,6 +13,42 @@ import {
 const decks = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
 
 const ids = (list: { id: string }[]) => list.map((deck) => deck.id);
+
+describe("sortDecks", () => {
+  const titled = [
+    { id: "a", title: "napoleon Hill" },
+    { id: "b", title: "Bob Proctor" },
+    { id: "c", title: "Ernest Holmes" },
+    { id: "d", title: "Deck 10" },
+    { id: "e", title: "Deck 2" },
+  ];
+
+  it("keeps list order for oldest and reverses it for newest", () => {
+    expect(ids(sortDecks(titled, "oldest", {}))).toEqual(["a", "b", "c", "d", "e"]);
+    expect(ids(sortDecks(titled, "newest", {}))).toEqual(["e", "d", "c", "b", "a"]);
+  });
+
+  it("sorts by title ignoring case and comparing numbers by value", () => {
+    expect(ids(sortDecks(titled, "title", {}))).toEqual(["b", "e", "d", "c", "a"]);
+  });
+
+  it("orders by last studied in studied mode", () => {
+    expect(ids(sortDecks(titled, "studied", { c: 200, e: 100 }))).toEqual([
+      "c",
+      "e",
+      "a",
+      "b",
+      "d",
+    ]);
+  });
+
+  it("never mutates the deck list it was given", () => {
+    const copy = [...titled];
+    sortDecks(titled, "newest", {});
+    sortDecks(titled, "title", {});
+    expect(titled).toEqual(copy);
+  });
+});
 
 describe("sortDecksByLastViewed", () => {
   it("keeps the original order when nothing has been viewed", () => {

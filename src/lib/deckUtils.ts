@@ -60,6 +60,34 @@ export const sortDecksByLastViewed = <T extends { id: string }>(
     })
     .map((entry) => entry.deck);
 
+export const DECK_SORT_MODES = ["studied", "newest", "oldest", "title"] as const;
+export type DeckSortMode = (typeof DECK_SORT_MODES)[number];
+
+/**
+ * Orders a topic's decks for its list. Decks carry no creation stamp, but a
+ * new or imported deck is always appended to its topic, so list order is
+ * creation order: "oldest" keeps it and "newest" reverses it.
+ */
+export const sortDecks = <T extends { id: string; title: string }>(
+  decks: T[],
+  mode: DeckSortMode,
+  lastViewed: DeckLastViewed,
+): T[] => {
+  if (mode === "studied") return sortDecksByLastViewed(decks, lastViewed);
+  if (mode === "oldest") return [...decks];
+  if (mode === "newest") return [...decks].reverse();
+  return decks
+    .map((deck, index) => ({ deck, index }))
+    .sort(
+      (a, b) =>
+        a.deck.title.localeCompare(b.deck.title, undefined, {
+          sensitivity: "base",
+          numeric: true,
+        }) || a.index - b.index,
+    )
+    .map((entry) => entry.deck);
+};
+
 export const findDeckById = (sections: DeckSection[], deckId: string) =>
   flattenDecks(sections).find((deck) => deck.id === deckId) ?? null;
 
