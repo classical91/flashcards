@@ -1,14 +1,23 @@
-import { Dispatch, SetStateAction, useMemo } from "react";
+import { Dispatch, SetStateAction, useMemo, useState } from "react";
 import { Deck, DeckSection } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
-import { countLearnedCards, createDeckProgress, sortDecksByLastViewed } from "../lib/deckUtils";
+import { DECK_SORT_STORAGE_KEY } from "../lib/constants";
+import { DeckSortMode, countLearnedCards, createDeckProgress, sortDecks } from "../lib/deckUtils";
 import { formatRelativeTime } from "../lib/format";
+import { loadDeckSortMode, safeSetItem } from "../lib/storage";
 import { DeckComposer, DeckLastViewed, SectionEditor, ViewState } from "../lib/types";
 
 type ImportPreview = {
   cards: { term: string; definition: string }[];
   invalidLines: string[];
 };
+
+const SORT_OPTIONS: { mode: DeckSortMode; label: string; title: string }[] = [
+  { mode: "studied", label: "Last studied", title: "Most recently studied decks first" },
+  { mode: "newest", label: "Newest", title: "Most recently created decks first" },
+  { mode: "oldest", label: "Oldest", title: "First created decks first" },
+  { mode: "title", label: "A–Z", title: "Alphabetical by deck name" },
+];
 
 type SectionViewProps = {
   section: DeckSection;
@@ -58,13 +67,19 @@ export function SectionView({
   onDeleteSection,
 }: SectionViewProps) {
   const isEditingSection = sectionEditor?.sectionId === section.id;
+  const [sortMode, setSortMode] = useState(loadDeckSortMode);
 
-  // Opening a deck stamps it in deckLastViewed, so studying a deck floats it to
-  // the top of this list. Never-opened decks keep their original order below.
+  // In "Last studied" order, opening a deck stamps it in deckLastViewed and so
+  // floats it to the top of this list. Never-opened decks keep their order below.
   const orderedDecks = useMemo(
-    () => sortDecksByLastViewed(section.decks, deckLastViewed),
-    [section.decks, deckLastViewed],
+    () => sortDecks(section.decks, sortMode, deckLastViewed),
+    [section.decks, sortMode, deckLastViewed],
   );
+
+  const changeSortMode = (mode: DeckSortMode) => {
+    setSortMode(mode);
+    safeSetItem(DECK_SORT_STORAGE_KEY, mode);
+  };
 
   return (
     <div className="app">
@@ -243,60 +258,80 @@ export function SectionView({
         {section.decks.length === 0 ? (
           <div className="empty-state">No decks yet. Use New deck to add one.</div>
         ) : (
-          <div className="decks-list">
-            {orderedDecks.map((deck) => {
-              const progress = deckProgress[deck.id] ?? createDeckProgress(deck);
-              const learned = countLearnedCards(deck, progress);
-              const total = deck.cards.length;
-              const ratio = total ? learned / total : 0;
-              const lastViewedAt = deckLastViewed[deck.id];
-              return (
-                <div key={deck.id} className="deck-card-row">
-                  <button
-                    className="deck-card"
-                    onClick={() => openDeck(deck.id)}
-                  >
-                    <div className="deck-card-info">
-                      <div className="deck-card-title">
-                        <span className="deck-card-title-text">{deck.title}</span>
-                        {lastViewedAt !== undefined && (
-                          <span className="deck-card-viewed">
-                            {formatRelativeTime(lastViewedAt)}
-                          </span>
-                        )}
-                      </div>
-                      <div className="deck-card-subtitle">{deck.subtitle}</div>
-                      <div className="progress-bar-track">
-                        <div
-                          className="progress-bar-fill"
-                          style={{ width: `${ratio * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                    <div className="deck-card-stats">
-                      <span>{total} cards</span>
-                      <span>{learned} learned</span>
-                      <span className="section-card-arrow">›</span>
-                    </div>
-                  </button>
-                  <button
-                    className={`deck-card-pin${pinnedDeckIds.includes(deck.id) ? " pinned" : ""}`}
-                    title={pinnedDeckIds.includes(deck.id) ? "Unpin deck" : "Pin deck"}
-                    onClick={() => togglePinDeck(deck.id)}
-                  >
-                    📌
-                  </button>
-                  <button
-                    className="deck-card-delete"
-                    title="Delete deck"
-                    onClick={() => onDeleteDeck(deck.id)}
-                  >
-                    ✕
-                  </button>
+          <>
+            {section.decks.length > 1 && (
+              <div className="deck-sort-bar">
+                <span className="deck-sort-label">Sort</span>
+                <div className="deck-sort-toggle" role="group" aria-label="Sort decks">
+                  {SORT_OPTIONS.map((option) => (
+                    <button
+                      key={option.mode}
+                      className={`deck-sort-btn${sortMode === option.mode ? " active" : ""}`}
+                      aria-pressed={sortMode === option.mode}
+                      title={option.title}
+                      onClick={() => changeSortMode(option.mode)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            )}
+            <div className="decks-list">
+              {orderedDecks.map((deck) => {
+                const progress = deckProgress[deck.id] ?? createDeckProgress(deck);
+                const learned = countLearnedCards(deck, progress);
+                const total = deck.cards.length;
+                const ratio = total ? learned / total : 0;
+                const lastViewedAt = deckLastViewed[deck.id];
+                return (
+                  <div key={deck.id} className="deck-card-row">
+                    <button
+                      className="deck-card"
+                      onClick={() => openDeck(deck.id)}
+                    >
+                      <div className="deck-card-info">
+                        <div className="deck-card-title">
+                          <span className="deck-card-title-text">{deck.title}</span>
+                          {lastViewedAt !== undefined && (
+                            <span className="deck-card-viewed">
+                              {formatRelativeTime(lastViewedAt)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="deck-card-subtitle">{deck.subtitle}</div>
+                        <div className="progress-bar-track">
+                          <div
+                            className="progress-bar-fill"
+                            style={{ width: `${ratio * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className="deck-card-stats">
+                        <span>{total} cards</span>
+                        <span>{learned} learned</span>
+                        <span className="section-card-arrow">›</span>
+                      </div>
+                    </button>
+                    <button
+                      className={`deck-card-pin${pinnedDeckIds.includes(deck.id) ? " pinned" : ""}`}
+                      title={pinnedDeckIds.includes(deck.id) ? "Unpin deck" : "Pin deck"}
+                      onClick={() => togglePinDeck(deck.id)}
+                    >
+                      📌
+                    </button>
+                    <button
+                      className="deck-card-delete"
+                      title="Delete deck"
+                      onClick={() => onDeleteDeck(deck.id)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     </div>

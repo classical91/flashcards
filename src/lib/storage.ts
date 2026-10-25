@@ -9,6 +9,7 @@ import {
   BUILD_SYNC_KEY,
   DAILY_CARD_STORAGE_KEY,
   DECK_LAST_VIEWED_STORAGE_KEY,
+  DECK_SORT_STORAGE_KEY,
   LIBRARY_STORAGE_KEY,
   PINNED_DECKS_STORAGE_KEY,
   PROGRESS_STORAGE_KEY,
@@ -19,7 +20,7 @@ import {
   THEME_STORAGE_KEY,
   TOMBSTONES_STORAGE_KEY,
 } from "./constants";
-import { buildProgressState, cloneSections } from "./deckUtils";
+import { DECK_SORT_MODES, DeckSortMode, buildProgressState, cloneSections } from "./deckUtils";
 import { DailyCardRef, parseDailyCard } from "./dailyCard";
 import { createSyncKey, getBuildSyncKey, isSyncKeyValid } from "./sync";
 import { AccentColor, DeckLastViewed, RecentDeckEntry, Theme } from "./types";
@@ -62,6 +63,17 @@ export const loadAccentColor = (): AccentColor => {
     }
   } catch {}
   return "blue";
+};
+
+/** How topic pages order their decks; a per-device view choice, so not synced. */
+export const loadDeckSortMode = (): DeckSortMode => {
+  try {
+    const stored = window.localStorage.getItem(DECK_SORT_STORAGE_KEY);
+    if ((DECK_SORT_MODES as readonly string[]).includes(stored || "")) {
+      return stored as DeckSortMode;
+    }
+  } catch {}
+  return "studied";
 };
 
 // Cached for the current load cycle so the id repair from sanitizeDeckSections
