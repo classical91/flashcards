@@ -1,10 +1,17 @@
 import { ChangeEvent, Dispatch, MutableRefObject, SetStateAction, useRef, useState } from "react";
 import { Deck, DeckSection, Flashcard } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
-import { ACCENT_COLORS } from "../lib/constants";
-import { countLearnedCards, findDeckById, findSectionForDeck } from "../lib/deckUtils";
+import { ACCENT_COLORS, SECTION_SORT_STORAGE_KEY } from "../lib/constants";
+import {
+  SectionSortMode,
+  countLearnedCards,
+  findDeckById,
+  findSectionForDeck,
+  sortSections,
+} from "../lib/deckUtils";
 import { MAX_SEARCH_RESULTS, searchLibrary } from "../lib/search";
 import { formatRelativeTime } from "../lib/format";
+import { loadSectionSortMode, safeSetItem } from "../lib/storage";
 import {
   AccentColor,
   RecentDeckEntry,
@@ -66,6 +73,12 @@ type HomeViewProps = {
   onStartReview: (deckId: string) => void;
 };
 
+const SORT_OPTIONS: { mode: SectionSortMode; label: string; title: string }[] = [
+  { mode: "default", label: "Default", title: "Library order" },
+  { mode: "title", label: "A–Z", title: "Alphabetical by topic name" },
+  { mode: "title-desc", label: "Z–A", title: "Reverse alphabetical by topic name" },
+];
+
 /** Enough to act on at a glance; the rest are reachable from their topic. */
 const MAX_REVIEW_DECKS = 5;
 
@@ -118,6 +131,7 @@ export function HomeView({
   onStartReview,
 }: HomeViewProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortMode, setSortMode] = useState(loadSectionSortMode);
   const restoreInputRef = useRef<HTMLInputElement>(null);
   // Keyed by card id so tomorrow's card starts face down again.
   const [revealedDailyCardId, setRevealedDailyCardId] = useState<string | null>(null);
@@ -137,6 +151,13 @@ export function HomeView({
       return deck && section ? { deck, section, viewedAt: entry.viewedAt } : null;
     })
     .filter((x): x is { deck: Deck; section: DeckSection; viewedAt: number } => x !== null);
+
+  const orderedSections = sortSections(librarySections, sortMode);
+
+  const changeSortMode = (mode: SectionSortMode) => {
+    setSortMode(mode);
+    safeSetItem(SECTION_SORT_STORAGE_KEY, mode);
+  };
 
   const trimmedQuery = searchQuery.trim();
   const { results: searchResults, total: searchTotal } = searchLibrary(
@@ -556,38 +577,58 @@ export function HomeView({
         ) : librarySections.length === 0 ? (
           <div className="empty-state">No topics yet. Create one above to get started.</div>
         ) : (
-          <div className="sections-grid">
-            {librarySections.map((section) => {
-              const cardCount = section.decks.reduce((sum, d) => sum + d.cards.length, 0);
-              const sectionLearned = section.decks.reduce(
-                (sum, d) => sum + countLearnedCards(d, deckProgress[d.id]),
-                0,
-              );
-              return (
-                <button
-                  key={section.id}
-                  className="section-card"
-                  title={section.description || section.title}
-                  onClick={() => setView({ kind: "section", sectionId: section.id })}
-                >
-                  <div className="section-card-inner">
-                    <div className="section-card-text">
-                      <div className="section-card-title">{section.title}</div>
-                      <div className="section-card-meta">
-                        {section.decks.length} deck{section.decks.length !== 1 ? "s" : ""} ·{" "}
-                        {cardCount} card{cardCount !== 1 ? "s" : ""}
-                        {sectionLearned > 0 ? ` · ${sectionLearned} learned` : ""}
+          <>
+            {librarySections.length > 1 && (
+              <div className="deck-sort-bar">
+                <span className="deck-sort-label">Sort</span>
+                <div className="deck-sort-toggle" role="group" aria-label="Sort topics">
+                  {SORT_OPTIONS.map((option) => (
+                    <button
+                      key={option.mode}
+                      className={`deck-sort-btn${sortMode === option.mode ? " active" : ""}`}
+                      aria-pressed={sortMode === option.mode}
+                      title={option.title}
+                      onClick={() => changeSortMode(option.mode)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="sections-grid">
+              {orderedSections.map((section) => {
+                const cardCount = section.decks.reduce((sum, d) => sum + d.cards.length, 0);
+                const sectionLearned = section.decks.reduce(
+                  (sum, d) => sum + countLearnedCards(d, deckProgress[d.id]),
+                  0,
+                );
+                return (
+                  <button
+                    key={section.id}
+                    className="section-card"
+                    title={section.description || section.title}
+                    onClick={() => setView({ kind: "section", sectionId: section.id })}
+                  >
+                    <div className="section-card-inner">
+                      <div className="section-card-text">
+                        <div className="section-card-title">{section.title}</div>
+                        <div className="section-card-meta">
+                          {section.decks.length} deck{section.decks.length !== 1 ? "s" : ""} ·{" "}
+                          {cardCount} card{cardCount !== 1 ? "s" : ""}
+                          {sectionLearned > 0 ? ` · ${sectionLearned} learned` : ""}
+                        </div>
+                        {section.description && (
+                          <div className="section-card-desc">{section.description}</div>
+                        )}
                       </div>
-                      {section.description && (
-                        <div className="section-card-desc">{section.description}</div>
-                      )}
+                      <span className="section-card-arrow">›</span>
                     </div>
-                    <span className="section-card-arrow">›</span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 

@@ -14,13 +14,21 @@ import {
   PINNED_DECKS_STORAGE_KEY,
   PROGRESS_STORAGE_KEY,
   RECENT_DECKS_STORAGE_KEY,
+  SECTION_SORT_STORAGE_KEY,
   SELECTED_DECK_STORAGE_KEY,
   PREFERENCES_UPDATED_AT_STORAGE_KEY,
   SYNC_KEY_STORAGE_KEY,
   THEME_STORAGE_KEY,
   TOMBSTONES_STORAGE_KEY,
 } from "./constants";
-import { DECK_SORT_MODES, DeckSortMode, buildProgressState, cloneSections } from "./deckUtils";
+import {
+  DECK_SORT_MODES,
+  DeckSortMode,
+  SECTION_SORT_MODES,
+  SectionSortMode,
+  buildProgressState,
+  cloneSections,
+} from "./deckUtils";
 import { DailyCardRef, parseDailyCard } from "./dailyCard";
 import { createSyncKey, getBuildSyncKey, isSyncKeyValid } from "./sync";
 import { AccentColor, DeckLastViewed, RecentDeckEntry, Theme } from "./types";
@@ -74,6 +82,17 @@ export const loadDeckSortMode = (): DeckSortMode => {
     }
   } catch {}
   return "studied";
+};
+
+/** How the home page orders its topics; per-device like the deck sort. */
+export const loadSectionSortMode = (): SectionSortMode => {
+  try {
+    const stored = window.localStorage.getItem(SECTION_SORT_STORAGE_KEY);
+    if ((SECTION_SORT_MODES as readonly string[]).includes(stored || "")) {
+      return stored as SectionSortMode;
+    }
+  } catch {}
+  return "default";
 };
 
 // Cached for the current load cycle so the id repair from sanitizeDeckSections

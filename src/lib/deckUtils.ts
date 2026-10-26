@@ -60,6 +60,23 @@ export const sortDecksByLastViewed = <T extends { id: string }>(
     })
     .map((entry) => entry.deck);
 
+/**
+ * Alphabetical by title, ignoring case and comparing numbers by value so
+ * "Deck 2" comes before "Deck 10". Equal titles keep their list order.
+ */
+const sortByTitle = <T extends { title: string }>(items: T[], direction: 1 | -1): T[] =>
+  items
+    .map((item, index) => ({ item, index }))
+    .sort(
+      (a, b) =>
+        direction *
+          a.item.title.localeCompare(b.item.title, undefined, {
+            sensitivity: "base",
+            numeric: true,
+          }) || a.index - b.index,
+    )
+    .map((entry) => entry.item);
+
 export const DECK_SORT_MODES = ["studied", "newest", "oldest", "title"] as const;
 export type DeckSortMode = (typeof DECK_SORT_MODES)[number];
 
@@ -76,16 +93,19 @@ export const sortDecks = <T extends { id: string; title: string }>(
   if (mode === "studied") return sortDecksByLastViewed(decks, lastViewed);
   if (mode === "oldest") return [...decks];
   if (mode === "newest") return [...decks].reverse();
-  return decks
-    .map((deck, index) => ({ deck, index }))
-    .sort(
-      (a, b) =>
-        a.deck.title.localeCompare(b.deck.title, undefined, {
-          sensitivity: "base",
-          numeric: true,
-        }) || a.index - b.index,
-    )
-    .map((entry) => entry.deck);
+  return sortByTitle(decks, 1);
+};
+
+export const SECTION_SORT_MODES = ["default", "title", "title-desc"] as const;
+export type SectionSortMode = (typeof SECTION_SORT_MODES)[number];
+
+/** Orders the home page's topics; "default" keeps the library's own order. */
+export const sortSections = <T extends { title: string }>(
+  sections: T[],
+  mode: SectionSortMode,
+): T[] => {
+  if (mode === "default") return [...sections];
+  return sortByTitle(sections, mode === "title" ? 1 : -1);
 };
 
 export const findDeckById = (sections: DeckSection[], deckId: string) =>
