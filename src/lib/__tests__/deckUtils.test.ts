@@ -7,6 +7,7 @@ import {
   shuffleCards,
   sortDecks,
   sortDecksByLastViewed,
+  sortSections,
   toggleStarredCard,
 } from "../deckUtils";
 
@@ -47,6 +48,60 @@ describe("sortDecks", () => {
     sortDecks(titled, "newest", {});
     sortDecks(titled, "title", {});
     expect(titled).toEqual(copy);
+  });
+});
+
+describe("sortSections", () => {
+  const topics = [
+    { id: "gpt", title: "GPT" },
+    { id: "wiki", title: "Wikipedia" },
+    { id: "oxford", title: "oxford Dictionaries" },
+    { id: "syn", title: "Synonyms" },
+    { id: "a", title: "Topic 10" },
+    { id: "b", title: "Topic 2" },
+  ];
+
+  it("keeps library order by default", () => {
+    expect(ids(sortSections(topics, "default"))).toEqual([
+      "gpt",
+      "wiki",
+      "oxford",
+      "syn",
+      "a",
+      "b",
+    ]);
+  });
+
+  it("sorts A–Z ignoring case and comparing numbers by value", () => {
+    expect(ids(sortSections(topics, "title"))).toEqual(["gpt", "oxford", "syn", "b", "a", "wiki"]);
+  });
+
+  it("sorts Z–A as the reverse", () => {
+    expect(ids(sortSections(topics, "title-desc"))).toEqual([
+      "wiki",
+      "a",
+      "b",
+      "syn",
+      "oxford",
+      "gpt",
+    ]);
+  });
+
+  it("keeps list order for topics with the same name in either direction", () => {
+    const twins = [
+      { id: "x", title: "Art" },
+      { id: "y", title: "art" },
+    ];
+    expect(ids(sortSections(twins, "title"))).toEqual(["x", "y"]);
+    expect(ids(sortSections(twins, "title-desc"))).toEqual(["x", "y"]);
+  });
+
+  it("never mutates the topic list it was given", () => {
+    const copy = [...topics];
+    sortSections(topics, "default");
+    sortSections(topics, "title");
+    sortSections(topics, "title-desc");
+    expect(topics).toEqual(copy);
   });
 });
 
