@@ -750,7 +750,7 @@ button {
   color: var(--success);
 }
 
-/* ── Card of the day ──────────────────────────────────────────────────────── */
+/* ── Deck of the day ──────────────────────────────────────────────────────── */
 
 .home-daily {
   display: block;
@@ -815,13 +815,6 @@ button {
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  overflow-wrap: anywhere;
-}
-
-.daily-card-definition {
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--ink);
   overflow-wrap: anywhere;
 }
 
