@@ -780,16 +780,16 @@ button {
   color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .daily-card-source {
   font-size: 11px;
   color: var(--muted);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .daily-card-face {
