@@ -134,8 +134,6 @@ export function HomeView({
   const [sortMode, setSortMode] = useState(loadSectionSortMode);
   const restoreInputRef = useRef<HTMLInputElement>(null);
   // Keyed by card id so tomorrow's card starts face down again.
-  const [revealedDailyCardId, setRevealedDailyCardId] = useState<string | null>(null);
-  const isDailyCardRevealed = !!dailyCard && revealedDailyCardId === dailyCard.card.id;
 
   const handleRestoreFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -490,27 +488,24 @@ export function HomeView({
       )}
 
       {dailyCard && !trimmedQuery && (
-        <section className="home-daily" aria-label="Card of the day">
+        <section className="home-daily" aria-label="Deck of the day">
           <div className="daily-card">
             <div className="daily-card-head">
-              <span className="daily-card-label">{dailyCard.deck.title}</span>
+              <span className="daily-card-label">Deck of the day</span>
               {dailyCard.section && (
                 <span className="daily-card-source">{dailyCard.section.title}</span>
               )}
             </div>
             <button
               className="daily-card-face"
-              onClick={() =>
-                setRevealedDailyCardId(isDailyCardRevealed ? null : dailyCard.card.id)
-              }
-              title={isDailyCardRevealed ? "Hide the definition" : "Reveal the definition"}
+              onClick={() => openDeck(dailyCard.deck.id)}
+              title="Study this deck"
             >
-              <span className="daily-card-term">{dailyCard.card.term}</span>
-              {isDailyCardRevealed ? (
-                <span className="daily-card-definition">{dailyCard.card.definition}</span>
-              ) : (
-                <span className="daily-card-hint">Tap to reveal the definition</span>
-              )}
+              <span className="daily-card-term">{dailyCard.deck.title}</span>
+              <span className="daily-card-hint">
+                {dailyCard.deck.subtitle ? `${dailyCard.deck.subtitle} · ` : ""}
+                {dailyCard.deck.cards.length} card{dailyCard.deck.cards.length !== 1 ? "s" : ""}
+              </span>
             </button>
             <div className="daily-card-actions">
               <button className="mini-btn" onClick={() => openDeck(dailyCard.deck.id)}>
