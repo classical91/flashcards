@@ -493,11 +493,10 @@ export function HomeView({
         <section className="home-daily" aria-label="Card of the day">
           <div className="daily-card">
             <div className="daily-card-head">
-              <span className="daily-card-label">Card of the day</span>
-              <span className="daily-card-source">
-                {dailyCard.section ? `${dailyCard.section.title} · ` : ""}
-                {dailyCard.deck.title}
-              </span>
+              <span className="daily-card-label">{dailyCard.deck.title}</span>
+              {dailyCard.section && (
+                <span className="daily-card-source">{dailyCard.section.title}</span>
+              )}
             </div>
             <button
               className="daily-card-face"
