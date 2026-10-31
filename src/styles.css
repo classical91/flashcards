@@ -2595,3 +2595,14 @@ button {
     animation: none;
   }
 }
+
+/* iOS Safari zooms the page when a focused field's text is under 16px, and
+   the zoom sticks after blur. On touch devices, keep every text field at
+   16px so tapping into a form (e.g. "New deck") never zooms in. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
