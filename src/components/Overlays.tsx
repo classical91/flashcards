@@ -44,9 +44,9 @@ export function AiOverlay({ aiModal, onClose, onOpenAI }: AiOverlayProps) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <section className="modal">
-        <h2>Ask AI for examples of &ldquo;{aiModal.word}&rdquo;?</h2>
+        <h2>Ask AI for 3 sentence examples of &ldquo;{aiModal.word}&rdquo;?</h2>
         <p>
-          This will copy a prompt asking for example sentences that use the word naturally.
+          This will copy a prompt asking for 3 example sentences that use the word naturally.
           Then choose which AI app to open.
         </p>
         <div className="prompt-preview">{aiModal.prompt}</div>

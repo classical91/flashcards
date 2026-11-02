@@ -466,11 +466,11 @@ export function StudyView({
                       <button
                         className="lookup-chip"
                         onClick={() => onGoogleSearch("definition")}
-                        title={`Search Google for the definition of "${currentCard.term}"`}
-                        aria-label="Google definition"
+                        title={`See Google's explanation of "${currentCard.term}"`}
+                        aria-label="Google's explanation"
                       >
                         <Icon name="book" size={16} />
-                        <span>Definition</span>
+                        <span>Google&rsquo;s Explanation</span>
                       </button>
                       <button
                         className="lookup-chip"
@@ -502,10 +502,10 @@ export function StudyView({
                       <button
                         className="lookup-chip ai"
                         onClick={onShowAiModal}
-                        title={`Ask an AI app for example sentences using "${currentCard.term}"`}
+                        title={`Ask an AI app for 3 example sentences using "${currentCard.term}"`}
                       >
                         <Icon name="sparkles" size={16} />
-                        <span>Ask AI for examples</span>
+                        <span>Ask AI for 3 sentence examples</span>
                       </button>
                     </div>
                     <p className="lookup-note">Lookups open a Google search in a new tab.</p>
