@@ -1691,8 +1691,8 @@ button {
 /* Deeper Understanding */
 
 .lookup-bar {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -1724,6 +1724,9 @@ button {
 }
 
 .lookup-chip {
+  /* Each chip sizes to its full label and the row wraps instead of squeezing
+     five equal columns, so labels are never cut off on desktop. */
+  flex: 1 1 auto;
   justify-content: center;
 }
 
@@ -1733,6 +1736,7 @@ button {
 }
 
 .lookup-chip.ai {
+  flex-basis: 100%;
   background: var(--accent-subtle);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   color: var(--accent);
@@ -2585,6 +2589,7 @@ button {
   }
 
   .lookup-bar {
+    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
