@@ -171,12 +171,24 @@ export function HomeView({
           <button
             className="home-actions-trigger"
             onClick={() => setShowActionsMenu((v) => !v)}
-            title="Actions"
+            aria-haspopup="menu"
+            aria-expanded={showActionsMenu}
           >
-            ⋯
+            <span className="home-actions-trigger-icon" aria-hidden="true">☰</span>
+            Menu
           </button>
           {showActionsMenu && (
             <div className="home-actions-menu">
+              <button
+                className="home-actions-item"
+                onClick={() => {
+                  setShowActionsMenu(false);
+                  setSectionComposerMessage("");
+                  setSectionComposer({ title: "", description: "" });
+                }}
+              >
+                + New topic
+              </button>
               <button
                 className="home-actions-item"
                 onClick={() => {
@@ -221,20 +233,12 @@ export function HomeView({
 
       <div className="home-quick-actions">
         <button
-          className="home-quick-action-btn"
+          className="neon-btn neon-cyan"
           onClick={() => openRandomDeck(allDecks)}
           disabled={allDecks.length === 0}
+          title="Open a random deck from any topic"
         >
-          Shuffle home
-        </button>
-        <button
-          className="home-quick-action-btn"
-          onClick={() => {
-            setSectionComposerMessage("");
-            setSectionComposer({ title: "", description: "" });
-          }}
-        >
-          + New topic
+          🎲 Random deck
         </button>
       </div>
 
@@ -508,7 +512,7 @@ export function HomeView({
               </span>
             </button>
             <div className="daily-card-actions">
-              <button className="mini-btn" onClick={() => openDeck(dailyCard.deck.id)}>
+              <button className="neon-btn neon-pink" onClick={() => openDeck(dailyCard.deck.id)}>
                 Study this deck
               </button>
             </div>

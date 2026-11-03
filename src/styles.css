@@ -395,17 +395,24 @@ button {
 }
 
 .home-actions-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
-  color: var(--ink-soft);
-  padding: 5px 14px;
+  color: var(--ink);
+  padding: 7px 14px;
   cursor: pointer;
-  font-size: 18px;
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1;
   font-family: inherit;
-  letter-spacing: 3px;
   transition: border-color 150ms ease;
+}
+
+.home-actions-trigger-icon {
+  font-size: 15px;
 }
 
 .home-actions-trigger:hover {
@@ -533,30 +540,73 @@ button {
 .home-quick-actions {
   display: flex;
   gap: 8px;
-  padding: 0 20px 12px;
+  padding: 2px 20px 16px;
 }
 
-.home-quick-action-btn {
-  border: 1px solid var(--line);
+/* Neon call-to-action buttons. Fixed colours rather than the theme accent so
+   they glow the same in every theme. */
+.neon-btn {
+  border: 0;
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink);
-  padding: 8px 16px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
+  padding: 10px 20px;
   font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   white-space: nowrap;
-  transition: border-color 150ms ease, background 120ms ease;
+  cursor: pointer;
+  transition:
+    box-shadow 150ms ease,
+    transform 150ms ease,
+    filter 150ms ease;
 }
 
-.home-quick-action-btn:hover {
-  border-color: var(--accent);
+.neon-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
 }
 
-.home-quick-action-btn:disabled {
+.neon-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.neon-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+  box-shadow: none;
+}
+
+.neon-pink {
+  background: linear-gradient(135deg, #ff2bd6, #9d4dff);
+  color: #ffffff;
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.45);
+  box-shadow:
+    0 0 0 1px rgba(255, 43, 214, 0.6),
+    0 0 14px rgba(255, 43, 214, 0.55),
+    0 0 28px rgba(157, 77, 255, 0.35);
+}
+
+.neon-pink:hover:not(:disabled) {
+  box-shadow:
+    0 0 0 1px rgba(255, 43, 214, 0.8),
+    0 0 18px rgba(255, 43, 214, 0.75),
+    0 0 36px rgba(157, 77, 255, 0.5);
+}
+
+.neon-cyan {
+  background: linear-gradient(135deg, #00f0ff, #39ff88);
+  color: #04121a;
+  box-shadow:
+    0 0 0 1px rgba(0, 240, 255, 0.6),
+    0 0 14px rgba(0, 240, 255, 0.55),
+    0 0 28px rgba(57, 255, 136, 0.35);
+}
+
+.neon-cyan:hover:not(:disabled) {
+  box-shadow:
+    0 0 0 1px rgba(0, 240, 255, 0.8),
+    0 0 18px rgba(0, 240, 255, 0.75),
+    0 0 36px rgba(57, 255, 136, 0.5);
 }
 
 .home-search {
