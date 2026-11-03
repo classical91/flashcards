@@ -6,6 +6,9 @@ import { DeckSortMode, countLearnedCards, createDeckProgress, sortDecks } from "
 import { formatRelativeTime } from "../lib/format";
 import { loadDeckSortMode, safeSetItem } from "../lib/storage";
 import { DeckComposer, DeckLastViewed, SectionEditor, ViewState } from "../lib/types";
+import { useMediaQuery } from "../hooks/useMediaQuery";
+import { Icon } from "./Icons";
+import { SwipeRow } from "./SwipeRow";
 
 type ImportPreview = {
   cards: { term: string; definition: string }[];
@@ -68,6 +71,9 @@ export function SectionView({
 }: SectionViewProps) {
   const isEditingSection = sectionEditor?.sectionId === section.id;
   const [sortMode, setSortMode] = useState(loadDeckSortMode);
+  // On touch screens, pin and delete hide behind each deck until it is swiped left.
+  const swipeActions = useMediaQuery("(hover: none)");
+  const [swipedDeckId, setSwipedDeckId] = useState<string | null>(null);
 
   // In "Last studied" order, opening a deck stamps it in deckLastViewed and so
   // floats it to the top of this list. Never-opened decks keep their order below.
@@ -91,7 +97,6 @@ export function SectionView({
         >
           Home
         </button>
-        <div className="top-title">{section.title}</div>
         <div className="topbar-right">
           <button
             className="topbar-btn"
@@ -138,6 +143,19 @@ export function SectionView({
       </header>
 
       <div className="section-view-main">
+        <div className="section-view-heading">
+          <h1 className="section-view-title">{section.title}</h1>
+          <div className="section-view-meta">
+            {section.decks.length} {section.decks.length === 1 ? "deck" : "decks"}
+            {section.description && (
+              <span className="section-view-desc" title={section.description}>
+                {" · "}
+                {section.description}
+              </span>
+            )}
+          </div>
+        </div>
+
         {isEditingSection && sectionEditor && (
           <div className="panel-card" style={{ marginBottom: 12 }}>
             <div className="panel-card-head">
@@ -277,6 +295,9 @@ export function SectionView({
                 </div>
               </div>
             )}
+            {swipeActions && (
+              <p className="deck-swipe-hint">Swipe a deck left to pin or delete it.</p>
+            )}
             <div className="decks-list">
               {orderedDecks.map((deck) => {
                 const progress = deckProgress[deck.id] ?? createDeckProgress(deck);
@@ -284,38 +305,94 @@ export function SectionView({
                 const total = deck.cards.length;
                 const ratio = total ? learned / total : 0;
                 const lastViewedAt = deckLastViewed[deck.id];
+                const isPinned = pinnedDeckIds.includes(deck.id);
+                const card = (
+                  <button
+                    className="deck-card"
+                    onClick={() => {
+                      // A tap elsewhere while a row is swiped open just closes it.
+                      if (swipedDeckId !== null) {
+                        setSwipedDeckId(null);
+                        return;
+                      }
+                      openDeck(deck.id);
+                    }}
+                  >
+                    <div className="deck-card-info">
+                      <div className="deck-card-title">
+                        <span className="deck-card-title-text">{deck.title}</span>
+                        {swipeActions && isPinned && (
+                          <span className="deck-card-pinned-mark" title="Pinned">
+                            <Icon name="pin" size={12} />
+                          </span>
+                        )}
+                        {lastViewedAt !== undefined && (
+                          <span className="deck-card-viewed">
+                            {formatRelativeTime(lastViewedAt)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="deck-card-subtitle">{deck.subtitle}</div>
+                      <div className="progress-bar-track">
+                        <div
+                          className="progress-bar-fill"
+                          style={{ width: `${ratio * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="deck-card-stats">
+                      <span>{total} cards</span>
+                      <span>{learned} learned</span>
+                      <span className="section-card-arrow">›</span>
+                    </div>
+                  </button>
+                );
+
+                if (swipeActions) {
+                  return (
+                    <SwipeRow
+                      key={deck.id}
+                      isOpen={swipedDeckId === deck.id}
+                      onOpen={() => setSwipedDeckId(deck.id)}
+                      onClose={() =>
+                        setSwipedDeckId((current) => (current === deck.id ? null : current))
+                      }
+                      actions={
+                        <>
+                          <button
+                            className={`swipe-action swipe-action-pin${isPinned ? " pinned" : ""}`}
+                            onClick={() => {
+                              togglePinDeck(deck.id);
+                              setSwipedDeckId(null);
+                            }}
+                          >
+                            <Icon name="pin" size={18} />
+                            <span>{isPinned ? "Unpin" : "Pin"}</span>
+                          </button>
+                          <button
+                            className="swipe-action swipe-action-delete"
+                            onClick={() => {
+                              setSwipedDeckId(null);
+                              onDeleteDeck(deck.id);
+                            }}
+                          >
+                            <Icon name="trash" size={18} />
+                            <span>Delete</span>
+                          </button>
+                        </>
+                      }
+                    >
+                      {card}
+                    </SwipeRow>
+                  );
+                }
+
                 return (
                   <div key={deck.id} className="deck-card-row">
+                    {card}
                     <button
-                      className="deck-card"
-                      onClick={() => openDeck(deck.id)}
-                    >
-                      <div className="deck-card-info">
-                        <div className="deck-card-title">
-                          <span className="deck-card-title-text">{deck.title}</span>
-                          {lastViewedAt !== undefined && (
-                            <span className="deck-card-viewed">
-                              {formatRelativeTime(lastViewedAt)}
-                            </span>
-                          )}
-                        </div>
-                        <div className="deck-card-subtitle">{deck.subtitle}</div>
-                        <div className="progress-bar-track">
-                          <div
-                            className="progress-bar-fill"
-                            style={{ width: `${ratio * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div className="deck-card-stats">
-                        <span>{total} cards</span>
-                        <span>{learned} learned</span>
-                        <span className="section-card-arrow">›</span>
-                      </div>
-                    </button>
-                    <button
-                      className={`deck-card-pin${pinnedDeckIds.includes(deck.id) ? " pinned" : ""}`}
-                      title={pinnedDeckIds.includes(deck.id) ? "Unpin deck" : "Pin deck"}
+                      className={`deck-card-pin${isPinned ? " pinned" : ""}`}
+                      title={isPinned ? "Unpin deck" : "Pin deck"}
                       onClick={() => togglePinDeck(deck.id)}
                     >
                       📌
