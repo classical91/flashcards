@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction, useMemo, useState } from "react";
+import { Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
 import { Deck, DeckSection } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
 import { DECK_SORT_STORAGE_KEY } from "../lib/constants";
@@ -74,6 +74,18 @@ export function SectionView({
   // On touch screens, pin and delete hide behind each deck until it is swiped left.
   const swipeActions = useMediaQuery("(hover: none)");
   const [swipedDeckId, setSwipedDeckId] = useState<string | null>(null);
+
+  // Tapping anywhere outside the deck list (sort buttons, header, blank space)
+  // closes an open row. Taps on other decks are handled by the deck itself.
+  useEffect(() => {
+    if (swipedDeckId === null) return;
+    const closeOnOutsideTap = (e: PointerEvent) => {
+      if (e.target instanceof Element && e.target.closest(".decks-list")) return;
+      setSwipedDeckId(null);
+    };
+    document.addEventListener("pointerdown", closeOnOutsideTap);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideTap);
+  }, [swipedDeckId]);
 
   // In "Last studied" order, opening a deck stamps it in deckLastViewed and so
   // floats it to the top of this list. Never-opened decks keep their order below.

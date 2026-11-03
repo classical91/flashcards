@@ -1217,11 +1217,25 @@ button {
   border-radius: 12px;
 }
 
+/* Two rounded buttons with a 6px gap, sized to SWIPE_ACTIONS_WIDTH (156px).
+   Hidden until the row moves so they can never show through the card; the
+   delay keeps them on screen while a closing row slides back over them. */
 .swipe-row-actions {
   position: absolute;
   inset: 0 0 0 auto;
-  width: 144px;
+  width: 156px;
   display: flex;
+  gap: 6px;
+  padding-left: 6px;
+  box-sizing: border-box;
+  visibility: hidden;
+  transition: visibility 0s linear 240ms;
+}
+
+.swipe-row.open .swipe-row-actions,
+.swipe-row.dragging .swipe-row-actions {
+  visibility: visible;
+  transition-delay: 0s;
 }
 
 .swipe-action {
@@ -1232,25 +1246,40 @@ button {
   justify-content: center;
   gap: 4px;
   border: 0;
+  border-radius: 12px;
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   cursor: pointer;
 }
 
-.swipe-action-pin {
-  background: var(--pin-bg);
-  color: var(--pin-ink);
+.swipe-action:active {
+  filter: brightness(0.9);
 }
 
-.swipe-action-delete {
-  background: var(--danger);
+/* Solid colours rather than theme tints so the labels read on any theme. */
+.swipe-action-pin {
+  background: #f5b82e;
+  color: #2b1d00;
+}
+
+.swipe-action-pin.pinned {
+  background: #6b7280;
   color: #ffffff;
 }
 
+.swipe-action-delete {
+  background: #e5484d;
+  color: #ffffff;
+}
+
+/* An opaque backing under the card: the card's own hover/pressed tints are
+   translucent and would otherwise let the buttons show through. */
 .swipe-row-content {
   position: relative;
   display: flex;
+  border-radius: 12px;
+  background: var(--surface);
   touch-action: pan-y;
   transition: transform 220ms ease;
 }
@@ -1259,9 +1288,16 @@ button {
   transition: none;
 }
 
-/* The lift-on-hover would otherwise stick after a tap on touch screens. */
+/* Hover sticks after a tap on touch screens, leaving a deck looking
+   selected. Keep the resting look and give a brief pressed tint instead. */
 .swipe-row .deck-card:hover {
   transform: none;
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+.swipe-row .deck-card:active {
+  background: var(--accent-subtle);
 }
 
 .topbar-pin-btn {
