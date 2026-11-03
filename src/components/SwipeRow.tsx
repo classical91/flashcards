@@ -1,7 +1,7 @@
 import { MouseEvent, PointerEvent, ReactNode, useRef, useState } from "react";
 
-/** How far the row slides to uncover its actions (two 72px buttons). */
-export const SWIPE_ACTIONS_WIDTH = 144;
+/** How far the row slides to uncover its actions: two 72px buttons and two 6px gaps. */
+export const SWIPE_ACTIONS_WIDTH = 156;
 
 // Movement before we decide whether the finger is swiping or scrolling.
 const AXIS_LOCK_PX = 8;
@@ -94,7 +94,7 @@ export function SwipeRow({ isOpen, onOpen, onClose, actions, children }: SwipeRo
   };
 
   return (
-    <div className={`swipe-row${isOpen ? " open" : ""}`}>
+    <div className={`swipe-row${isOpen ? " open" : ""}${dragX !== null ? " dragging" : ""}`}>
       <div className="swipe-row-actions">
         {actions}
       </div>
