@@ -97,6 +97,11 @@ export function SectionView({
         >
           Home
         </button>
+        {/* Stays in the sticky header so the topic is named however far you scroll. */}
+        <h1 className="topbar-topic" title={section.title}>
+          <span className="topbar-topic-sep" aria-hidden="true">›</span>
+          <span className="topbar-topic-text">{section.title}</span>
+        </h1>
         <div className="topbar-right">
           <button
             className="topbar-btn"
@@ -144,7 +149,6 @@ export function SectionView({
 
       <div className="section-view-main">
         <div className="section-view-heading">
-          <h1 className="section-view-title">{section.title}</h1>
           <div className="section-view-meta">
             {section.decks.length} {section.decks.length === 1 ? "deck" : "decks"}
             {section.description && (
