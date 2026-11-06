@@ -135,8 +135,10 @@ export function CardListOverlay({
             return (
               <div key={card.id} className="card-list-row">
                 <span className="card-list-index">{index + 1}</span>
-                <span className="card-list-term">{card.term}</span>
-                <span className="card-list-def">{card.definition}</span>
+                <div className="card-list-text">
+                  <span className="card-list-term">{card.term}</span>
+                  <span className="card-list-def">{card.definition}</span>
+                </div>
                 <button
                   className={`card-list-star${isStarred ? " starred" : ""}`}
                   onClick={() => onToggleStar(card.id)}
@@ -220,8 +222,10 @@ export function SharedDeckOverlay({ sharedDeckLink, onImport, onDismiss }: Share
             {preview.map((card, i) => (
               <div key={card.id} className="card-list-row">
                 <span className="card-list-index">{i + 1}</span>
-                <span className="card-list-term">{card.term}</span>
-                <span className="card-list-def">{card.definition}</span>
+                <div className="card-list-text">
+                  <span className="card-list-term">{card.term}</span>
+                  <span className="card-list-def">{card.definition}</span>
+                </div>
               </div>
             ))}
             {remaining > 0 && (
