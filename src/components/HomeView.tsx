@@ -12,6 +12,7 @@ import {
 import { MAX_SEARCH_RESULTS, searchLibrary } from "../lib/search";
 import { formatRelativeTime } from "../lib/format";
 import { loadSectionSortMode, safeSetItem } from "../lib/storage";
+import { CardListLayout } from "../lib/constants";
 import {
   AccentColor,
   RecentDeckEntry,
@@ -56,6 +57,8 @@ type HomeViewProps = {
   setTheme: (theme: Theme) => void;
   accentColor: AccentColor;
   setAccentColor: (color: AccentColor) => void;
+  cardListLayout: CardListLayout;
+  setCardListLayout: (layout: CardListLayout) => void;
   // Section composer
   sectionComposer: SectionComposer | null;
   setSectionComposer: Dispatch<SetStateAction<SectionComposer | null>>;
@@ -81,6 +84,11 @@ const SORT_OPTIONS: { mode: SectionSortMode; label: string; title: string }[] = 
 
 /** Enough to act on at a glance; the rest are reachable from their topic. */
 const MAX_REVIEW_DECKS = 5;
+
+const CARD_LIST_LAYOUT_OPTIONS: { layout: CardListLayout; label: string }[] = [
+  { layout: "stacked", label: "☰ Stacked" },
+  { layout: "side", label: "◫ Side by side" },
+];
 
 const ACCENT_EMOJI: Record<AccentColor, string> = {
   blue: "🔵",
@@ -121,6 +129,8 @@ export function HomeView({
   setTheme,
   accentColor,
   setAccentColor,
+  cardListLayout,
+  setCardListLayout,
   sectionComposer,
   setSectionComposer,
   sectionComposerMessage,
@@ -406,6 +416,36 @@ export function HomeView({
                     }}
                   >
                     {ACCENT_EMOJI[color]} {color}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p
+                style={{
+                  margin: "0 0 8px 0",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  color: "var(--muted)",
+                  textTransform: "uppercase",
+                }}
+              >
+                View all layout
+              </p>
+              <div style={{ display: "flex", gap: "6px" }}>
+                {CARD_LIST_LAYOUT_OPTIONS.map(({ layout, label }) => (
+                  <button
+                    key={layout}
+                    className="mini-btn"
+                    onClick={() => setCardListLayout(layout)}
+                    aria-pressed={cardListLayout === layout}
+                    style={{
+                      background: cardListLayout === layout ? "var(--accent)" : "var(--surface)",
+                      color: cardListLayout === layout ? "var(--on-accent)" : "var(--ink)",
+                      borderColor: cardListLayout === layout ? "var(--accent)" : "var(--line)",
+                    }}
+                  >
+                    {label}
                   </button>
                 ))}
               </div>

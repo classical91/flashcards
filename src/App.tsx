@@ -9,6 +9,8 @@ import {
 import { createLibrarySnapshot } from "./data/librarySnapshot";
 import {
   ACCENT_STORAGE_KEY,
+  CARD_LIST_LAYOUT_STORAGE_KEY,
+  CardListLayout,
   DAILY_CARD_STORAGE_KEY,
   DECK_LAST_VIEWED_STORAGE_KEY,
   LIBRARY_STORAGE_KEY,
@@ -64,6 +66,7 @@ import {
 import { toDateKey } from "./lib/dailyCard";
 import {
   loadAccentColor,
+  loadCardListLayout,
   loadDeckLastViewed,
   loadLibrarySections,
   loadPinnedDeckIds,
@@ -181,6 +184,7 @@ export default function App() {
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [accentColor, setAccentColor] = useState<AccentColor>(loadAccentColor);
+  const [cardListLayout, setCardListLayout] = useState<CardListLayout>(loadCardListLayout);
   const [todayKey, setTodayKey] = useState(() => toDateKey(new Date()));
   // Session-only: a shuffle is a way to study, not an edit to the deck, so it
   // is deliberately never persisted or synced. Keyed by deck so returning to a
@@ -1222,6 +1226,13 @@ export default function App() {
     safeSetItem(ACCENT_STORAGE_KEY, accentColor);
   }, [accentColor]);
 
+  // Set on <html> so every card list (View all, shared deck preview) follows it.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    document.documentElement.setAttribute("data-card-list", cardListLayout);
+    safeSetItem(CARD_LIST_LAYOUT_STORAGE_KEY, cardListLayout);
+  }, [cardListLayout]);
+
   useEffect(() => {
     if (!showActionsMenu) return;
     const handleClickOutside = (e: MouseEvent) => {
@@ -1407,6 +1418,8 @@ export default function App() {
           setTheme={chooseTheme}
           accentColor={accentColor}
           setAccentColor={chooseAccentColor}
+          cardListLayout={cardListLayout}
+          setCardListLayout={setCardListLayout}
           dailyCard={dailyCard}
           reviewSummary={reviewSummary}
           onStartReview={openDeckForReview}
