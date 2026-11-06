@@ -2517,6 +2517,42 @@ button {
   margin: -8px -8px -8px 0;
 }
 
+/* Side by side (Appearance → View all layout): the original compact table of
+   number · word · definition · star. The text wrapper steps aside so the word
+   and definition become their own columns. */
+:root[data-card-list="side"] .card-list-row {
+  grid-template-columns: 28px minmax(0, 1fr) minmax(0, 2fr) 28px;
+  gap: 8px;
+  align-items: baseline;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+:root[data-card-list="side"] .card-list-text {
+  display: contents;
+}
+
+:root[data-card-list="side"] .card-list-index {
+  min-width: 0;
+  padding-top: 0;
+}
+
+:root[data-card-list="side"] .card-list-term {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+:root[data-card-list="side"] .card-list-def {
+  font-size: 14px;
+}
+
+:root[data-card-list="side"] .card-list-row .card-list-star {
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+}
+
 /* ── Shared deck import ───────────────────────────────────────────────────── */
 
 .shared-deck-preview {

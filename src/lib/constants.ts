@@ -10,6 +10,7 @@ export const ACCENT_STORAGE_KEY = "flashcards.accent.v1";
 export const DAILY_CARD_STORAGE_KEY = "flashcards.dailyCard.v1";
 export const DECK_SORT_STORAGE_KEY = "flashcards.deckSort.v1";
 export const SECTION_SORT_STORAGE_KEY = "flashcards.sectionSort.v1";
+export const CARD_LIST_LAYOUT_STORAGE_KEY = "flashcards.cardListLayout.v1";
 export const MAX_RECENT_DECKS = 6;
 
 export const syncKeyPattern = /^[A-Za-z0-9_-]{8,120}$/;
@@ -22,5 +23,9 @@ export const ACCENT_COLORS = ["blue", "purple", "green", "red", "amber"] as cons
 
 export type Theme = "light" | "dark";
 export type AccentColor = (typeof ACCENT_COLORS)[number];
+
+/** How View all lays out each card: word over definition, or the two side by side. */
+export const CARD_LIST_LAYOUTS = ["stacked", "side"] as const;
+export type CardListLayout = (typeof CARD_LIST_LAYOUTS)[number];
 export const TOMBSTONES_STORAGE_KEY = "flashcards.tombstones.v1";
 export const PREFERENCES_UPDATED_AT_STORAGE_KEY = "flashcards.preferencesUpdatedAt.v1";

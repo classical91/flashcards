@@ -7,6 +7,9 @@ import {
   ACCENT_COLORS,
   ACCENT_STORAGE_KEY,
   BUILD_SYNC_KEY,
+  CARD_LIST_LAYOUTS,
+  CARD_LIST_LAYOUT_STORAGE_KEY,
+  CardListLayout,
   DAILY_CARD_STORAGE_KEY,
   DECK_LAST_VIEWED_STORAGE_KEY,
   DECK_SORT_STORAGE_KEY,
@@ -93,6 +96,17 @@ export const loadSectionSortMode = (): SectionSortMode => {
     }
   } catch {}
   return "default";
+};
+
+/** View all's card layout; a per-device view choice like the sorts, so not synced. */
+export const loadCardListLayout = (): CardListLayout => {
+  try {
+    const stored = window.localStorage.getItem(CARD_LIST_LAYOUT_STORAGE_KEY);
+    if ((CARD_LIST_LAYOUTS as readonly string[]).includes(stored || "")) {
+      return stored as CardListLayout;
+    }
+  } catch {}
+  return "stacked";
 };
 
 // Cached for the current load cycle so the id repair from sanitizeDeckSections
