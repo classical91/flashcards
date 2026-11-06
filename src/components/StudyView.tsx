@@ -224,6 +224,34 @@ export function StudyView({
     setDeckSubtitleEdit(selectedDeck.subtitle ?? "");
   }, [selectedDeck.id]);
 
+  // Name and description are edited on their own, without opening the card list.
+  const [showInfoEditor, setShowInfoEditor] = useState(false);
+
+  useEffect(() => {
+    setShowInfoEditor(false);
+  }, [selectedDeck.id]);
+
+  const openInfoEditor = () => {
+    setDeckTitleEdit(selectedDeck.title);
+    setDeckSubtitleEdit(selectedDeck.subtitle ?? "");
+    setShowInfoEditor(true);
+  };
+
+  const toggleInfoEditor = () => {
+    if (showInfoEditor) setShowInfoEditor(false);
+    else openInfoEditor();
+  };
+
+  const isDeckInfoUnchanged =
+    deckTitleEdit.trim() === selectedDeck.title &&
+    deckSubtitleEdit.trim() === (selectedDeck.subtitle ?? "");
+
+  const saveDeckInfo = () => {
+    if (!deckTitleEdit.trim() || isDeckInfoUnchanged) return;
+    onUpdateDeckInfo({ title: deckTitleEdit.trim(), subtitle: deckSubtitleEdit.trim() });
+    setShowInfoEditor(false);
+  };
+
   const toggleImporter = () => {
     setShowCardImporter((v) => !v);
     setCardImportMessage("");
@@ -626,6 +654,15 @@ export function StudyView({
                   <span>{isSharingDeck ? "Sharing…" : toolNoun ? "Share starred" : "Share deck"}</span>
                 </button>
                 <button
+                  className={`deck-tool-btn${showInfoEditor ? " active" : ""}`}
+                  onClick={toggleInfoEditor}
+                  aria-pressed={showInfoEditor}
+                  title="Rename this deck or change its description"
+                >
+                  <Icon name="edit" size={16} />
+                  <span>{showInfoEditor ? "Hide name" : "Edit name"}</span>
+                </button>
+                <button
                   className={`deck-tool-btn${showCardEditor ? " active" : ""}`}
                   onClick={toggleEditor}
                   aria-pressed={showCardEditor}
@@ -647,6 +684,47 @@ export function StudyView({
           )}
         </div>
 
+        {showInfoEditor && (
+          <div className="card-editor-panel">
+            <div className="panel-card-head">
+              <strong>Edit deck name &amp; description</strong>
+              <button className="link-btn" onClick={() => setShowInfoEditor(false)}>
+                Close
+              </button>
+            </div>
+            <form
+              className="deck-info-edit"
+              onSubmit={(e) => {
+                e.preventDefault();
+                saveDeckInfo();
+              }}
+            >
+              <input
+                className="deck-info-edit-input"
+                value={deckTitleEdit}
+                onChange={(e) => setDeckTitleEdit(e.target.value)}
+                placeholder="Deck name"
+                aria-label="Deck name"
+                autoFocus
+              />
+              <input
+                className="deck-info-edit-input"
+                value={deckSubtitleEdit}
+                onChange={(e) => setDeckSubtitleEdit(e.target.value)}
+                placeholder="Description (optional)"
+                aria-label="Deck description"
+              />
+              <button
+                type="submit"
+                className="mini-btn"
+                disabled={!deckTitleEdit.trim() || isDeckInfoUnchanged}
+              >
+                Save
+              </button>
+            </form>
+          </div>
+        )}
+
         {showCardEditor && (
           <div className="card-editor-panel">
             <div className="panel-card-head">
@@ -658,33 +736,6 @@ export function StudyView({
                 onClick={() => { setShowCardEditor(false); setCardEdits({}); }}
               >
                 Close
-              </button>
-            </div>
-            <div className="deck-info-edit">
-              <input
-                className="deck-info-edit-input"
-                value={deckTitleEdit}
-                onChange={(e) => setDeckTitleEdit(e.target.value)}
-                placeholder="Deck name"
-                aria-label="Deck name"
-              />
-              <input
-                className="deck-info-edit-input"
-                value={deckSubtitleEdit}
-                onChange={(e) => setDeckSubtitleEdit(e.target.value)}
-                placeholder="Subtitle (optional)"
-                aria-label="Deck subtitle"
-              />
-              <button
-                className="mini-btn"
-                onClick={() => onUpdateDeckInfo({ title: deckTitleEdit.trim(), subtitle: deckSubtitleEdit.trim() })}
-                disabled={
-                  !deckTitleEdit.trim() ||
-                  (deckTitleEdit.trim() === selectedDeck.title &&
-                    deckSubtitleEdit.trim() === (selectedDeck.subtitle ?? ""))
-                }
-              >
-                Save name
               </button>
             </div>
             <div className="add-card-form">
