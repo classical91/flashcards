@@ -118,6 +118,7 @@ import { StudyView } from "./components/StudyView";
 import { AUTOPLAY_SECONDS_OPTIONS } from "./lib/autoplay";
 import { loadSavedView, saveView } from "./lib/savedView";
 import { copyText } from "./lib/clipboard";
+import { AI_PROVIDERS, AiProvider, buildAiChatUrl, buildDefinitionRefreshPrompt } from "./lib/aiExport";
 import { Icon } from "./components/Icons";
 
 const AUTOPLAY_SECONDS_KEY = "flashcards.autoplaySeconds.v1";
@@ -850,6 +851,31 @@ export default function App() {
     }
   };
 
+  const handleExportToAI = async (provider: AiProvider) => {
+    if (!selectedDeck || !toolCards.length) return;
+    const prompt = buildDefinitionRefreshPrompt(selectedDeck.title, toolCards);
+    const { url, prefilled } = buildAiChatUrl(provider, prompt);
+    const label = AI_PROVIDERS.find((p) => p.id === provider)?.label ?? provider;
+    const count = `${toolCards.length}${isStudyingStarred ? " starred" : ""} card${toolCards.length === 1 ? "" : "s"}`;
+    // Copy before opening the tab, while this page still has focus. A short
+    // list is also prefilled into the new chat; a long one has to be pasted.
+    let copied = true;
+    try {
+      await copyText(prompt);
+    } catch {
+      copied = false;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+    if (copied) showCopiedPopup(`Copied for ${label}`);
+    setToast(
+      prefilled
+        ? `Opened ${label} with ${count} from "${selectedDeck.title}".`
+        : copied
+          ? `Copied ${count} from "${selectedDeck.title}". Paste it into ${label}.`
+          : `Could not copy the list, so ${label} opened without it.`,
+    );
+  };
+
   const handleDownloadBackup = () => {
     const snapshot = createLibrarySnapshot({
       librarySections,
@@ -1558,6 +1584,7 @@ export default function App() {
         onUpdateCard={handleUpdateCard}
         onUpdateDeckInfo={handleUpdateDeckInfo}
         onExportDeck={handleExportDeck}
+        onExportToAI={handleExportToAI}
         onShareDeck={handleShareDeck}
         isSharingDeck={isSharingDeck}
       />

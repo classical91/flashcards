@@ -4,6 +4,7 @@ import { DeckProgress } from "../data/librarySnapshot";
 import { REVIEW_GRADES, ReviewGrade } from "../lib/srs";
 import { ViewState } from "../lib/types";
 import { AUTOPLAY_SECONDS_OPTIONS } from "../lib/autoplay";
+import { AI_PROVIDERS, AiProvider } from "../lib/aiExport";
 import { Icon } from "./Icons";
 
 const GRADE_LABELS: Record<ReviewGrade, string> = {
@@ -124,6 +125,8 @@ type StudyViewProps = {
   onUpdateCard: (cardId: string) => void;
   onUpdateDeckInfo: (info: { title: string; subtitle: string }) => void;
   onExportDeck: () => void;
+  /** Copies the list with a prompt to refresh its definitions and opens that AI. */
+  onExportToAI: (provider: AiProvider) => void;
   onShareDeck: () => void;
   isSharingDeck: boolean;
 };
@@ -211,6 +214,7 @@ export function StudyView({
   onUpdateCard,
   onUpdateDeckInfo,
   onExportDeck,
+  onExportToAI,
   onShareDeck,
   isSharingDeck,
 }: StudyViewProps) {
@@ -256,6 +260,31 @@ export function StudyView({
     setShowCardImporter((v) => !v);
     setCardImportMessage("");
   };
+
+  // The Import / Export button opens a small menu: Bulk import, or send the
+  // list to an AI chat to bring its definitions up to date.
+  const [showTransferMenu, setShowTransferMenu] = useState(false);
+  const transferMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showTransferMenu) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!transferMenuRef.current?.contains(event.target as Node)) setShowTransferMenu(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowTransferMenu(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [showTransferMenu]);
+
+  useEffect(() => {
+    setShowTransferMenu(false);
+  }, [selectedDeck.id]);
 
   const toggleEditor = () => {
     setShowCardEditor((v) => !v);
@@ -617,14 +646,58 @@ export function StudyView({
                   <Icon name="copy" size={16} />
                   <span>{toolNoun ? "Copy starred" : "Copy cards"}</span>
                 </button>
-                <button
-                  className={`deck-tool-btn${showCardImporter ? " active" : ""}`}
-                  onClick={toggleImporter}
-                  aria-pressed={showCardImporter}
-                >
-                  <Icon name="upload" size={16} />
-                  <span>{showCardImporter ? "Hide import" : "Bulk import"}</span>
-                </button>
+                <div className="deck-tool-menu-wrap" ref={transferMenuRef}>
+                  <button
+                    className={`deck-tool-btn deck-tool-menu-trigger${showCardImporter || showTransferMenu ? " active" : ""}`}
+                    onClick={() => setShowTransferMenu((v) => !v)}
+                    aria-haspopup="menu"
+                    aria-expanded={showTransferMenu}
+                    title="Import cards, or export the list to an AI"
+                  >
+                    <Icon name="upload" size={16} />
+                    <span>Import / Export</span>
+                    <Icon name="chevronDown" size={14} />
+                  </button>
+                  {showTransferMenu && (
+                    <div className="deck-tool-menu" role="menu" aria-label="Import or export">
+                      <div className="deck-tool-menu-label">Import</div>
+                      <button
+                        className="deck-tool-menu-item"
+                        role="menuitem"
+                        onClick={() => {
+                          setShowTransferMenu(false);
+                          toggleImporter();
+                        }}
+                      >
+                        <Icon name="upload" size={15} />
+                        <span>{showCardImporter ? "Hide import" : "Bulk import"}</span>
+                      </button>
+                      <div className="deck-tool-menu-label">
+                        {toolNoun ? "Export starred to AI" : "Export to AI"}
+                      </div>
+                      {AI_PROVIDERS.map((provider) => (
+                        <button
+                          key={provider.id}
+                          className="deck-tool-menu-item"
+                          role="menuitem"
+                          disabled={isDeckEmpty || !editorCards.length}
+                          title={`Copy the list with a prompt to update its definitions, then open ${provider.label}`}
+                          onClick={() => {
+                            setShowTransferMenu(false);
+                            onExportToAI(provider.id);
+                          }}
+                        >
+                          <Icon name="sparkles" size={15} />
+                          <span>{provider.label}</span>
+                        </button>
+                      ))}
+                      <p className="deck-tool-menu-note">
+                        Copies the list with a prompt asking the AI to bring the definitions up to
+                        date, then opens it.
+                      </p>
+                    </div>
+                  )}
+                </div>
                 <button
                   className="deck-tool-btn"
                   onClick={onResetProgress}

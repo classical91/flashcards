@@ -47,6 +47,11 @@ This repository is a Vite React app with a small Node API server for cloud libra
   matching card.
 - Create new decks inside any section.
 - Bulk import cards when creating a deck or appending to an existing one.
+- **Deck Tools → Import / Export** holds Bulk import and an Export to AI list
+  (ChatGPT, Claude, Grok). Export copies the deck's cards with a prompt asking
+  the AI to bring the definitions up to date and make each one unique, then
+  opens that AI. Short lists are prefilled into the new chat; long ones are
+  pasted from the clipboard.
 - Parse pasted lines in multiple formats:
   - `term<TAB>definition` (Quizlet-style)
   - `term - definition` (supports spaced hyphen/en dash/em dash)
