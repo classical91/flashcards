@@ -2,7 +2,7 @@ import { ComponentPropsWithoutRef, Dispatch, RefObject, SetStateAction, useEffec
 import { Deck, DeckSection, Flashcard } from "../data/deckBuilder";
 import { DeckProgress } from "../data/librarySnapshot";
 import { REVIEW_GRADES, ReviewGrade } from "../lib/srs";
-import { ViewState } from "../lib/types";
+import { CardImportMode, ViewState } from "../lib/types";
 import { AUTOPLAY_SECONDS_OPTIONS } from "../lib/autoplay";
 import { AI_PROVIDERS, AiProvider } from "../lib/aiExport";
 import { Icon } from "./Icons";
@@ -19,6 +19,19 @@ const GRADE_LABELS: Record<ReviewGrade, string> = {
 // collapsed.
 const DEEP_TOOLS_OPEN_KEY = "flashcards.deepToolsOpen.v1";
 const DECK_TOOLS_OPEN_KEY = "flashcards.deckToolsOpen.v1";
+
+const CARD_IMPORT_MODES: { mode: CardImportMode; label: string; hint: (count: number) => string }[] = [
+  {
+    mode: "add",
+    label: "Add to deck",
+    hint: (count) => `Keep the ${count} current card${count === 1 ? "" : "s"} and add these`,
+  },
+  {
+    mode: "replace",
+    label: "Replace deck",
+    hint: (count) => `Remove the ${count} current card${count === 1 ? "" : "s"} and use only these`,
+  },
+];
 
 // Opening a section scrolls it to the middle of the screen so its buttons are
 // in view instead of hidden below the fold. Only a tap scrolls — a section that
@@ -119,7 +132,7 @@ type StudyViewProps = {
   onGoogleSearch: (type: string) => void;
   onShowAiModal: () => void;
   onResetProgress: () => void;
-  onAddCards: () => void;
+  onAddCards: (mode: CardImportMode) => void;
   onAddSingleCard: () => void;
   onDeleteCard: (cardId: string) => void;
   onUpdateCard: (cardId: string) => void;
@@ -233,6 +246,13 @@ export function StudyView({
 
   useEffect(() => {
     setShowInfoEditor(false);
+  }, [selectedDeck.id]);
+
+  // Bulk import adds by default; replacing the whole deck is opt-in per deck.
+  const [cardImportMode, setCardImportMode] = useState<CardImportMode>("add");
+
+  useEffect(() => {
+    setCardImportMode("add");
   }, [selectedDeck.id]);
 
   const openInfoEditor = () => {
@@ -913,16 +933,33 @@ export function StudyView({
               <span>{cardImportPreview.cards.length} cards ready</span>
               <span>{cardImportPreview.invalidLines.length} skipped</span>
             </div>
+            <div className="import-mode" role="group" aria-label="What to do with the deck's current cards">
+              {CARD_IMPORT_MODES.map(({ mode, label, hint }) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`import-mode-btn${mode === "replace" ? " danger" : ""}`}
+                  aria-pressed={cardImportMode === mode}
+                  onClick={() => setCardImportMode(mode)}
+                >
+                  <strong>{label}</strong>
+                  <span>{hint(selectedDeck.cards.length)}</span>
+                </button>
+              ))}
+            </div>
             {cardImportMessage && (
               <p
-                className={`message-line${cardImportMessage.startsWith("Added") ? " success" : " error"}`}
+                className={`message-line${/^(Added|Replaced)/.test(cardImportMessage) ? " success" : " error"}`}
               >
                 {cardImportMessage}
               </p>
             )}
             <div className="panel-card-actions">
-              <button className="mini-btn" onClick={onAddCards}>
-                Add pasted cards
+              <button
+                className={cardImportMode === "replace" ? "danger-btn" : "mini-btn"}
+                onClick={() => onAddCards(cardImportMode)}
+              >
+                {cardImportMode === "replace" ? "Replace deck with pasted cards" : "Add pasted cards"}
               </button>
             </div>
           </div>

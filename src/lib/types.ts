@@ -65,3 +65,6 @@ export type AiModal = {
   word: string;
   prompt: string;
 } | null;
+
+/** Whether Bulk import adds the pasted cards to the deck or replaces its whole card list. */
+export type CardImportMode = "add" | "replace";

@@ -81,6 +81,7 @@ import {
 import {
   AccentColor,
   AiModal,
+  CardImportMode,
   ConfirmDialog,
   DeckComposer,
   DeckLastViewed,
@@ -634,11 +635,23 @@ export default function App() {
       ? cardIds.reduce((next, cardId) => toggleStarredCard(next, cardId), progress)
       : progress;
 
-  const handleAddCards = () => {
+  const handleAddCards = (mode: CardImportMode = "add") => {
     if (!selectedDeck) return;
     const parsed = parsePastedFlashcards(cardPaste);
     if (parsed.cards.length === 0) {
       setCardImportMessage("Paste at least one valid card line first.");
+      return;
+    }
+    if (mode === "replace") {
+      const count = selectedDeck.cards.length;
+      askConfirm(
+        `Replace all ${count} card${count === 1 ? "" : "s"} in "${selectedDeck.title}" with the ${parsed.cards.length} pasted card${parsed.cards.length === 1 ? "" : "s"}? This cannot be undone.`,
+        () => {
+          replaceDeckCards(parsed.cards);
+          setConfirmDialog(null);
+        },
+        { confirmLabel: "Replace deck" },
+      );
       return;
     }
     const now = Date.now();
@@ -671,6 +684,57 @@ export default function App() {
     setCardPaste("");
     setCardImportMessage(
       `Added ${newCards.length}${isStudyingStarred ? " starred" : ""} card${newCards.length === 1 ? "" : "s"} to ${selectedDeck.title}.`,
+    );
+  };
+
+  /**
+   * Swaps the deck's whole card list for an import. The old cards are removed
+   * with one deck-level tombstone rather than one per card (a big deck would
+   * blow the snapshot's tombstone budget): the deck and its new cards are
+   * stamped just after it, so they survive while every older card — here or
+   * on a device that hasn't synced yet — is dropped by the next merge.
+   *
+   * A pasted word whose id matches an old card keeps that card's study
+   * history, so re-importing an edited list doesn't wipe progress on the
+   * words that stayed.
+   */
+  const replaceDeckCards = (cards: ReturnType<typeof parsePastedFlashcards>["cards"]) => {
+    if (!selectedDeck) return;
+    const deletedAt = Date.now();
+    const now = deletedAt + 1;
+    const newCards = withCardIds(cards).map((card) => touchCard(card, now));
+    const newIds = new Set(newCards.map((card) => card.id));
+    startTransition(() => {
+      setLibrarySections((currentSections) =>
+        updateDeckInSections(currentSections, selectedDeck.id, (deck) =>
+          touchDeck({ ...deck, cards: newCards }, now),
+        ),
+      );
+      setTombstones((current) => recordDeckDeletion(current, selectedDeck.id, deletedAt));
+      setDeckProgress((currentProgress) => {
+        const currentDeckProgress =
+          currentProgress[selectedDeck.id] ?? createDeckProgress(selectedDeck);
+        return {
+          ...currentProgress,
+          [selectedDeck.id]: starIfStudyingStarred(
+            {
+              ...currentDeckProgress,
+              currentCardId: newIds.has(currentDeckProgress.currentCardId)
+                ? currentDeckProgress.currentCardId
+                : (newCards[0]?.id ?? ""),
+              isFlipped: false,
+            },
+            newCards
+              .map((card) => card.id)
+              .filter((id) => !currentDeckProgress.starredIds?.includes(id)),
+          ),
+        };
+      });
+    });
+    setCardPaste("");
+    setCardEdits({});
+    setCardImportMessage(
+      `Replaced ${selectedDeck.title} with ${newCards.length} card${newCards.length === 1 ? "" : "s"}.`,
     );
   };
 

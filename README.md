@@ -46,7 +46,10 @@ This repository is a Vite React app with a small Node API server for cloud libra
 - Search decks _and_ cards from the home page. Card hits open the deck at the
   matching card.
 - Create new decks inside any section.
-- Bulk import cards when creating a deck or appending to an existing one.
+- Bulk import cards when creating a deck, or into an existing one with a
+  choice of **Add to deck** (keep the current cards) or **Replace deck** (swap
+  the whole card list for the import, after a confirm). Words that appear in
+  both the old and new list keep their study progress.
 - **Deck Tools → Import / Export** holds Bulk import and an Export to AI list
   (ChatGPT, Claude, Grok). Export copies the deck's cards with a prompt asking
   the AI to bring the definitions up to date and make each one unique, then
