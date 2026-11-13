@@ -29,7 +29,7 @@ This repository is a Vite React app with a small Node API server for cloud libra
   The **Starred** tab in the study view studies only starred cards, and
   View all can filter to just the starred list.
   While studying the starred list, the deck tools act on it too: View,
-  Copy, Share, Edit and Reset cover only the starred cards, and cards added
+  Share, Edit and Reset cover only the starred cards, and cards added
   or imported there are starred automatically.
 - Study with spaced repetition:
   - grade a card Again / Hard / Good / Easy; each button shows when the card

@@ -137,7 +137,6 @@ type StudyViewProps = {
   onDeleteCard: (cardId: string) => void;
   onUpdateCard: (cardId: string) => void;
   onUpdateDeckInfo: (info: { title: string; subtitle: string }) => void;
-  onExportDeck: () => void;
   /** Copies the list with a prompt to refresh its definitions and opens that AI. */
   onExportToAI: (provider: AiProvider) => void;
   onShareDeck: () => void;
@@ -226,7 +225,6 @@ export function StudyView({
   onDeleteCard,
   onUpdateCard,
   onUpdateDeckInfo,
-  onExportDeck,
   onExportToAI,
   onShareDeck,
   isSharingDeck,
@@ -236,17 +234,12 @@ export function StudyView({
   const [deckTitleEdit, setDeckTitleEdit] = useState(selectedDeck.title);
   const [deckSubtitleEdit, setDeckSubtitleEdit] = useState(selectedDeck.subtitle ?? "");
 
+  // The name fields start from the deck's current name each time the editor
+  // opens, so an abandoned edit doesn't linger.
   useEffect(() => {
     setDeckTitleEdit(selectedDeck.title);
     setDeckSubtitleEdit(selectedDeck.subtitle ?? "");
-  }, [selectedDeck.id]);
-
-  // Name and description are edited on their own, without opening the card list.
-  const [showInfoEditor, setShowInfoEditor] = useState(false);
-
-  useEffect(() => {
-    setShowInfoEditor(false);
-  }, [selectedDeck.id]);
+  }, [selectedDeck.id, showCardEditor]);
 
   // Bulk import adds by default; replacing the whole deck is opt-in per deck.
   const [cardImportMode, setCardImportMode] = useState<CardImportMode>("add");
@@ -255,17 +248,6 @@ export function StudyView({
     setCardImportMode("add");
   }, [selectedDeck.id]);
 
-  const openInfoEditor = () => {
-    setDeckTitleEdit(selectedDeck.title);
-    setDeckSubtitleEdit(selectedDeck.subtitle ?? "");
-    setShowInfoEditor(true);
-  };
-
-  const toggleInfoEditor = () => {
-    if (showInfoEditor) setShowInfoEditor(false);
-    else openInfoEditor();
-  };
-
   const isDeckInfoUnchanged =
     deckTitleEdit.trim() === selectedDeck.title &&
     deckSubtitleEdit.trim() === (selectedDeck.subtitle ?? "");
@@ -273,7 +255,6 @@ export function StudyView({
   const saveDeckInfo = () => {
     if (!deckTitleEdit.trim() || isDeckInfoUnchanged) return;
     onUpdateDeckInfo({ title: deckTitleEdit.trim(), subtitle: deckSubtitleEdit.trim() });
-    setShowInfoEditor(false);
   };
 
   const toggleImporter = () => {
@@ -596,7 +577,7 @@ export function StudyView({
               <div className="state-card-actions">
                 {!showCardEditor && (
                   <button className="mini-btn primary" onClick={toggleEditor}>
-                    Edit list
+                    Edit deck
                   </button>
                 )}
               </div>
@@ -656,15 +637,6 @@ export function StudyView({
                 >
                   <Icon name="list" size={16} />
                   <span>{toolNoun ? "View starred" : "View all"}</span>
-                </button>
-                <button
-                  className="deck-tool-btn"
-                  onClick={onExportDeck}
-                  disabled={isDeckEmpty || !editorCards.length}
-                  title={toolNoun ? "Copy the starred cards to the clipboard" : "Copy cards to the clipboard"}
-                >
-                  <Icon name="copy" size={16} />
-                  <span>{toolNoun ? "Copy starred" : "Copy cards"}</span>
                 </button>
                 <div className="deck-tool-menu-wrap" ref={transferMenuRef}>
                   <button
@@ -747,21 +719,17 @@ export function StudyView({
                   <span>{isSharingDeck ? "Sharing…" : toolNoun ? "Share starred" : "Share deck"}</span>
                 </button>
                 <button
-                  className={`deck-tool-btn${showInfoEditor ? " active" : ""}`}
-                  onClick={toggleInfoEditor}
-                  aria-pressed={showInfoEditor}
-                  title="Rename this deck or change its description"
-                >
-                  <Icon name="edit" size={16} />
-                  <span>{showInfoEditor ? "Hide name" : "Edit name"}</span>
-                </button>
-                <button
                   className={`deck-tool-btn${showCardEditor ? " active" : ""}`}
                   onClick={toggleEditor}
                   aria-pressed={showCardEditor}
+                  title={
+                    toolNoun
+                      ? "Rename the deck and edit the starred cards"
+                      : "Rename the deck and edit its cards"
+                  }
                 >
                   <Icon name="edit" size={16} />
-                  <span>{showCardEditor ? "Hide editor" : toolNoun ? "Edit starred" : "Edit list"}</span>
+                  <span>{showCardEditor ? "Hide editor" : toolNoun ? "Edit starred" : "Edit deck"}</span>
                 </button>
                 <button
                   className="deck-tool-btn danger"
@@ -777,11 +745,14 @@ export function StudyView({
           )}
         </div>
 
-        {showInfoEditor && (
+        {showCardEditor && (
           <div className="card-editor-panel">
             <div className="panel-card-head">
-              <strong>Edit deck name &amp; description</strong>
-              <button className="link-btn" onClick={() => setShowInfoEditor(false)}>
+              <strong>Edit deck</strong>
+              <button
+                className="link-btn"
+                onClick={() => { setShowCardEditor(false); setCardEdits({}); }}
+              >
                 Close
               </button>
             </div>
@@ -798,7 +769,6 @@ export function StudyView({
                 onChange={(e) => setDeckTitleEdit(e.target.value)}
                 placeholder="Deck name"
                 aria-label="Deck name"
-                autoFocus
               />
               <input
                 className="deck-info-edit-input"
@@ -812,24 +782,11 @@ export function StudyView({
                 className="mini-btn"
                 disabled={!deckTitleEdit.trim() || isDeckInfoUnchanged}
               >
-                Save
+                Save name
               </button>
             </form>
-          </div>
-        )}
-
-        {showCardEditor && (
-          <div className="card-editor-panel">
-            <div className="panel-card-head">
-              <strong>
-                {toolNoun ? "Edit starred cards" : "Edit cards"} ({editorCards.length})
-              </strong>
-              <button
-                className="link-btn"
-                onClick={() => { setShowCardEditor(false); setCardEdits({}); }}
-              >
-                Close
-              </button>
+            <div className="card-editor-subhead">
+              {toolNoun ? "Starred cards" : "Cards"} ({editorCards.length})
             </div>
             <div className="add-card-form">
               <input

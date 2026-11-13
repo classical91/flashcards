@@ -900,21 +900,6 @@ export default function App() {
 
   useEffect(() => () => window.clearTimeout(copiedPopupTimer.current), []);
 
-  const handleExportDeck = async () => {
-    if (!selectedDeck) return;
-    const lines = toolCards.map((card) => `${card.term}\t${card.definition}`);
-    const content = lines.join("\n");
-    try {
-      await copyText(content);
-      showCopiedPopup(`Copied ${toolCards.length} card${toolCards.length === 1 ? "" : "s"}`);
-      setToast(
-        `Copied ${toolCards.length}${isStudyingStarred ? " starred" : ""} card${toolCards.length === 1 ? "" : "s"} from "${selectedDeck.title}" to clipboard.`,
-      );
-    } catch {
-      setToast("Could not copy to clipboard.");
-    }
-  };
-
   const handleExportToAI = async (provider: AiProvider) => {
     if (!selectedDeck || !toolCards.length) return;
     const prompt = buildDefinitionRefreshPrompt(selectedDeck.title, toolCards);
@@ -1647,7 +1632,6 @@ export default function App() {
         onDeleteCard={handleDeleteCard}
         onUpdateCard={handleUpdateCard}
         onUpdateDeckInfo={handleUpdateDeckInfo}
-        onExportDeck={handleExportDeck}
         onExportToAI={handleExportToAI}
         onShareDeck={handleShareDeck}
         isSharingDeck={isSharingDeck}
