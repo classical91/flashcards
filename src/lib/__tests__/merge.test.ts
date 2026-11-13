@@ -684,3 +684,49 @@ describe("mergeLibraryState — resetting some cards", () => {
     ).toEqual(["b"]);
   });
 });
+
+describe("mergeLibraryState — a deck's cards replaced by an import", () => {
+  const replacedAt = NOW;
+  const stamped = replacedAt + 1;
+
+  const localAfterReplace = () =>
+    state({
+      librarySections: [
+        section("topic", [
+          {
+            ...deck("words", [], stamped),
+            cards: [
+              { ...card("kept", stamped), definition: "new definition" },
+              card("fresh", stamped),
+            ],
+          },
+        ]),
+      ],
+      tombstones: recordDeckDeletion(emptyTombstones(), "words", replacedAt),
+    });
+
+  const staleDevice = () =>
+    state({
+      librarySections: [
+        section("topic", [
+          {
+            ...deck("words", [], replacedAt - 5000),
+            cards: [card("kept", replacedAt - 5000), card("dropped", replacedAt - 5000)],
+          },
+        ]),
+      ],
+    });
+
+  it("keeps only the imported cards, whichever side the merge starts from", () => {
+    const merged = mergeLibraryState(localAfterReplace(), staleDevice(), NOW);
+    expect(cardIds(merged.librarySections, "words")).toEqual(["kept", "fresh"]);
+    const reversed = mergeLibraryState(staleDevice(), localAfterReplace(), NOW);
+    expect(cardIds(reversed.librarySections, "words").sort()).toEqual(["fresh", "kept"]);
+  });
+
+  it("takes the imported version of a word that was in the old list too", () => {
+    const merged = mergeLibraryState(localAfterReplace(), staleDevice(), NOW);
+    const kept = merged.librarySections[0]?.decks[0]?.cards.find((c) => c.id === "kept");
+    expect(kept?.definition).toBe("new definition");
+  });
+});
