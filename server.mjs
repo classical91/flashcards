@@ -12,6 +12,7 @@ import {
   resolveDailyCard,
   toDateKey,
 } from "./server-daily-card.mjs";
+import { parseRecentLimit, resolveRecentCards } from "./server-recent-cards.mjs";
 
 process.on("uncaughtException", (error) => {
   console.error("Uncaught exception (kept alive):", error);
@@ -1520,6 +1521,44 @@ const handleApiRequest = async (
     return sendJson(response, 200, {
       exists: true,
       ...resolved,
+      updatedAt: record.updatedAt,
+      storage: storageKind,
+    });
+  }
+
+  // The card the reader was last on in each of their most recently opened
+  // decks, newest first — the home page's Recently viewed list, for Main Hub's
+  // System Logs page. Read-only, and like the card of the day it returns the
+  // deck, topic and card only, never the library.
+  const recentCardsMatch = pathname.match(/^\/api\/libraries\/([A-Za-z0-9_-]{1,200})\/recent$/);
+
+  if (recentCardsMatch) {
+    const libraryId = recentCardsMatch[1];
+
+    if (!libraryIdPattern.test(libraryId)) {
+      return sendJson(response, 400, {
+        error: "invalid_library_id",
+        message:
+          "Library IDs must be 8-120 characters long and use only letters, numbers, hyphens, or underscores.",
+      });
+    }
+
+    if (request.method !== "GET") {
+      return sendJson(response, 405, {
+        error: "method_not_allowed",
+        message: "Only GET is supported for recently viewed cards.",
+      });
+    }
+
+    const record = await getLibrarySnapshot(libraryId);
+
+    if (!record) {
+      return sendJson(response, 200, { exists: false, items: [], storage: storageKind });
+    }
+
+    return sendJson(response, 200, {
+      exists: true,
+      items: resolveRecentCards(record.snapshot, parseRecentLimit(searchParams.get("limit"))),
       updatedAt: record.updatedAt,
       storage: storageKind,
     });
