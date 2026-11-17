@@ -160,15 +160,10 @@ export function HomeView({
     })
     .filter((x): x is { deck: Deck; section: DeckSection; viewedAt: number } => x !== null);
 
-  // The card the reader was last on, taken from the most recently opened deck's
-  // saved position. Falls back to the deck's first card if that card is gone.
-  const lastViewedCard = (() => {
-    const latest = recentDecks[0];
-    if (!latest || latest.deck.cards.length === 0) return null;
-    const currentId = deckProgress[latest.deck.id]?.currentCardId;
-    const card = latest.deck.cards.find((c) => c.id === currentId) ?? latest.deck.cards[0];
-    return { ...latest, card };
-  })();
+  // The card the reader was last on in each deck, from its saved position.
+  // Falls back to the deck's first card if that card has since been removed.
+  const lastCardFor = (deck: Deck) =>
+    deck.cards.find((c) => c.id === deckProgress[deck.id]?.currentCardId) ?? deck.cards[0];
 
   const orderedSections = sortSections(librarySections, sortMode);
 
@@ -682,43 +677,37 @@ export function HomeView({
 
       {recentDecks.length > 0 && (
         <div className="home-recent">
-          {lastViewedCard && (
-            <>
-              <div className="home-recent-label">Last viewed card</div>
-              <button
-                className="home-last-card"
-                onClick={() => openDeck(lastViewedCard.deck.id, lastViewedCard.card.id)}
-                title="Pick up where you left off"
-              >
-                <div className="home-last-card-info">
-                  <span className="home-last-card-term">{lastViewedCard.card.term}</span>
-                  <span className="home-last-card-definition">
-                    {lastViewedCard.card.definition}
-                  </span>
-                  <span className="home-recent-item-section">
-                    {lastViewedCard.deck.title} · {lastViewedCard.section.title}
-                  </span>
-                </div>
-                <div className="home-last-card-side">
-                  <span className="home-recent-item-time">
-                    {formatRelativeTime(lastViewedCard.viewedAt)}
-                  </span>
-                  <span className="home-last-card-resume">Resume ›</span>
-                </div>
-              </button>
-            </>
-          )}
           <div className="home-recent-label">Recently viewed</div>
           <div className="home-recent-list">
-            {recentDecks.map(({ deck, section, viewedAt }) => (
-              <button key={deck.id} className="home-recent-item" onClick={() => openDeck(deck.id)}>
-                <div className="home-recent-item-info">
-                  <span className="home-recent-item-title">{deck.title}</span>
-                  <span className="home-recent-item-section">{section.title}</span>
-                </div>
-                <span className="home-recent-item-time">{formatRelativeTime(viewedAt)}</span>
-              </button>
-            ))}
+            {recentDecks.map(({ deck, section, viewedAt }) => {
+              const lastCard = lastCardFor(deck);
+              return (
+                <button
+                  key={deck.id}
+                  className="home-recent-item"
+                  onClick={() => openDeck(deck.id, lastCard?.id)}
+                  title={lastCard ? `Resume at "${lastCard.term}"` : undefined}
+                >
+                  <div className="home-recent-item-info">
+                    <span className="home-recent-item-title">{deck.title}</span>
+                    <span className="home-recent-item-section">{section.title}</span>
+                    {lastCard && (
+                      <span className="home-recent-item-card">
+                        <span className="home-recent-item-card-label">Last card</span>
+                        <span className="home-recent-item-card-term">{lastCard.term}</span>
+                        {lastCard.definition && (
+                          <span className="home-recent-item-card-definition">
+                            {" "}
+                            — {lastCard.definition}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  <span className="home-recent-item-time">{formatRelativeTime(viewedAt)}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
