@@ -2536,7 +2536,10 @@ button {
   font-size: 15px;
   font-weight: 600;
   line-height: 1.3;
-  overflow-wrap: anywhere;
+  /* Wrap only between words; a single word is never split mid-letter. */
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: manual;
 }
 
 .card-list-def {
@@ -2556,7 +2559,9 @@ button {
    number · word · definition · star. The text wrapper steps aside so the word
    and definition become their own columns. */
 :root[data-card-list="side"] .card-list-row {
-  grid-template-columns: 28px minmax(0, 1fr) minmax(0, 2fr) 28px;
+  /* The word column is never narrower than its longest word, so terms wrap
+     only at spaces; the definition gives up the width instead. */
+  grid-template-columns: 28px minmax(min-content, 1fr) minmax(0, 2fr) 28px;
   gap: 8px;
   align-items: baseline;
   padding: 8px 12px;
@@ -2565,6 +2570,25 @@ button {
 
 :root[data-card-list="side"] .card-list-text {
   display: contents;
+}
+
+/* Rows share one set of columns, so the word column is as wide as the
+   longest word in the deck and every definition starts at the same edge. */
+@supports (grid-template-columns: subgrid) {
+  :root[data-card-list="side"] .card-list-scroll {
+    display: grid;
+    grid-template-columns: 28px minmax(min-content, 1fr) minmax(0, 2fr) 28px;
+    align-content: start;
+  }
+
+  :root[data-card-list="side"] .card-list-row {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+  }
+
+  :root[data-card-list="side"] .card-list-empty {
+    grid-column: 1 / -1;
+  }
 }
 
 :root[data-card-list="side"] .card-list-index {
@@ -2579,6 +2603,23 @@ button {
 
 :root[data-card-list="side"] .card-list-def {
   font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+/* Phones: shrink the side-by-side text a touch so long words fit whole. */
+@media (max-width: 480px) {
+  :root[data-card-list="side"] .card-list-row {
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  :root[data-card-list="side"] .card-list-term {
+    font-size: 13px;
+  }
+
+  :root[data-card-list="side"] .card-list-def {
+    font-size: 13px;
+  }
 }
 
 :root[data-card-list="side"] .card-list-row .card-list-star {
