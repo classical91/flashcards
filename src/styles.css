@@ -2424,6 +2424,11 @@ button {
 
 .card-list-scroll {
   overflow-y: auto;
+  /* The list only ever scrolls up and down; a stray swipe must not slide it
+     sideways. */
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
   flex: 1;
   margin-top: 10px;
   border: 1px solid var(--line);
@@ -2561,8 +2566,9 @@ button {
 :root[data-card-list="side"] .card-list-row {
   /* The word column is never narrower than its longest word, so terms wrap
      only at spaces; the definition gives up the width instead. */
-  grid-template-columns: 28px minmax(min-content, 1fr) minmax(0, 2fr) 28px;
-  gap: 8px;
+  grid-template-columns: max-content minmax(min-content, 1fr) minmax(0, 2fr) 28px;
+  column-gap: 10px;
+  row-gap: 0;
   align-items: baseline;
   padding: 8px 12px;
   font-size: 14px;
@@ -2577,13 +2583,17 @@ button {
 @supports (grid-template-columns: subgrid) {
   :root[data-card-list="side"] .card-list-scroll {
     display: grid;
-    grid-template-columns: 28px minmax(min-content, 1fr) minmax(0, 2fr) 28px;
+    /* The number column is as wide as the biggest number, with a clear gap
+       before the word, so "150" never runs into "Hope". */
+    grid-template-columns: max-content minmax(min-content, 1fr) minmax(0, 2fr) 28px;
+    column-gap: 10px;
     align-content: start;
   }
 
   :root[data-card-list="side"] .card-list-row {
     grid-column: 1 / -1;
     grid-template-columns: subgrid;
+    column-gap: 10px;
   }
 
   :root[data-card-list="side"] .card-list-empty {
@@ -2609,7 +2619,7 @@ button {
 /* Phones: shrink the side-by-side text a touch so long words fit whole. */
 @media (max-width: 480px) {
   :root[data-card-list="side"] .card-list-row {
-    gap: 6px;
+    column-gap: 8px;
     padding: 8px 10px;
   }
 
